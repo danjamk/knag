@@ -68,7 +68,7 @@ schema.** Every migration must be backward-compatible with it. Additive changes
 are free; anything destructive takes two releases — expand, then contract. This
 is the one rule whose violation does not produce a failed deploy, it produces a
 Worker writing to a column that no longer exists, against the only copy of the
-document. See [ADR-0002](docs/adr/0002-two-accounts-and-migrations.md).
+document. See [ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md).
 
 Secrets are never in `wrangler.jsonc`, and differ per environment:
 
@@ -103,7 +103,7 @@ append/patch/delete semantics.
 
 - [docs/spec.md](docs/spec.md) — the build spec: data model, API, sync rules,
   block grammar, build order
-- [docs/adr/0001-passphrase-auth.md](docs/adr/0001-passphrase-auth.md) — why this
+- [docs/adr/ADR-001-passphrase-auth.md](docs/adr/ADR-001-passphrase-auth.md) — why this
   rolls its own sessions instead of using Cloudflare Access
 
 ## License

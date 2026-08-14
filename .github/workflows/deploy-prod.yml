@@ -3,7 +3,7 @@ name: Deploy to production
 # The only path to production. The prod Cloudflare token lives in this workflow's
 # environment secrets and nowhere else — not in a clone, not on the laptop. That
 # placement is the guarantee: a wrong-clone `make deploy` cannot reach prod because
-# the machine does not hold the credential. See docs/adr/0002-two-accounts-and-migrations.md.
+# the machine does not hold the credential. See docs/adr/ADR-002-two-accounts-and-migrations.md.
 #
 # Manual on purpose. Tagging a release does not ship production — the version names
 # the code, deploying is the decision to adopt it. You click Run when you mean it.
@@ -70,7 +70,7 @@ jobs:
       # 🔴 Migrations run BEFORE the deploy, so between this step and the next the
       # currently-deployed Worker is running against the new schema. That is why
       # migrations are additive-only and destructive changes take two releases
-      # (ADR-0002 §3). If this ordering ever looks wrong, the migration is wrong.
+      # (ADR-002 §3). If this ordering ever looks wrong, the migration is wrong.
       - name: Apply D1 migrations
         if: ${{ !inputs.skip_migrations }}
         run: |

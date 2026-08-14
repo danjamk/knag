@@ -167,7 +167,7 @@ different lifecycle, revocable independently.
 
 Cloudflare Access is the house default for a Worker
 ([cloudflare.md](../../claude-shared/docs/standards/cloudflare.md)) and is
-wrong here. See [ADR-0001](adr/0001-passphrase-auth.md).
+wrong here. See [ADR-001](adr/ADR-001-passphrase-auth.md).
 
 ### 4.1 One authenticate(), returning a principal
 
@@ -662,7 +662,7 @@ with no run and no way to ask for one.
 ### Deploy credential — two accounts
 
 Per [cloudflare.md](../../claude-shared/docs/standards/cloudflare.md) and
-[ADR-0002](adr/0002-two-accounts-and-migrations.md):
+[ADR-002](adr/ADR-002-two-accounts-and-migrations.md):
 
 | | Credential lives in | Who can deploy |
 |---|---|---|
@@ -699,7 +699,7 @@ new schema.** So: every migration must be backward-compatible with the deployed
 Worker. Additive changes satisfy this for free; anything destructive takes two
 releases (expand, then contract). This is the one rule whose violation does not
 produce a failed deploy — it produces a Worker writing to a column that no longer
-exists, against the only copy of the document. Full reasoning in ADR-0002 §3.
+exists, against the only copy of the document. Full reasoning in ADR-002 §3.
 
 This is where knag diverges from `pagevault`, which is otherwise the closest
 analog: KV is schemaless, so its upgrade is a deploy and nothing else. That does
@@ -738,7 +738,7 @@ For the record, so the reasoning isn't lost.
 | — | All SQL in `store.ts` | §17 |
 | Cookie auth, bearer for agents | Bearer first-class on all `/api/*` | §17 |
 | `index.html` served from the Worker | Workers Static Assets | Real files, not template literals |
-| Kept as-is | Passphrase auth over Cloudflare Access | [ADR-0001](adr/0001-passphrase-auth.md) |
+| Kept as-is | Passphrase auth over Cloudflare Access | [ADR-001](adr/ADR-001-passphrase-auth.md) |
 
 Draft §8 carried an aside about "artifact storage restrictions" — an artifact of
 where it was written. Removed.

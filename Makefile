@@ -2,7 +2,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help setup install dev build check test test-security typecheck \
-        migrate deploy verify health logs backup destroy info
+        migrate deploy verify health logs backup destroy info preflight
 
 # Command line > .env > default.
 -include .env
@@ -21,6 +21,10 @@ WRANGLER   := pnpm exec wrangler --config worker/wrangler.jsonc
 ENV_FLAG   := $(if $(filter-out dev,$(ENV)),--env $(ENV),)
 D1_NAME    := $(if $(filter-out dev,$(ENV)),knag,knag-dev)
 HOST       ?= $(if $(filter-out dev,$(ENV)),knag.danjamkuhn.com,)
+
+# The account each environment is allowed to touch, from .env. Empty means the
+# preflight refuses rather than guesses — see scripts/preflight.sh.
+CF_ACCOUNT := $(if $(filter-out dev,$(ENV)),$(CF_ACCOUNT_ID_PROD),$(CF_ACCOUNT_ID_DEV))
 
 VERSION     := $(shell node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")
 GIT_COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -103,18 +107,22 @@ migrate: ## Apply D1 migrations (ENV=local|dev|prod)
 ifeq ($(ENV),local)
 	@$(WRANGLER) d1 migrations apply knag-dev --local
 else
+	@$(MAKE) --no-print-directory preflight ENV=$(ENV)
 	@echo "$(YELLOW)Applying migrations to REMOTE $(D1_NAME) [$(ENV)]$(RESET)"
 	@echo "$(YELLOW)Additive only. 'make backup ENV=$(ENV)' first if you have not.$(RESET)"
 	@read -p "Continue? [y/N] " c && [ "$$c" = "y" ]
 	@$(WRANGLER) $(ENV_FLAG) d1 migrations apply $(D1_NAME) --remote
 endif
 
-backup: ## Dump D1 to a timestamped file in backups/ (ENV=dev|prod)
+backup: preflight ## Dump D1 to a timestamped file in backups/ (ENV=dev|prod)
 	@bash scripts/backup.sh "$(ENV)" "$(D1_NAME)"
+
+preflight: ## Assert the active Cloudflare credential matches ENV
+	@bash scripts/preflight.sh "$(ENV)" "$(CF_ACCOUNT)"
 
 ##@ Deploy & operate
 
-deploy: check build ## Deploy the Worker (bakes version + timestamp into /health)
+deploy: check build preflight ## Deploy the Worker (bakes version + timestamp into /health)
 	@if [ "$(ENV)" = "prod" ]; then \
 		echo "$(YELLOW)Prod deploys run in CI — the prod token is not on this machine$(RESET)"; \
 		echo "$(YELLOW)by design (ADR-0002). Use: Actions → Deploy to production.$(RESET)"; \
