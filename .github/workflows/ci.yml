@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # Not optional. GitHub webhooks have been throttled hard enough that a PR and its
+  # merge to main both landed with no run created and no way to ask for one. This is
+  # the recovery hatch. Learned in pagevault, 2026-08-06.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or SHA to check
+        required: false
+        type: string
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The whole gate, and the same command `make check` runs locally. If CI ever
+      # checks something `check` does not, the local gate is a lie.
+      - run: pnpm check

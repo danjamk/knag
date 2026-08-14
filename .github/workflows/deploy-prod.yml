@@ -1,0 +1,101 @@
+name: Deploy to production
+
+# The only path to production. The prod Cloudflare token lives in this workflow's
+# environment secrets and nowhere else — not in a clone, not on the laptop. That
+# placement is the guarantee: a wrong-clone `make deploy` cannot reach prod because
+# the machine does not hold the credential. See docs/adr/0002-two-accounts-and-migrations.md.
+#
+# Manual on purpose. Tagging a release does not ship production — the version names
+# the code, deploying is the decision to adopt it. You click Run when you mean it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_migrations:
+        description: "Skip the migration step (only if you know none are pending)"
+        type: boolean
+        default: false
+
+# Never let two prod deploys overlap. Do not cancel one in flight — a half-applied
+# deploy against the only copy of the document is worse than a queued one.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Scopes the secrets below to THIS job — ci.yml cannot read them — and is where
+    # an optional required-reviewer gate lives.
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The health check compares /health against <version>+<sha>, so the short
+          # SHA has to be real.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The same gate as CI and as `make check`. A prod deploy is not the place to
+      # discover the suite is red.
+      - run: pnpm check
+
+      - run: pnpm build
+
+      # 🔴 BEFORE anything touches the database. The artifact is the restore point.
+      # A brand-new prod D1 exports an empty file, which is fine.
+      - name: Back up prod D1
+        run: |
+          mkdir -p backups
+          pnpm exec wrangler --config worker/wrangler.jsonc --env prod \
+            d1 export knag --remote --output backups/knag-prod.sql
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prod-d1-backup
+          path: backups/knag-prod.sql
+          retention-days: 30
+          if-no-files-found: warn
+
+      # 🔴 Migrations run BEFORE the deploy, so between this step and the next the
+      # currently-deployed Worker is running against the new schema. That is why
+      # migrations are additive-only and destructive changes take two releases
+      # (ADR-0002 §3). If this ordering ever looks wrong, the migration is wrong.
+      - name: Apply D1 migrations
+        if: ${{ !inputs.skip_migrations }}
+        run: |
+          pnpm exec wrangler --config worker/wrangler.jsonc --env prod \
+            d1 migrations apply knag --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+# The build id, computed once so the deploy and the verify below cannot disagree
+      # about what was shipped. Matches the Makefile's BUILD_ID format exactly —
+      # <version>+<shortsha> — because `make health` compares against the same string.
+      - name: Compute the build id
+        id: build
+        run: echo "id=$(node -p "require('./package.json').version")+${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the Worker
+        run: |
+          pnpm exec wrangler --config worker/wrangler.jsonc --env prod deploy \
+            --var KNAG_VERSION:"${{ steps.build.outputs.id }}" \
+            --var KNAG_DEPLOYED_AT:"$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      # Close the loop: assert /health reports the exact build this run produced. A
+      # stuck or partial rollout fails the run instead of going green. No credential
+      # needed — /health is public and says nothing about the document.
+      - name: Verify the deployed build
+        run: bash scripts/health.sh knag.danjamkuhn.com "${{ steps.build.outputs.id }}"
