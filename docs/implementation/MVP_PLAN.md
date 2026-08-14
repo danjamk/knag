@@ -12,6 +12,33 @@ is blocked on Cloudflare provisioning. Each phase below is one GitHub issue.
 
 **Read the spec for the what. Read this for the when and the how-do-we-know.**
 
+## Phase → issue
+
+Tracked on the **knag Roadmap** board (project #4).
+
+| Phase | Issue | Size |
+|---|---|---|
+| 1 · Document API | [#2](https://github.com/danjamk/knag/issues/2) | 1–2d |
+| 2 · Auth | [#3](https://github.com/danjamk/knag/issues/3) | 1–2d |
+| 3 · Provision dev + cookie clock | [#4](https://github.com/danjamk/knag/issues/4) | ½d + 7d wait |
+| 4 · Raw view PWA | [#5](https://github.com/danjamk/knag/issues/5) | 1–2d |
+| 5 · Polling + dirty guard | [#6](https://github.com/danjamk/knag/issues/6) | 1d |
+| 6 · Revisions + coalescing | [#7](https://github.com/danjamk/knag/issues/7) | 1d |
+| 7 · Block parser | [#8](https://github.com/danjamk/knag/issues/8) | 1–2d |
+| 8 · List view | [#9](https://github.com/danjamk/knag/issues/9) rows · [#10](https://github.com/danjamk/knag/issues/10) tap-to-edit · [#11](https://github.com/danjamk/knag/issues/11) copy/linkify | 3–4d total |
+| 9 · Clear completed | [#12](https://github.com/danjamk/knag/issues/12) | ½d |
+| 10 · Drag reorder | [#13](https://github.com/danjamk/knag/issues/13) | ½d |
+| 11 · MCP server | [#14](https://github.com/danjamk/knag/issues/14) | 1–2d |
+| 12 · History + diff | [#15](https://github.com/danjamk/knag/issues/15) | 1–2d |
+
+Phase 8 is three issues because 3–4 days breaks the ~1–2 day sizing rule in
+`docs/guides/github-issues.md`. The split follows the seams already identified
+below.
+
+**Suggested order, which is not the phase order:** #2 → #3 → #4 (start the
+clock) → #8 in parallel with the wait, since the block parser has no
+dependencies, is the highest-risk code here, and gates #9, #12 and #13.
+
 ---
 
 ## The scheduling constraint that drives everything
