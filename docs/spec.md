@@ -1,0 +1,771 @@
+# knag — Build Spec
+
+*Single live document, multi-device, agent-readable/writable.*
+
+**Name:** *knag* — archaic, a peg driven into a wall to hang things on. Also
+reads as "nag." Both meanings are the product. Repo `danjamk/knag`.
+
+> **Status.** Functional intent is settled. The technical choices in §2 and §§13–15
+> were revised against `~/yukon/claude-shared/docs/standards/` — see
+> [§16 Deltas](#16-deltas-from-the-original-draft) for what changed and why.
+
+---
+
+## 1. What this is
+
+One plain-text document. Always live. Edited from any device. The agent reads
+and writes it as though it were Dan. A change log captures what appeared and
+what disappeared, so the document can be swept clean without losing the record.
+
+It replaces the legal pad when Dan is away from his desk. It is not a note
+system, not a task manager, and not a second brain.
+
+### Principles
+
+1. **One document.** No days, no rollover, no multiple notes.
+2. **No required structure.** Checkbox syntax is the one optional convention.
+3. **Nothing is normalized.** Bytes in, bytes out. Indentation and blank lines
+   preserved exactly.
+4. **Deletion is not loss.** The log holds everything.
+5. **The brain is not involved.** No reads from it, no writes to it. (See §11.)
+
+---
+
+## 2. Stack
+
+| Layer | Choice |
+|---|---|
+| Runtime | Cloudflare Workers |
+| Storage | D1 |
+| Language | TypeScript everywhere — Worker and client |
+| Client | PWA served from Workers Static Assets |
+| Client build | `esbuild` → `public/app.js`. One command, no framework. |
+| Drag | SortableJS, **vendored and pinned**, not CDN |
+| Agent | MCP server, same Worker, `/mcp` |
+| Auth | Shared passphrase → long-lived session cookie, or bearer token |
+| Package manager | pnpm |
+| Tests | vitest + `@cloudflare/vitest-pool-workers` against real D1 |
+
+No framework. One `worker/wrangler.jsonc`, one Worker entry, one `index.html`.
+
+### Why TypeScript and a build step, when the draft said neither
+
+The draft's instinct — no framework, no ceremony — is right and is preserved.
+But "no build step" had a consequence it didn't account for:
+
+**The block parser (§14.1) is needed on both sides.** The server needs it for
+`clear-completed`, which removes `- [x]` blocks. The client needs it to render
+rows. With no build step there is no way to share a module between a TypeScript
+Worker and a plain-JS page, so the parser gets written twice — two
+implementations of a byte-preservation contract that must agree forever, by
+hand. That is the single most likely path to a corrupted document, and the
+round-trip test in §14.1 will not catch it: each parser passes its own test
+while disagreeing with the other.
+
+So: `worker/src/blocks.ts` exists exactly once. The client imports it.
+`esbuild` bundles `client/src/app.ts` → `public/app.js`. That is the entire
+build: one command, one dev dependency, no framework, no config file. Wrangler
+already compiles the Worker's TypeScript, so the deploy path is unchanged.
+
+TypeScript throughout is the house standard
+([node.md](../../claude-shared/docs/standards/node.md)) and `pnpm check`
+(typecheck + test) is the pre-PR gate and exactly what CI runs.
+
+---
+
+## 3. Data model
+
+Naming follows
+[database-conventions](../../claude-shared/docs/guides/database-conventions.md):
+plural tables, `is_` boolean prefix, `_at` timestamps, `idx_{table}_{column}`.
+
+```sql
+-- Live state. Exactly one row.
+CREATE TABLE documents (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  body       TEXT    NOT NULL,
+  version    INTEGER NOT NULL,
+  updated_at TEXT    NOT NULL,   -- ISO8601 UTC
+  source     TEXT    NOT NULL    -- 'pwa' | 'agent' | 'system'
+);
+
+-- Append-only history, coalesced.
+CREATE TABLE revisions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  body       TEXT    NOT NULL,
+  version    INTEGER NOT NULL,
+  created_at TEXT    NOT NULL,
+  is_sealed  INTEGER NOT NULL DEFAULT 0,
+  source     TEXT    NOT NULL,
+  event_type TEXT                 -- NULL | 'clear_completed'
+);
+
+-- Explicit record of swept items, so "what did I finish" is a lookup.
+CREATE TABLE cleared_items (
+  id          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  revision_id INTEGER NOT NULL REFERENCES revisions(id),
+  line_text   TEXT    NOT NULL,
+  cleared_at  TEXT    NOT NULL
+);
+
+CREATE TABLE sessions (
+  token_hash   TEXT PRIMARY KEY,  -- SHA-256 of the cookie value
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL,
+  device_label TEXT               -- 'iphone', 'ipad', 'mac' — set at login
+);
+
+CREATE INDEX idx_revisions_created_at ON revisions(created_at);
+CREATE INDEX idx_cleared_items_cleared_at ON cleared_items(cleared_at);
+CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
+```
+
+### Coalescing rule
+
+On every save that changes `body`:
+
+- If the newest revision is `is_sealed = 0` **and** `created_at` is within
+  **10 minutes**, `UPDATE` it in place.
+- Otherwise `INSERT` a new revision.
+
+Full snapshots, not diffs. The document is a few KB; diffs are computed at read
+time. Worst case ~6 revisions/hour.
+
+### One chokepoint for all SQL
+
+**No SQL outside `worker/src/store.ts`.** The single-row id is a `DOC_ID`
+constant in that file, not a literal `1` scattered across handlers.
+
+This is not abstraction for its own sake — it is the specific thing that makes
+a future multi-user schema a one-file change rather than a rewrite (§17).
+Deliberately **not** done now: `owner_id` columns. That would be building for a
+future that may never arrive; the chokepoint makes adding them cheap if it does.
+
+---
+
+## 4. Auth
+
+Single user. Do not build email infrastructure for this.
+
+- `KNAG_PASSPHRASE` in Worker secrets. Long, random, stored in 1Password.
+- Login screen: one field. On match, mint 32 bytes of random, store the SHA-256
+  in `sessions`, set the raw value as a cookie.
+- Cookie: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age=31536000`.
+- **Server-set only.** Safari ITP caps client-set cookies at 7 days of
+  inactivity; server-set `Set-Cookie` is exempt. Getting this wrong means
+  re-authenticating weekly, which kills the whole thing.
+- Optional `device_label` field at login so sessions are identifiable later.
+
+**Agent path is separate.** `KNAG_BEARER_TOKEN` secret, checked as
+`Authorization: Bearer <token>` on `/api/*` and `/mcp`. Different credential,
+different lifecycle, revocable independently.
+
+> A home-screen PWA on iOS has its own cookie jar, separate from Safari. The
+> passphrase approach works because login happens inside the PWA. This is why
+> magic links were rejected — the link opens in Safari and authenticates the
+> wrong jar.
+
+Cloudflare Access is the house default for a Worker
+([cloudflare.md](../../claude-shared/docs/standards/cloudflare.md)) and is
+wrong here. See [ADR-0001](adr/0001-passphrase-auth.md).
+
+### 4.1 One authenticate(), returning a principal
+
+```ts
+type Principal = { id: string; source: 'session' | 'bearer' };
+function authenticate(request: Request, env: Env): Promise<Principal | null>;
+```
+
+**Every route calls this and keys off `principal.id`.** No handler ever asks
+"was the passphrase right." Today `id` is always `'dan'`; that is fine and it is
+the point — replacing the credential scheme touches one file (§17).
+
+**Bearer is first-class on every `/api/*` route, not an agent afterthought.** A
+native wrapper (§17) authenticates from the Keychain with a header, not a
+cookie. Cookie-only must never creep into a route.
+
+### 4.2 Hardening the draft omitted
+
+A single passphrase field on a public URL is brute-forceable, and the draft had
+no answer for it.
+
+- **Constant-time compare** for both passphrase and bearer. Hash both sides
+  with SHA-256, then `crypto.subtle.timingSafeEqual` on the digests. Never `===`.
+- **Rate-limit `POST /api/login`** — one Cloudflare WAF rate-limiting rule
+  (the free tier includes one). Configured out of band; recorded in the README.
+- **Sweep expired sessions on login.** `DELETE FROM sessions WHERE expires_at <
+  ?` — one statement, no cron trigger.
+- **Login failures return 401 with no detail** and are logged with the source IP.
+
+---
+
+## 5. API
+
+All routes accept either the session cookie or the bearer token, resolved
+through `authenticate()` (§4.1).
+
+### `GET /health`
+
+Unauthenticated. Returns `{ ok: true, version: "<semver>+<shortsha>" }` and
+nothing about the document. Baked at deploy from `package.json` + git, so
+`make health` can assert that what is live matches this checkout — the one
+check that catches "deployed from the wrong branch."
+
+### `GET /api/doc`
+```json
+{ "body": "...", "version": 42, "updated_at": "2026-08-14T15:04:05Z" }
+```
+Sets `ETag: "<version>"`. Honours `If-None-Match` with **304** and empty body.
+
+### `PUT /api/doc`
+```json
+{ "body": "...", "base_version": 42, "source": "pwa" }
+```
+- `base_version === documents.version` → apply, bump version, return `{ version }`.
+- Mismatch → **409** with the current `{ body, version }`. Caller reloads. Never
+  merge, never overwrite.
+- No-op writes (body identical) bump nothing and create no revision.
+
+### `POST /api/doc/clear-completed`
+```json
+{ "base_version": 42 }
+```
+Order of operations matters:
+1. Seal the newest revision (`is_sealed = 1`) so the pre-clear state can't be
+   swallowed by the coalescing window.
+2. Insert a revision with `event_type = 'clear_completed'` holding the pre-clear body.
+3. Write the removed lines into `cleared_items`.
+4. Remove all blocks where `kind === 'checkbox' && checked === true` and update
+   `documents`.
+
+Returns `{ version, cleared_count }`.
+
+Steps 1–4 run in a single D1 batch. A partial clear that seals a revision but
+loses the `cleared_items` write is worse than no clear.
+
+### `GET /api/history?since=&until=`
+Returns revisions in range plus derived, per adjacent pair:
+- `appeared`: lines in *n+1* not in *n*
+- `disappeared`: lines in *n* not in *n+1*
+
+Plus all `cleared_items` in range, which are the authoritative "done" record.
+Line-set diff, not character diff. Trivial to implement, sufficient in practice.
+
+---
+
+## 6. Sync
+
+Polling. No WebSockets.
+
+- `GET /api/doc` every **4s** while `document.visibilityState === 'visible'`,
+  subject to the adaptive backoff in §14.4.
+- Immediate refetch on `visibilitychange` → visible, and on `window.focus`.
+- Stop polling when hidden.
+
+### Two rules that prevent the only real bugs
+
+**Never apply a remote update while the editor is dirty or focused.** Queue it,
+apply on blur. A cursor that jumps mid-keystroke is how an app gets abandoned.
+
+**Always send `base_version`.** The failure mode this prevents: an iPad left
+open for three days, typed into, saving a stale body over a week of work. This
+is the one catastrophic data-loss path and it costs ten lines to close.
+
+### Save triggers
+- 800ms debounce after typing stops
+- Immediately on blur
+- Immediately on checkbox toggle, reorder, or clear
+
+---
+
+## 7. Client — list view (default)
+
+Parse `body` into blocks (§14.1). Render each block by kind:
+
+| Block | Rendering |
+|---|---|
+| `- [ ] text` | Checkbox (unchecked) + text |
+| `- [x] text` | Checkbox (checked) + text, strikethrough, dimmed |
+| ` ``` ` fenced block | **One row**, monospace, whole block, single copy button |
+| Anything else | Plain text |
+| `http(s)://…` anywhere | Linkified, opens in new tab |
+
+**Checked items stay in place.** No auto-sink.
+
+### Row anatomy, left to right
+1. **Grip handle** (`⠿`) — the *only* drag initiator. Whole-row drag conflicts
+   with tap-to-edit and produces accidental reorders.
+2. **Checkbox** — only if the block is a checkbox. Toggling rewrites
+   `[ ]`↔`[x]` in place and saves.
+3. **Text** — tap to edit. Becomes a single-line `<input>`, commits on blur or
+   Enter, Escape reverts.
+4. **Copy button** — `navigator.clipboard.writeText(lineText)`. Always visible
+   (no hover on touch). Strips the `- [ ] ` prefix when copying.
+
+At 380px this is four targets in one row. Grip and copy get ~28px, text flexes,
+truncate with ellipsis rather than wrap.
+
+### Why single-line inputs
+
+A general multi-line row editor means handling backspace-merges-previous-row,
+arrow-up-at-boundary, cross-row selection, and paste-splitting. That is a day of
+fiddly work and the source of every cursor bug. Single-line inputs have none of
+it, and everything multi-line lives in raw view where a `<textarea>` already
+does it correctly.
+
+### Reorder
+SortableJS bound to the row container, `handle: '.grip'`. On drop, reorder the
+**block** array, serialize, save. Fenced blocks move as one unit.
+
+Vendored to `public/vendor/sortable.min.js` at a pinned version, not loaded from
+a CDN. §9 promises the service worker caches the shell; a third-party script
+makes that promise false, and "prefer the boring tool" favors a file in the repo
+over a network dependency on someone else's uptime.
+
+### Clear completed
+Single button, footer. Confirm only if clearing more than ~10 blocks.
+
+---
+
+## 8. Client — raw view
+
+Full-bleed monospace `<textarea>`. The entire document, unmodified. For sweeps,
+paste, bulk reordering, and anything the list view can't express.
+
+Toggle in the corner. Preference persisted per device in `localStorage` — UI
+state, not document state.
+
+**Raw view must round-trip byte-for-byte.** No trimming, no whitespace
+normalization, no line-ending rewriting. Code pasted in comes out identical.
+
+---
+
+## 9. PWA shell
+
+Served from **Workers Static Assets** (`assets` binding in `wrangler.jsonc`),
+with `run_worker_first` for `/api/*` and `/mcp`. The shell is real files in
+`public/`, not template literals inside a TypeScript module.
+
+`public/manifest.json`:
+- `"display": "standalone"`
+- `"theme_color"` matching the app background so iOS status bar doesn't clash
+- 192px and 512px icons
+
+Add to Home Screen on iPhone/iPad, Add to Dock on macOS Safari. No Electron —
+it doesn't run on iPad regardless (iOS mandates WebKit), and the only thing it
+would buy on the Mac is a global capture hotkey. Deferred.
+
+Service worker: cache the shell only. **Do not cache document responses.** A
+stale cached body is worse than an offline error. Offline editing is explicitly
+out of scope.
+
+---
+
+## 10. MCP tools
+
+Built against
+[claude-shared/docs/standards/mcp.md](../../claude-shared/docs/standards/mcp.md)
+— read it before step 10, not after. knag sits at the simple end of that
+standard: bearer auth rather than OAuth 2.1 (single operator, no third-party
+client, no consent screen), and no Resources. The rules that still apply in full
+are §2 request isolation, §3 tool design, §4 annotations, §5 server instructions,
+§6 structured output, and §9 security.
+
+Mounted at `/mcp`, bearer-authenticated.
+
+| Tool | Signature | Notes |
+|---|---|---|
+| `knag_read` | `() → { body, version, updated_at }` | |
+| `knag_write` | `(body, base_version) → { version }` | Full replacement. 409 on mismatch. |
+| `knag_clear` | `(base_version) → { version, cleared_count }` | Same path as the button. |
+| `knag_history` | `(since?, until?) → revisions[], cleared[]` | With appeared/disappeared. |
+
+One write tool, not three. The document is small enough that read-modify-write
+is cheaper than inventing append/patch/delete semantics, and it covers every
+case — add, check off, surgical delete, total sweep — identically.
+
+### Agent contract
+
+**Byte-preserve every line not explicitly targeted.** Whole-document write is a
+loaded gun; the standing rule for Dan's prose applies here too. Surgical edits
+only, nothing else touched.
+
+**Always read immediately before writing.** Never write from a body carried over
+from earlier in a conversation.
+
+**Report the diff in chat** after every write — added, removed, changed. Dan
+sees what moved without opening knag.
+
+**On 409, re-read and re-apply the intent** — do not retry with the stale body.
+
+---
+
+## 11. Brain sync — deferred
+
+Explicitly out of MVP. The original motivation (knag content flowing into
+`daily/` notes) still stands, but it's a separate decision and knag works
+without it.
+
+If built later: a launchd job on the Mac, every 15 minutes, one direction only
+(knag → brain), writing into a `## knag` section that nothing else touches. The
+Worker never touches `danjamk/brain`. knag is the write-ahead log, brain is the
+durable store, content flows one way. Anything bidirectional is a sync engine
+and is not worth it.
+
+---
+
+## 12. Scope
+
+**In:** one live document · optimistic concurrency · polled sync · passphrase
+auth · list view with checkboxes · raw view · per-row copy · linkify · fenced
+block grouping · drag reorder · clear completed · coalesced revision log ·
+history diff · 4 MCP tools · PWA manifest
+
+**Out:** search · tags · multiple documents · attachments · offline editing ·
+WebSockets · Electron · native apps · email auth · multi-user · sharing ·
+brain reads or writes · rollover · day boundaries · rich formatting
+
+If a weekend turns into two, something from the second list came back.
+
+---
+
+## 13. Build order
+
+0. **Scaffold.** Repo wiring, `wrangler.jsonc`, migrations, Makefile, CI,
+   `pnpm check` green. *(Done.)*
+1. **Worker + D1 + `GET`/`PUT /api/doc` with version checking.** Curl it. The
+   concurrency semantics are the foundation; get them right before any UI.
+   Includes first-boot seeding (§14.5) and `store.ts` as the only SQL.
+2. **Auth.** Passphrase → cookie, `authenticate()` per §4.1, hardening per §4.2.
+   Verify the cookie survives a week of iOS inactivity before building on it.
+   Its tests live in the `test:security` script.
+3. **Raw view PWA.** A textarea and a save. At this point it's already useful
+   and already replaces Keep for the transfer use case.
+4. **Polling + dirty-guard.** Adaptive interval and ETag per §14.4. Test
+   explicitly: two devices, one left open overnight, confirm the 409 path.
+5. **Revisions + coalescing.** Backfill from step 1 onward.
+6. **Block parser (§14.1) with round-trip test passing before any UI uses it.**
+7. **List view.** Rows, checkboxes (§14.2), tap-to-edit, copy buttons, linkify.
+8. **Clear completed + `cleared_items`.**
+9. **Drag reorder.** Operates on blocks, not lines.
+10. **MCP server.** Four tools, bearer auth, streamable HTTP (§14.6).
+11. **`/api/history` + diff.** Timezone-aware per §14.3.
+
+Steps 1–4 are the weekend. Everything after is incremental and independently
+useful.
+
+---
+
+## 14. Resolved details
+
+These were open questions. They are decided here so Claude Code doesn't guess.
+The first two cause silent data corruption if implemented naively.
+
+### 14.1 Block model — rows are not lines
+
+**Rows in list view map to *blocks*, not to lines.** A fenced code block is one
+row spanning many lines. Any implementation that indexes rows directly into the
+line array will scramble the document on the first reorder involving a code
+block.
+
+Lives in `worker/src/blocks.ts`. **One implementation, imported by both sides**
+(§2). Parse `body` into an array of blocks:
+
+```ts
+{ kind: 'checkbox' | 'text' | 'fence' | 'blank',
+  raw: string,        // exact source lines, joined with \n, unmodified
+  startLine: number,
+  endLine: number,
+  indent: string,     // leading whitespace, checkbox blocks only
+  marker: string,     // '-' or '*', checkbox blocks only
+  checked: boolean,   // checkbox blocks only
+  text: string }      // content after the marker, checkbox blocks only
+```
+
+Rules:
+
+- A fence opens at a line whose first non-whitespace is ` ``` ` or `~~~` and
+  closes at the next matching fence, **or at end of document** if unclosed. An
+  unclosed fence must not swallow the rest of the document into an unreorderable
+  blob — treat EOF as a close and mark the block `unterminated: true`.
+- Serialization is `blocks.map(b => b.raw).join('\n')`. Never reconstruct a
+  block from its parsed fields except the one block being edited.
+- Reorder, copy, and drag operate on blocks. Blank lines are blocks too, so
+  spacing survives a reorder.
+- Round-trip test, run on every parse change: `serialize(parse(x)) === x` for
+  arbitrary `x`, including trailing newlines, CRLF, and unclosed fences.
+  Property-based over generated inputs, not a handful of examples.
+
+### 14.2 Checkbox grammar
+
+A block is a checkbox if and only if it matches:
+
+```
+/^(\s*)([-*])\s\[([ xX])\]\s(.*)$/
+```
+
+Consequences, all deliberate:
+
+- **Leading whitespace is captured and preserved verbatim.** Nested items keep
+  their indentation through toggle, edit, and reorder. This is required by
+  principle 3 in §1.
+- Both `-` and `*` are accepted; the original marker is preserved on write.
+  Never normalize `*` to `-`.
+- `-[ ]` (no space after marker) is **not** a checkbox. Renders as plain text.
+- `[x]` and `[X]` both mean checked; preserve the original case on write.
+- Toggling rewrites **only** the bracket character. Rebuild the line as
+  `indent + marker + ' [' + char + '] ' + text` — do not regex-replace across
+  the whole document.
+- Trailing whitespace after the text is preserved.
+
+`knag_clear` removes blocks where `kind === 'checkbox' && checked === true`.
+Nothing else, regardless of indentation level.
+
+### 14.3 Timezone
+
+D1 stores UTC. Dan is America/Chicago. Every history boundary is a local-time
+question ("what did I finish Tuesday") and will file items to the wrong day
+after ~7pm local if handled in UTC.
+
+- Store `created_at` as ISO8601 UTC with `Z`. Never store local time.
+- `KNAG_TZ` var in `wrangler.jsonc`, default `America/Chicago`.
+- `knag_history` and `/api/history` accept bare dates (`2026-08-14`) and resolve
+  them to local-midnight boundaries in `KNAG_TZ`, converting to UTC for the
+  query. Use `Intl.DateTimeFormat` with `timeZone` — it handles DST, manual
+  offset arithmetic does not.
+- Day grouping in results is by local date, not UTC date.
+
+### 14.4 Polling budget
+
+Workers free tier is 100k requests/day. A 4s poll on one tab left open all day
+is ~21.6k. Three devices exceeds the ceiling on polling alone. The free tier is
+a design input, not an afterthought.
+
+Adaptive interval:
+
+| Condition | Interval |
+|---|---|
+| Local edit within last 2 min | 4s |
+| Visible, idle 2–15 min | 15s |
+| Visible, idle > 15 min | 60s |
+| Hidden | stopped |
+
+Always poll immediately on `visibilitychange` → visible and on `window.focus`,
+regardless of tier — that's what makes device-switching feel live.
+
+Additionally: `GET /api/doc` returns `ETag: "<version>"` and honours
+`If-None-Match` with a **304** and empty body. Unchanged polls stay cheap and
+the client skips the dirty-guard path entirely.
+
+Worst realistic case with backoff: ~4k requests/day across all devices. D1's
+free tier (5GB, 5M row reads/day) is not the binding constraint; Workers
+requests are.
+
+### 14.5 First boot
+
+Nothing seeds `documents`, so every read fails on a fresh deploy.
+
+- Migration inserts `(1, '', 1, <now>, 'system')`.
+- `GET /api/doc` treats a missing row as empty body at version 0 rather than
+  erroring — defensive, in case the migration is skipped.
+- `PUT` with `base_version: 0` against a missing or empty row succeeds and
+  initialises it.
+- Empty body is a valid state. It is not an error and must not be confused with
+  a failed read anywhere in the client.
+
+### 14.6 MCP transport
+
+Full doctrine in
+[claude-shared/docs/standards/mcp.md](../../claude-shared/docs/standards/mcp.md).
+knag-specific points:
+
+- **Streamable HTTP** at `POST /mcp`. Not SSE. Same pattern as PageVault.
+- **A new server instance per request**, never module-scoped. Sharing a server
+  or transport across requests can leak one caller's response to another.
+- **Do not enforce `Origin` validation as a block.** claude.ai's web app POSTs
+  from the browser with `Origin: https://claude.ai`; a 403 there kills the
+  tool-list refresh and reads as "server unavailable." pagevault shipped that
+  block and reverted it within the hour. Log it if you want telemetry; let token
+  verification do the work. (mcp.md §8.)
+- Bearer auth via `Authorization` header; return **401** with
+  `WWW-Authenticate: Bearer` on failure so the client surfaces a clear error
+  rather than a silent empty tool list.
+- Tool errors return structured MCP errors, not HTTP 500s. A 409 from the write
+  path must reach the agent as a usable message — including the current version
+  and body — so it can re-read and re-apply rather than retrying blind.
+- Connector config for Claude:
+
+```json
+{
+  "name": "knag",
+  "url": "https://knag.danjamkuhn.com/mcp",
+  "headers": { "Authorization": "Bearer ${KNAG_BEARER_TOKEN}" }
+}
+```
+
+- Health check is the shared `GET /health` (§5), not a separate `/mcp/health`.
+  One endpoint, one answer, and `make health` already asserts against it.
+
+---
+
+## 15. Operations, testing, CI
+
+Not in the original draft. Required by
+[claude-shared](../../claude-shared/docs/standards/README.md).
+
+### Testing
+
+`@cloudflare/vitest-pool-workers` against Miniflare with a **real D1** and the
+real migrations applied. Mocking a binding tests the mock.
+
+| Suite | Covers |
+|---|---|
+| `worker/test/blocks.test.ts` | Round-trip property test, CRLF, unclosed fences, trailing newlines, checkbox grammar edge cases |
+| `worker/test/api.test.ts` | 409 conflict path, no-op writes, first boot, ETag/304 |
+| `worker/test/auth.test.ts` | Passphrase, bearer, cookie attributes, timing-safe compare, expired sessions |
+| `worker/test/mcp.test.ts` | Tool list, bearer 401, 409 surfaced as a structured error |
+
+`pnpm test:security` runs `auth.test.ts` alone so it can be run in isolation.
+
+### Make targets
+
+`make help` is enough to work the project.
+
+```
+make setup      # install, create .env from example, report what's missing
+make dev        # wrangler dev against local D1
+make build      # esbuild the client bundle
+make check      # typecheck + test — the pre-PR gate, and what CI runs
+make migrate    # apply D1 migrations. Additive only — see below.
+make deploy     # build, bake version, deploy the Worker
+make verify     # smoke-test the live deployment
+make health     # assert live /health matches this checkout's <version>+<sha>
+make logs       # wrangler tail
+make backup     # dump D1 to backups/
+make destroy    # tear it down (confirms)
+```
+
+`ENV` is a variable, never a target suffix: `make deploy ENV=prod`. It defaults
+to `dev`, so a forgotten flag is boring rather than expensive.
+
+`make backup` matters more here than in most projects: D1 holds the only copy of
+the document, Time Travel is 30 days, and a restore gives you a database back —
+not the knowledge that the document was wrong three deploys ago.
+
+### CI
+
+`.github/workflows/ci.yml` runs `pnpm check` on PR, on push to `main`, and on
+`workflow_dispatch` with a `ref` input. The manual hatch is not optional — GitHub
+webhooks have been throttled to the point where a PR and its merge both landed
+with no run and no way to ask for one.
+
+### Deploy credential — two accounts
+
+Per [cloudflare.md](../../claude-shared/docs/standards/cloudflare.md) and
+[ADR-0002](adr/0002-two-accounts-and-migrations.md):
+
+| | Credential lives in | Who can deploy |
+|---|---|---|
+| **dev** | `.env.local` in this clone | you, locally — every `make deploy` |
+| **prod** | a GitHub Environment secret on `production` | only `deploy-prod.yml` |
+
+**The prod token is never on the laptop.** That placement is the mechanism; the
+`env.prod` block in `wrangler.jsonc` names resources and grants nothing. The top
+level of that file is dev, so every command that forgets a flag does the safe
+thing.
+
+Secrets are never in `wrangler.jsonc` — `wrangler secret put --env <env>`, and
+**different values per environment**:
+
+| Secret | Purpose |
+|---|---|
+| `KNAG_PASSPHRASE` | PWA login. Dev's must differ from prod's — dev is reachable at a `*.workers.dev` host the WAF rule does not cover. |
+| `KNAG_BEARER_TOKEN` | Agent / MCP / native |
+
+### Upgrade — the order is not negotiable
+
+```
+make check                    # green
+make backup ENV=prod          # D1 → artifact, before anything
+make migrate ENV=prod         # additive only
+make deploy ENV=prod          # bakes <version>+<sha>
+make health ENV=prod          # assert live == checkout
+```
+
+`deploy-prod.yml` runs exactly this, in this order, on manual dispatch only.
+
+**Between `migrate` and `deploy`, the currently deployed Worker runs against the
+new schema.** So: every migration must be backward-compatible with the deployed
+Worker. Additive changes satisfy this for free; anything destructive takes two
+releases (expand, then contract). This is the one rule whose violation does not
+produce a failed deploy — it produces a Worker writing to a column that no longer
+exists, against the only copy of the document. Full reasoning in ADR-0002 §3.
+
+This is where knag diverges from `pagevault`, which is otherwise the closest
+analog: KV is schemaless, so its upgrade is a deploy and nothing else. That does
+not transfer to D1.
+
+### No CLI, no npm package
+
+`pagevault` ships both because it is an **installed product** — a stranger
+provisions Access apps, a KV namespace and a viewer group in their own account,
+and the CLI is that provisioning surface. knag's install story is one
+`wrangler d1 create`, two secrets, and a DNS record. That is a README section.
+
+The rule, which belongs in the shared standards rather than here: *a Worker
+project earns a CLI and an npm package when a stranger must provision
+infrastructure in their own account.* The trigger to revisit is §17's
+self-hosted branch — the same trigger as everything else in that section.
+
+---
+
+## 16. Deltas from the original draft
+
+For the record, so the reasoning isn't lost.
+
+| Draft | Now | Why |
+|---|---|---|
+| `wrangler.toml` | `wrangler.jsonc` | House standard — comments on every binding |
+| Vanilla JS, no build step | TypeScript + esbuild | One block parser instead of two (§2) |
+| No test plan | 4 vitest suites vs real D1 | House standard; the parser is the risk |
+| No CI | `ci.yml` + `workflow_dispatch` | House standard |
+| No Makefile | 11 targets | House standard — Make is the entry point |
+| `current`, `sealed`, `event`, `line` | `documents`, `is_sealed`, `event_type`, `line_text` | House DB naming |
+| SortableJS via CDN | Vendored, pinned | The SW "caches the shell" promise is otherwise false |
+| `/mcp/health` | `GET /health` with version+sha | Feeds `make health` |
+| — | Timing-safe compare, login rate limit, session sweep | Draft had no brute-force answer |
+| — | `authenticate() → Principal` | §17 |
+| — | All SQL in `store.ts` | §17 |
+| Cookie auth, bearer for agents | Bearer first-class on all `/api/*` | §17 |
+| `index.html` served from the Worker | Workers Static Assets | Real files, not template literals |
+| Kept as-is | Passphrase auth over Cloudflare Access | [ADR-0001](adr/0001-passphrase-auth.md) |
+
+Draft §8 carried an aside about "artifact storage restrictions" — an artifact of
+where it was written. Removed.
+
+---
+
+## 17. If this becomes more than a legal pad
+
+Not scope. Recorded so today's decisions don't foreclose it, and so the review
+that decides has something to start from.
+
+Plausible futures: hosted for other people; wrapped for the App Store; open
+sourced as a self-hosted thing.
+
+**What would actually break:**
+
+| Future | Breaks | Insurance taken today |
+|---|---|---|
+| Multi-user | Schema (`CHECK (id = 1)`), every query | All SQL in `store.ts`, `DOC_ID` constant. Adding `owner_id` is one file plus a migration. |
+| Any real auth | Passphrase is a shared secret — no revocation, no accounts | `authenticate() → Principal`; handlers key off `principal.id` |
+| Native / App Store | Cookies don't fit a Keychain-token client | Bearer is first-class on every `/api/*` route |
+| Public / self-hosted | Config assumes one owner | Vars in `wrangler.jsonc`, secrets via `wrangler secret put`, MIT already |
+
+**What is not insured, deliberately:** no `owner_id` columns, no accounts table,
+no billing hooks, no CORS. Each is a future that may never come, and each is
+cheap *because* of the chokepoints above.
+
+**The one to watch.** Auth is the only decision here that gets expensive with
+age. A shared passphrase does not survive multiple users and would not pass App
+Store review. The trigger to revisit is a second human, not a feature count.

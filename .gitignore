@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.env
+.env.local
+.DS_Store
+.idea/
+.wrangler/
+
+# Built by `make build` from client/src/. Not a source file.
+public/app.js
+public/app.js.map
+
+# Local D1 dumps from `make backup` — these contain the document.
+backups/
+
+CLAUDE.local.md
+COMMIT_MESSAGE.md
+PR_COMMENT.md
+.claude/settings.local.json
+.claude/settings.local.json.bak
+.claude/skills/*

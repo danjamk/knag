@@ -1,0 +1,38 @@
+{
+  "name": "knag",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One plain-text document, always live, edited from any device and by the agent",
+  "license": "MIT",
+  "author": "Dan Kuhn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danjamk/knag.git"
+  },
+  "type": "module",
+  "packageManager": "pnpm@10.22.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "esbuild client/src/app.ts --bundle --format=esm --target=es2022 --outfile=public/app.js",
+    "dev": "wrangler dev --config worker/wrangler.jsonc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:security": "vitest run worker/test/auth.test.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p client/tsconfig.json",
+    "check": "pnpm typecheck && pnpm test",
+    "deploy": "wrangler deploy --config worker/wrangler.jsonc"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "workerd"]
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.4",
+    "@cloudflare/workers-types": "^5.20260714.1",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.110.0"
+  }
+}

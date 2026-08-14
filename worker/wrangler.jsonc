@@ -1,0 +1,136 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "main": "src/index.ts",
+
+  // Pinned, not floated. A moving compatibility date changes runtime behaviour
+  // under a deploy that touched nothing else.
+  "compatibility_date": "2026-07-01",
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Two Cloudflare accounts. See docs/adr/0002-two-accounts-and-migrations.md.
+  //
+  // 🔴 Which account you reach is decided by WHICH CREDENTIAL IS ACTIVE, not by
+  // anything in this file:
+  //
+  //   dev   CLOUDFLARE_API_TOKEN in .env.local  → every local `make deploy`
+  //   prod  a GitHub Environment secret, only   → only deploy-prod.yml
+  //
+  // The prod token is never on the laptop. That placement IS the guarantee — the
+  // env blocks below only name resources, they grant nothing. A laptop holding the
+  // dev token that runs `--env prod` fails closed, because the dev token cannot see
+  // prod's D1.
+  //
+  // The TOP LEVEL IS DEV, deliberately: every command that forgets a flag does the
+  // safe thing. `wrangler dev`, `wrangler deploy` and the test suite all read this
+  // level. Production requires saying `--env prod` out loud.
+  //
+  // Named environments do NOT inherit bindings — d1_databases, vars, assets and
+  // routes are redeclared under `env.prod` below. That is verbose and it is the
+  // reason a binding added here must be added there too. Adding one in only one
+  // place is the failure this comment exists to prevent.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  "name": "knag-dev",
+
+  // The document store. D1 holds the ONLY copy of the live document — there is no
+  // second source of truth. `make backup` and D1 Time Travel (30 days) are the
+  // recovery paths; treat both as load-bearing.
+  //
+  // Placeholder. Against the DEV account:
+  //   pnpm exec wrangler d1 create knag-dev
+  // Wrangler validates this as a non-empty string even for local tests, so it
+  // cannot be blank. Deploying with the placeholder fails loudly, which is correct.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "knag-dev",
+      "database_id": "REPLACE_WITH_DEV_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // The PWA shell — real files, not template literals inside a TS module.
+  // `run_worker_first` keeps the API and MCP routes on the Worker; everything else
+  // is served straight from assets, which costs no Worker invocation.
+  "assets": {
+    "directory": "../public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/mcp", "/health"],
+    "not_found_handling": "single-page-application"
+  },
+
+  "vars": {
+    // <semver>+<shortsha>, baked at deploy from package.json + git; reported by
+    // /health so `make health` can assert that what is live matches the checkout
+    // you are standing in.
+    "KNAG_VERSION": "",
+    "KNAG_DEPLOYED_AT": "",
+
+    // Local timezone for history boundaries. D1 stores UTC; "what did I finish
+    // Tuesday" is a local-time question and files to the wrong day after ~7pm
+    // local if answered in UTC. See spec §14.3.
+    "KNAG_TZ": "America/Chicago"
+  },
+
+  // 🔴 Dev is reachable at a *.workers.dev hostname with no WAF rate-limit rule in
+  // front of it — the rule is scoped to the danjamkuhn.com zone, which lives on the
+  // prod account. Consequences, both mandatory:
+  //   1. The dev KNAG_PASSPHRASE must be DIFFERENT from prod's.
+  //   2. Dev holds test content only. Never paste anything real into it.
+  "workers_dev": true,
+  "preview_urls": false,
+
+  "observability": {
+    "enabled": true
+  },
+
+  "env": {
+    "prod": {
+      // Not `knag-dev-prod`. Wrangler appends the environment name to the top-level
+      // name unless the block sets its own.
+      "name": "knag",
+
+      // Against the PROD account, once:
+      //   pnpm exec wrangler d1 create knag
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "knag",
+          "database_id": "REPLACE_WITH_PROD_D1_DATABASE_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+
+      "assets": {
+        "directory": "../public",
+        "binding": "ASSETS",
+        "run_worker_first": ["/api/*", "/mcp", "/health"],
+        "not_found_handling": "single-page-application"
+      },
+
+      "vars": {
+        "KNAG_VERSION": "",
+        "KNAG_DEPLOYED_AT": "",
+        "KNAG_TZ": "America/Chicago"
+      },
+
+      // Added after DNS. Until then prod has no hostname and, with workers_dev off,
+      // no way in at all — which is the correct state for an unprovisioned prod.
+      //   "routes": [{ "pattern": "knag.danjamkuhn.com", "custom_domain": true }]
+
+      // Both off. Each is an alternate hostname reaching the same Worker, and every
+      // alternate hostname is one more surface the login rate-limit rule does not
+      // cover.
+      "workers_dev": false,
+      "preview_urls": false,
+
+      "observability": {
+        "enabled": true
+      }
+    }
+  }
+
+  // Secrets (`wrangler secret put --env <env>`), never in this file — it is committed:
+  //   KNAG_PASSPHRASE     — PWA login (spec §4, ADR-0001). Different per environment.
+  //   KNAG_BEARER_TOKEN   — agent / MCP / any non-browser client. Different per environment.
+}

@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    // The `cloudflare:test` module declaration is on the /types subpath export,
+    // not the package root (the root is the config API).
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  // Worker and tests only. The client has its own config because it needs the DOM
+  // lib and the Worker must never see it — `document` typechecking clean inside a
+  // Worker is a runtime failure waiting for a deploy. vitest.config.ts is excluded
+  // deliberately: it runs in Node, under Vite, with neither of these type sets.
+  "include": ["worker/src/**/*.ts", "worker/test/**/*.ts"]
+}

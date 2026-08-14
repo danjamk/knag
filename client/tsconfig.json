@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // Browser code. DOM here and nowhere else.
+    "lib": ["es2022", "dom", "dom.iterable"],
+    // Explicitly empty: no workers-types, no vitest globals. The client and the
+    // Worker share exactly one thing — worker/src/blocks.ts — and that module is
+    // pure, depending on neither environment. If something else from worker/src
+    // ever fails to typecheck here, that is the signal it does not belong on both
+    // sides, not a reason to widen this list.
+    "types": []
+  },
+  // Only the client entry. worker/src/blocks.ts is pulled in by following the
+  // import, which is the point — it has to typecheck under these settings too.
+  "include": ["src/**/*.ts"]
+}
