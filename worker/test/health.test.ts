@@ -7,7 +7,14 @@ describe("GET /health", () => {
     const res = await SELF.fetch("https://knag.test/health");
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ ok: true, version: "0.0.0-test" });
+    // `environment` is the field people skip and then need — a deploy that looks
+    // right and went to the wrong place is indistinguishable from one that failed.
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      version: "0.0.0-test",
+      environment: "test",
+      deployed_at: "1970-01-01T00:00:00Z",
+    });
   });
 });
 

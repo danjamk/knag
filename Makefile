@@ -131,7 +131,8 @@ deploy: check build preflight ## Deploy the Worker (bakes version + timestamp in
 	fi
 	@$(WRANGLER) $(ENV_FLAG) deploy \
 		--var KNAG_VERSION:"$(BUILD_ID)" \
-		--var KNAG_DEPLOYED_AT:"$(DEPLOYED_AT)"
+		--var KNAG_DEPLOYED_AT:"$(DEPLOYED_AT)" \
+		--var KNAG_ENV:"$(ENV)"
 	@echo "$(GREEN)✓ Deployed $(BUILD_ID) to $(ENV)$(RESET)"
 
 health: ## Assert the live deployment matches this checkout (ENV=dev|prod)

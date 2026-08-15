@@ -40,6 +40,7 @@ export default defineConfig({
         bindings: {
           KNAG_VERSION: "0.0.0-test",
           KNAG_DEPLOYED_AT: "1970-01-01T00:00:00Z",
+          KNAG_ENV: "test",
           KNAG_TZ: "America/Chicago",
           KNAG_PASSPHRASE: "test-passphrase-do-not-use-in-production",
           KNAG_BEARER_TOKEN: "test-bearer-do-not-use-in-production",

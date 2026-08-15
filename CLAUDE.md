@@ -66,6 +66,20 @@ writing to a column that no longer exists, against the only copy of the document
 `ENV=dev` is the default for every target. Production ships from Actions →
 Deploy to production, manually. Tagging a release does not deploy anything.
 
+**knag is in build mode.** Stay on `0.1.x` and bump the **patch** in every PR. No
+`CHANGELOG.md`, no tags, no GitHub Releases until the shape stops moving — then cap
+the phase with a real `0.1.<final>` and start release discipline properly. The build
+id in `/health` is mandatory regardless; it is the part that pays for itself
+immediately. Full doctrine:
+`~/yukon/claude-shared/docs/guides/versioning-and-releases.md`.
+
+Every deployment reports `<version>+<shortsha>`, when it was deployed, and **which
+environment** — the last being the one people skip and then need, because a deploy
+that looks right and went to the wrong place is indistinguishable from one that
+failed. `KNAG_ENV` is declared in *both* wrangler env blocks and baked by both the
+Makefile and `deploy-prod.yml`; a var set in only one of those reports the wrong
+environment in the other.
+
 ## Agent contract
 
 When writing to knag through MCP:
