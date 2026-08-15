@@ -35,7 +35,7 @@ import {
   revertShorthand,
   splitAt,
 } from "./edit.js";
-import { type ViewMode, linkify, move, readView, rows, writeView } from "./view.js";
+import { type ViewMode, linkify, move, readView, removeAt, rows, writeView } from "./view.js";
 
 type Doc = { body: string; version: number; updated_at: string };
 
@@ -50,6 +50,7 @@ const buildEl = document.querySelector<HTMLElement>("[data-build]");
 const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
 const toggleViewButton = document.querySelector<HTMLButtonElement>("[data-toggle-view]");
 const clearButton = document.querySelector<HTMLButtonElement>("[data-clear]");
+const reorderButton = document.querySelector<HTMLButtonElement>("[data-reorder]");
 
 /** Above this many, a sweep gets a confirm. Below it, undo-by-history is enough. */
 const CONFIRM_CLEAR_ABOVE = 10;
@@ -63,6 +64,13 @@ const CONFIRM_CLEAR_ABOVE = 10;
  */
 let body = "";
 let view: ViewMode = "list";
+
+/**
+ * Typing or rearranging. **Never persisted** — unlike the view preference, this is
+ * something you are doing right now, not something you prefer. Landing in reorder
+ * mode after a reload would be the mode problem ADR-003 removed, reintroduced.
+ */
+let reordering = false;
 
 /** The version we believe we are editing. Every write carries it (spec §6). */
 let baseVersion = 0;
@@ -130,13 +138,16 @@ function paint(): void {
   rowsEl?.toggleAttribute("hidden", view !== "list");
   if (toggleViewButton) toggleViewButton.textContent = view === "list" ? "raw" : "list";
 
+  reorderButton?.toggleAttribute("hidden", view !== "list");
+
   if (view === "list") {
     paintRows();
     return;
   }
-  // Raw view is the escape hatch for bulk edits; sweeping from it would act on a
-  // document the reader is mid-way through rewriting by hand.
+  // Raw view is the escape hatch for bulk edits; sweeping or rearranging from it
+  // would act on a document the reader is mid-way through rewriting by hand.
   clearButton?.toggleAttribute("hidden", true);
+  if (reordering) setReordering(false);
 }
 
 function paintRows(): void {
@@ -160,13 +171,39 @@ function refreshClearButton(): void {
   if (clearButton) clearButton.textContent = `clear ${completed} done`;
 }
 
-/** `⠿`, the drag initiator. Inert until #13 wires SortableJS to it. */
+/**
+ * `⠿`, the drag initiator — **only rendered in reorder mode**.
+ *
+ * 🔴 It used to be always visible. With every row now a live input, a permanent drag
+ * handle competes for the same touch as a text field, which is worse than competing
+ * with a tap target (ADR-003 §5).
+ */
 function gripElement(): HTMLSpanElement {
   const grip = document.createElement("span");
   grip.className = "grip";
   grip.textContent = "⠿";
   grip.setAttribute("aria-hidden", "true");
   return grip;
+}
+
+/**
+ * Delete a whole block. Reorder mode only.
+ *
+ * 🔴 Lives here rather than in the editor because with live inputs `Backspace`
+ * already handles *joining* lines, while nothing offers a gesture for removing a
+ * whole fence or a blank.
+ *
+ * **No confirm.** The revision log is the undo — principle 4 finally paying for
+ * itself, and the reason #7 had to land before this could.
+ */
+function removeElement(index: number): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "remove";
+  button.textContent = "\u00d7";
+  button.title = "delete this line";
+  button.dataset.remove = String(index);
+  return button;
 }
 
 /**
@@ -191,7 +228,7 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   li.className = row.kind;
   li.dataset.index = String(row.index);
 
-  li.append(gripElement());
+  if (reordering) li.append(gripElement());
 
   // 🔴 A fence is a textarea, not a <pre>. It is one block and inherently
   // multi-line, so it gets the element that is natively multi-line — and that is
@@ -207,6 +244,7 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
     area.autocapitalize = "off";
     area.setAttribute("autocorrect", "off");
     li.append(area, copyElement(row.text));
+    if (reordering) li.append(removeElement(row.index));
     return li;
   }
 
@@ -240,6 +278,7 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   if (first) li.append(openElement(first.value));
 
   li.append(copyElement(row.text));
+  if (reordering) li.append(removeElement(row.index));
   return li;
 }
 
@@ -765,9 +804,14 @@ async function copyToClipboard(text: string, button: HTMLElement): Promise<void>
  *
  * Bound once to the container rather than per row, so it survives every repaint.
  */
+let sortable: Sortable | null = null;
+
 if (rowsEl) {
-  Sortable.create(rowsEl, {
+  sortable = Sortable.create(rowsEl, {
     handle: ".grip",
+    // Off until the mode is entered. A drag that can start at any moment is the
+    // thing live inputs made unworkable (ADR-003 §5).
+    disabled: true,
     animation: 120,
     // Touch needs a moment to distinguish a drag from a scroll; a mouse does not.
     delay: 120,
@@ -800,6 +844,58 @@ if (rowsEl) {
     },
   });
 }
+
+/**
+ * Enter or leave reorder mode.
+ *
+ * Rows go read-only, grips appear at a size worth aiming at, and each row gains a
+ * delete. Leaving returns to typing. **Not persisted** — a reload lands you in the
+ * editor, always (ADR-003 §5).
+ */
+function setReordering(on: boolean): void {
+  reordering = on;
+  rowsEl?.classList.toggle("reorder", on);
+  reorderButton?.classList.toggle("on", on);
+  if (reorderButton) reorderButton.textContent = on ? "done" : "reorder";
+  sortable?.option("disabled", !on);
+
+  // Leaving the mode flushes anything the drags queued, so the document is settled
+  // before the caret goes anywhere near it again.
+  if (!on) saveNow();
+  paintRows();
+}
+
+reorderButton?.addEventListener("click", () => {
+  // Switching to raw view while reordering would leave the mode on with nothing to
+  // drag, so the mode belongs to the list view only.
+  if (view !== "list") return;
+  setReordering(!reordering);
+});
+
+rowsEl?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const remove = target.closest<HTMLElement>("[data-remove]");
+  if (!remove) return;
+
+  const index = Number(remove.dataset.remove);
+  const blocks = parse(body);
+  if (!Number.isInteger(index) || index >= blocks.length) {
+    paintRows();
+    return;
+  }
+
+  // 🔴 No confirm. The revision log is the undo — principle 4 finally paying for
+  // itself, and the reason #7 had to land before this could.
+  body = serialize(removeAt(blocks, index));
+  paintRows();
+  dirty = true;
+  lastActivityAt = Date.now();
+  clearTimeout(saveTimer);
+  void save();
+  schedulePoll();
+});
 
 toggleViewButton?.addEventListener("click", () => {
   // Flush first. Switching views repaints the textarea from `body`, and an unsaved

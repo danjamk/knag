@@ -77,7 +77,7 @@
         padding: 0.3rem 0.5rem;
         min-height: 2rem;
       }
-      .grip, .copy {
+      .grip, .copy, .remove {
         flex: none;
         width: 28px;
         height: 28px;
@@ -96,12 +96,29 @@
       .copy:active { background: #2a2a2a; }
       /* The row being dragged. Kept subtle — the movement is the feedback. */
       li.dragging { opacity: 0.4; background: #1d1d1d; }
-      /* Without this, a drag starting on the grip selects text across rows on
-         desktop and fights the gesture on touch. */
-      .grip { touch-action: none; user-select: none; }
-      /* Always visible. There is no hover on touch, so revealing controls on hover
-         would make them unreachable on the device this is built for. */
-      .grip { cursor: grab; }
+
+      /* 🔴 Reorder is a mode, not an always-on grip. A drag handle competing for the
+         same touch as an always-live text field is worse than one competing with a
+         tap target — which is what live rows made it (ADR-003 §5). */
+      [data-rows].reorder li { background: #171717; margin-bottom: 1px; }
+      [data-rows].reorder input.text,
+      [data-rows].reorder textarea.fence {
+        pointer-events: none;
+        color: var(--dim);
+      }
+      /* Bigger in the mode than a normal control, because in the mode it is the
+         only thing you are aiming at. */
+      .reorder .grip, .reorder .remove { width: 36px; height: 36px; font-size: 1.05rem; }
+      .grip {
+        cursor: grab;
+        /* Without this, a drag starting on the grip selects text across rows on
+           desktop and fights the gesture on touch. */
+        touch-action: none;
+        user-select: none;
+      }
+      .remove { cursor: pointer; color: #a05a5a; }
+      .remove:active { background: #3a2020; }
+      [data-reorder].on { background: #3a3a2a; color: #d8d8a8; }
 
       li.blank { min-height: 1.25rem; padding: 0 0.5rem; }
       li.fence { flex-wrap: wrap; align-items: flex-start; }
@@ -262,6 +279,7 @@
       <footer>
         <span data-save-status>—</span>
         <button type="button" data-clear hidden>clear done</button>
+        <button type="button" data-reorder>reorder</button>
         <button type="button" data-toggle-view>raw</button>
         <span data-build>—</span>
       </footer>

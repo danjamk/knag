@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type Block, parse, serialize, setText, toggle } from "../../worker/src/blocks.js";
-import { VIEW_KEY, linkify, move, readView, rows, writeView } from "../src/view.js";
+import { VIEW_KEY, linkify, move, readView, removeAt, rows, writeView } from "../src/view.js";
 
 describe("rows (spec §7)", () => {
   it("emits exactly one row per block, in order", () => {
@@ -347,6 +347,54 @@ describe("move (spec §7, §14.1)", () => {
           expect(serialize(move(move(blocks, from, to), to, from))).toBe(bodyText);
         },
       ),
+      { numRuns: 1000 },
+    );
+  });
+});
+
+describe("removeAt (spec §7)", () => {
+  it("drops the element at the index", () => {
+    expect(removeAt(["a", "b", "c"], 1)).toEqual(["a", "c"]);
+  });
+
+  it("is a no-op for an out-of-range index", () => {
+    const items = ["a", "b"];
+    expect(removeAt(items, -1)).toBe(items);
+    expect(removeAt(items, 2)).toBe(items);
+    expect(removeAt(items, 1.5)).toBe(items);
+  });
+
+  it("🔴 removes a whole fence, not a line of it", () => {
+    // Dropping a line would leave an orphaned closing ``` and swallow everything
+    // after it into a new unterminated fence.
+    const blocks = parse("before\n```js\ncode\n```\nafter");
+
+    expect(serialize(removeAt(blocks, 1))).toBe("before\nafter");
+  });
+
+  it("removes a blank row, closing the gap", () => {
+    expect(serialize(removeAt(parse("a\n\nb"), 1))).toBe("a\nb");
+  });
+
+  it("leaves an empty document when the last block goes", () => {
+    // Empty is a valid document and must never read as a failure (spec §14.5).
+    expect(serialize(removeAt(parse("only"), 0))).toBe("");
+  });
+
+  it("only ever removes the targeted block, byte for byte", () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 300, unit: "binary" }), fc.nat({ max: 20 }), (body, i) => {
+        const blocks = parse(body);
+        if (blocks.length === 0) return;
+        const index = i % blocks.length;
+
+        const kept = removeAt(blocks, index);
+        expect(kept).toHaveLength(blocks.length - 1);
+        // Every survivor keeps its exact source line.
+        expect(kept.map((b) => b.raw)).toEqual(
+          blocks.filter((_, j) => j !== index).map((b) => b.raw),
+        );
+      }),
       { numRuns: 1000 },
     );
   });
