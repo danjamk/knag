@@ -64,6 +64,21 @@ describe("PWA shell (spec §9)", () => {
     expect(shell()).toContain('rel="apple-touch-icon"');
   });
 
+  it("🔴 names no colour outside the theme token blocks", () => {
+    // A hardcoded hex is invisible in dark mode and wrong in light mode, and nothing
+    // fails when someone adds one. Every colour lives in `:root`; everything else
+    // says `var(--token)`.
+    const styles = /<style>([\s\S]*?)<\/style>/.exec(shell())?.[1] ?? "";
+    // Drop the :root blocks — that is where colours are allowed to be literal.
+    const outside = styles.replace(/:root[^{]*\{[^}]*\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+    expect(outside.match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull();
+  });
+
+  it("offers all three theme options through one control", () => {
+    expect(shell()).toContain("data-theme-toggle");
+  });
+
   it("declares a theme colour matching the background", () => {
     // A mismatch shows as a bright status bar strip above a dark app on iOS.
     expect(shell()).toContain('name="theme-color" content="#111111"');

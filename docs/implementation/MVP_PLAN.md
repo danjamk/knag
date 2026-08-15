@@ -799,9 +799,28 @@ is principle 4 finally paying for itself, and it only works if P6's log is intac
 **Spec:** §9 · **Size:** half a day · **Depends:** none
 
 **Done when:**
-- [ ] Three-way toggle, persisted per device in `localStorage`
-- [ ] `prefers-color-scheme` is the default
-- [ ] Both themes legible at 380px, and `theme_color` follows the active one
+- [x] Three-way toggle, persisted per device in `localStorage`
+- [x] `prefers-color-scheme` is the default
+- [x] Both themes legible at 380px, and `theme_color` follows the active one
+
+**Decided during implementation:**
+
+- 🔴 **Every colour is a token, and a test enforces it.** A hardcoded hex is
+  invisible in dark mode and wrong in light mode, and nothing fails when someone
+  adds one. `shell.test.ts` strips the `:root` blocks and asserts no `#rrggbb`
+  survives anywhere else — verified by planting one and watching it go red.
+- **`system` sets no attribute at all**, so the CSS media query decides. The
+  alternative — resolving the OS preference in JS and writing `data-theme="dark"` —
+  means re-reading it on every change and getting the first paint wrong.
+- **The `theme-color` meta tag is updated too.** iOS paints the status bar from it,
+  and leaving it dark under a light theme puts a black strip above a white app —
+  which reads as a rendering bug rather than a preference.
+- **Light is warm, not pure white.** This is a legal pad; plain text on `#fff` at
+  arm's length in daylight is glare, not contrast.
+- **The theme applies before the first paint**, so the app never flashes the wrong
+  one.
+- **Following the system means following it as it changes**, not as it was at boot —
+  a `matchMedia` listener, active only while the preference is `system`.
 
 ---
 
