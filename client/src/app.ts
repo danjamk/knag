@@ -170,7 +170,25 @@ function paintRows(): void {
   const blocks = parse(body);
   rowsEl.replaceChildren(...rows(blocks).map(rowElement));
 
+  // After they are in the document: `scrollHeight` is 0 on a detached element, so
+  // sizing at construction time silently collapses every row to one line.
+  for (const area of rowsEl.querySelectorAll<HTMLTextAreaElement>("textarea")) {
+    autoGrow(area);
+  }
+
   refreshClearButton();
+}
+
+/**
+ * Size a row to its wrapped content.
+ *
+ * The two-step — reset to `auto`, then read `scrollHeight` — is what lets a row
+ * *shrink* again. Reading `scrollHeight` against the current height only ever grows,
+ * so deleting a wrapped line would leave the row permanently tall.
+ */
+function autoGrow(area: HTMLTextAreaElement): void {
+  area.style.height = "auto";
+  area.style.height = `${area.scrollHeight}px`;
 }
 
 /**
@@ -273,10 +291,16 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
     li.append(box);
   }
 
-  // 🔴 A live input, not a span you tap to activate. This is the whole point of
+  // 🔴 A live editor, not a span you tap to activate. This is the whole point of
   // ADR-003: the editor is where you land, and typing is the primary interaction.
-  const input = document.createElement("input");
-  input.type = "text";
+  //
+  // 🔴 A `<textarea>`, not an `<input>`. An input is single-line by construction and
+  // cannot wrap at any price, so a long note truncated to `buy milk and also…` with
+  // no way to read it. One row still means one block — Enter is intercepted and
+  // splits (see the keydown handler); only a *fence* textarea takes a literal
+  // newline. The textarea is here purely so the text can wrap.
+  const input = document.createElement("textarea");
+  input.rows = 1;
   input.className = "text";
   input.value = row.text;
   // On for prose, off inside fences above. Autocorrect is the user typing, mediated
@@ -601,6 +625,7 @@ rowsEl?.addEventListener("input", (event) => {
   }
 
   shorthandAt = null;
+  if (target instanceof HTMLTextAreaElement) autoGrow(target);
   syncFromRow(index, target.value);
 });
 

@@ -829,11 +829,23 @@ is principle 4 finally paying for itself, and it only works if P6's log is intac
 Spec §12's **Out** list is load-bearing and is not re-opened here. §17 records
 what a larger future would break; it is not MVP work.
 
-## Open, decided by use rather than guessed
+## Decided by use, not by guessing
 
-- **Truncate vs wrap on long rows.** Rows truncate with an ellipsis today (spec
-  §7). With a live input in every row the question changes shape, so it is left
-  open deliberately rather than guessed at twice.
+- **Truncate vs wrap on long rows — resolved: wrap.** Left open through #11 and
+  #30 rather than guessed at twice, and settled the first time it was seen on a
+  phone. A note reading `buy milk and also remember to…` with no way to read it
+  is worse than a taller row.
+
+  Worth recording that the cost estimate was stale, not wrong. When #11 shipped
+  it *was* a one-line CSS change, because rows were spans. #30 made them
+  `<input>` elements, which cannot wrap at any price — so it became an element
+  swap to auto-growing textareas. **An estimate given about code that then
+  changes is not a promise about the new code.**
+
+  The typing model needed **no changes at all**: `splitAt`, `mergeBackward` and
+  `neighbor` operate on `.value` and caret offsets, which a textarea has
+  identically. That is the return on having modelled them as pure functions
+  rather than as DOM manipulation.
 
 ## Deferred, tracked, not forgotten
 

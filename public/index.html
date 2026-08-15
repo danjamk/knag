@@ -141,11 +141,16 @@
          below what a thumb can hit. */
       [data-rows] li {
         display: flex;
-        align-items: center;
+        /* 🔴 Not `center`. A wrapped row is several lines tall, and centring puts its
+           checkbox halfway down the block instead of beside the line it belongs to. */
+        align-items: flex-start;
         gap: 0.5rem;
         padding: 0.3rem 0.5rem;
         min-height: 2rem;
       }
+      /* Nudge the fixed-height controls onto the first line's baseline. */
+      [data-rows] li > * { margin-top: 0.15rem; }
+      [data-rows] li > textarea { margin-top: 0; }
       .grip, .copy, .remove {
         flex: none;
         width: 28px;
@@ -170,7 +175,7 @@
          same touch as an always-live text field is worse than one competing with a
          tap target — which is what live rows made it (ADR-003 §5). */
       [data-rows].reorder li { background: var(--surface); margin-bottom: 1px; }
-      [data-rows].reorder input.text,
+      [data-rows].reorder textarea.text,
       [data-rows].reorder textarea.fence {
         pointer-events: none;
         color: var(--dim);
@@ -238,12 +243,15 @@
         border-radius: 4px;
         accent-color: var(--accent);
       }
-      /* Every row's text is a live input now — no tap-to-activate, no span/input
-         swap. Truncation happens naturally: an input scrolls its own content, so a
-         long line stays one row and the caret stays visible while typing. */
-      input.text {
+      /* 🔴 A textarea, not an input, purely so long rows wrap. An input is
+         single-line by construction and truncates with an ellipsis, which turns a
+         long note into `buy milk and also…` with no way to read it. Height is set
+         from content in JS; `overflow: hidden` keeps the element from scrolling
+         instead of growing. */
+      textarea.text {
         flex: 1;
         min-width: 0;
+        margin: 0;
         padding: 0;
         border: 0;
         border-radius: 0;
@@ -252,9 +260,15 @@
         font: inherit;
         /* 16px or iOS zooms the viewport on focus and never zooms back. */
         font-size: 16px;
+        line-height: 1.4;
+        resize: none;
+        overflow: hidden;
+        /* Wraps, and still preserves every space and tab exactly. */
+        white-space: pre-wrap;
+        word-break: break-word;
       }
-      input.text:focus { outline: none; }
-      li.checked input.text { text-decoration: line-through; color: var(--done); }
+      textarea.text:focus { outline: none; }
+      li.checked textarea.text { text-decoration: line-through; color: var(--done); }
 
       footer {
         display: flex;
