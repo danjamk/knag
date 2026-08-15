@@ -66,15 +66,43 @@
         margin: 0;
         padding: 0.5rem 0;
       }
+      /* 🔴 Four targets in one row at 380px (spec §7): grip, checkbox, text, copy.
+         Grip and copy are fixed at 28px and the text flexes between them, so the
+         layout degrades by truncating prose rather than by shrinking a tap target
+         below what a thumb can hit. */
       [data-rows] li {
         display: flex;
-        align-items: baseline;
-        gap: 0.6rem;
-        padding: 0.35rem 1rem;
-        min-height: 1.5rem;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0.5rem;
+        min-height: 2rem;
       }
-      li.blank { min-height: 0.75rem; padding: 0; }
-      li.fence { display: block; }
+      .grip, .copy {
+        flex: none;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: #4a4a4a;
+        font: inherit;
+        font-size: 0.9rem;
+        border-radius: 4px;
+      }
+      .copy { cursor: pointer; }
+      .copy:active { background: #2a2a2a; }
+      /* Always visible. There is no hover on touch, so revealing controls on hover
+         would make them unreachable on the device this is built for. */
+      .grip { cursor: grab; }
+
+      li.blank { min-height: 1.25rem; padding: 0 0.5rem; }
+      li.fence { flex-wrap: wrap; }
+      li.fence pre { flex: 1 1 100%; order: 2; }
+      li.fence .grip { order: 1; }
+      li.fence .copy { order: 1; margin-left: auto; }
       li.fence pre {
         margin: 0;
         padding: 0.6rem 0.8rem;
@@ -85,7 +113,17 @@
       }
       li.checkbox input { flex: none; width: 1.1rem; height: 1.1rem; accent-color: #6b8f6b; }
       li.checkbox.checked .text { text-decoration: line-through; color: #666; }
-      .text { flex: 1; white-space: pre-wrap; word-break: break-word; }
+      /* Truncate rather than wrap (spec §7). A wrapping row makes the list stop
+         being scannable, and the full text is one tap away in the editor and always
+         present in raw view — so nothing is hidden, only deferred. */
+      .text {
+        flex: 1;
+        min-width: 0;
+        white-space: pre;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .text a { color: #7aa2d2; }
       /* Tappable text gets a target big enough for a thumb without looking like a
          button — the row is the affordance, not a control. */
       span.text[tabindex] { cursor: text; }

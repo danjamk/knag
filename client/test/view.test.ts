@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type Block, parse, serialize, setText, toggle } from "../../worker/src/blocks.js";
-import { VIEW_KEY, readView, rows, writeView } from "../src/view.js";
+import { VIEW_KEY, linkify, readView, rows, writeView } from "../src/view.js";
 
 describe("rows (spec §7)", () => {
   it("emits exactly one row per block, in order", () => {
@@ -186,5 +186,96 @@ describe("which rows are editable (spec §7)", () => {
       }),
       { numRuns: 500 },
     );
+  });
+});
+
+describe("linkify (spec §7)", () => {
+  const parts = (text: string) => linkify(text).map((s) => (s.link ? `[${s.value}]` : s.value));
+
+  it("🔴 concatenates back to the input, for arbitrary text", () => {
+    // The invariant that matters. A linkifier that eats or trims a character makes
+    // the row display something the document does not contain.
+    fc.assert(
+      fc.property(fc.string({ maxLength: 300, unit: "binary" }), (text) => {
+        expect(linkify(text).map((s) => s.value).join("")).toBe(text);
+      }),
+      { numRuns: 2000 },
+    );
+  });
+
+  it("concatenates back for text that actually contains URLs", () => {
+    const withUrls = fc
+      .array(
+        fc.oneof(
+          fc.constantFrom("https://example.com", "http://a.b/c?d=e#f", "https://x.com/(y)"),
+          fc.constantFrom(" ", "see ", ".", " and ", "(", ")", ""),
+        ),
+        { maxLength: 12 },
+      )
+      .map((xs) => xs.join(""));
+
+    fc.assert(
+      fc.property(withUrls, (text) => {
+        expect(linkify(text).map((s) => s.value).join("")).toBe(text);
+      }),
+      { numRuns: 2000 },
+    );
+  });
+
+  it("returns one plain segment when there is no URL", () => {
+    expect(linkify("just some text")).toEqual([{ link: false, value: "just some text" }]);
+  });
+
+  it("finds a URL anywhere in the row", () => {
+    expect(parts("see https://example.com now")).toEqual(["see ", "[https://example.com]", " now"]);
+  });
+
+  it("leaves sentence punctuation outside the link", () => {
+    expect(parts("read https://example.com.")).toEqual(["read ", "[https://example.com]", "."]);
+    expect(parts("a https://example.com, and b")).toEqual([
+      "a ",
+      "[https://example.com]",
+      ", and b",
+    ]);
+  });
+
+  it("keeps a closing bracket that the URL opened", () => {
+    // Wikipedia-style. Dropping it silently produces a link to the wrong page.
+    expect(parts("https://en.wikipedia.org/wiki/Foo_(bar)")).toEqual([
+      "[https://en.wikipedia.org/wiki/Foo_(bar)]",
+    ]);
+  });
+
+  it("drops a closing bracket the URL did not open", () => {
+    expect(parts("(https://example.com)")).toEqual(["(", "[https://example.com]", ")"]);
+  });
+
+  it("handles several URLs in one row", () => {
+    expect(parts("https://a.com and https://b.com")).toEqual([
+      "[https://a.com]",
+      " and ",
+      "[https://b.com]",
+    ]);
+  });
+
+  it("🔴 does not linkify anything but http and https", () => {
+    // A `javascript:` or `data:` URL rendered as an anchor is a click away from
+    // executing in the page. The document is written by an agent too.
+    for (const hostile of [
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "vbscript:msgbox(1)",
+      "file:///etc/passwd",
+      "www.example.com",
+    ]) {
+      expect(linkify(hostile)).toEqual([{ link: false, value: hostile }]);
+    }
+  });
+
+  it("does not treat markup in the text as markup", () => {
+    // Belt and braces: the caller sets textContent, but the segments must carry the
+    // characters through untouched rather than escaping or dropping them.
+    const nasty = '<img src=x onerror="alert(1)">';
+    expect(linkify(nasty)).toEqual([{ link: false, value: nasty }]);
   });
 });

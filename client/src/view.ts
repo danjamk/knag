@@ -57,6 +57,62 @@ function stripCR(text: string): string {
   return text.endsWith("\r") ? text.slice(0, -1) : text;
 }
 
+// ── Linkify ──────────────────────────────────────────────────────────────────
+
+export type Segment = { link: boolean; value: string };
+
+/** `http`/`https` only. A bare `www.` or a `javascript:` URL is text, not a link. */
+const URL_PATTERN = /https?:\/\/\S+/g;
+
+/**
+ * Trailing characters that are almost always sentence punctuation rather than part
+ * of the address. Closing brackets are handled separately — they *can* be part of a
+ * URL, so they only come off when nothing opened them.
+ */
+const TRAILING_PUNCTUATION = /[.,;:!?'"]+$/;
+
+/**
+ * Split text into plain and link segments.
+ *
+ * 🔴 Returns data, never markup. The obvious implementation replaces matches with an
+ * `<a>` string and assigns `innerHTML` — which makes every note an injection vector,
+ * and this document is written by an agent as well as by a human. The caller builds
+ * real nodes and sets `textContent` on each.
+ *
+ * 🔴 The segments must concatenate back to the input exactly. A linkifier that eats
+ * a character, or trims one, corrupts what the row displays relative to what the
+ * document holds. Asserted as a property over arbitrary text.
+ */
+export function linkify(text: string): Segment[] {
+  const segments: Segment[] = [];
+  let cursor = 0;
+
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const start = match.index;
+    let url = match[0];
+
+    // "see https://example.com." — the period ends the sentence, not the address.
+    url = url.replace(TRAILING_PUNCTUATION, "");
+    // "(https://example.com)" — but keep the paren in a Wikipedia-style URL that
+    // opened one itself.
+    while (url.length > 0) {
+      const last = url[url.length - 1] as string;
+      const opener = last === ")" ? "(" : last === "]" ? "[" : null;
+      if (!opener || url.includes(opener)) break;
+      url = url.slice(0, -1);
+    }
+
+    if (url.length === 0) continue;
+
+    if (start > cursor) segments.push({ link: false, value: text.slice(cursor, start) });
+    segments.push({ link: true, value: url });
+    cursor = start + url.length;
+  }
+
+  if (cursor < text.length) segments.push({ link: false, value: text.slice(cursor) });
+  return segments;
+}
+
 // ── View preference ──────────────────────────────────────────────────────────
 
 export type ViewMode = "list" | "raw";
