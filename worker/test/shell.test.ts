@@ -100,8 +100,27 @@ describe("PWA shell (spec §9)", () => {
     expect(styles()).toContain('li.checkbox input[type="checkbox"]');
   });
 
-  it("offers all three theme options through one control", () => {
-    expect(shell()).toContain("data-theme-toggle");
+  it("offers all three theme options explicitly", () => {
+    // A cycling icon made you tap twice to find out what the third option was.
+    for (const theme of ["system", "light", "dark"]) {
+      expect(shell()).toContain(`data-theme-set="${theme}"`);
+    }
+  });
+
+  it("keeps the footer to three controls", () => {
+    // 🔴 The footer is the only chrome in the app and sits right above the keyboard.
+    // Every control here is one the reader steps over to reach the document. Rare
+    // things belong in settings; this is the line that stops them creeping back.
+    const footer = /<footer>([\s\S]*?)<\/footer>/.exec(shell())?.[1] ?? "";
+    expect(footer.match(/<button/g)).toHaveLength(3);
+  });
+
+  it("puts build info in settings, one tap away rather than buried", () => {
+    // It left the footer to make room, but "is my change live" already cost a round
+    // trip once (#37) and must not cost another.
+    for (const field of ["version", "env", "commit", "when"]) {
+      expect(shell()).toContain(`data-build-${field}`);
+    }
   });
 
   it("declares a theme colour matching the background", () => {
