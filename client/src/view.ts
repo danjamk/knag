@@ -45,7 +45,7 @@ export function rows(blocks: Block[]): Row[] {
     // The trailing `\r` of a CRLF document is stripped for display only — it is
     // invisible in an input but would be edited by accident, and `setText` puts the
     // block's own line ending back on commit.
-    text: stripCR(block.kind === "checkbox" ? (block.text ?? "") : block.raw),
+    text: displayText(block),
     ...(block.kind === "checkbox" ? { checked: block.checked === true } : {}),
     // Fences span lines, so a single-line editor would flatten them; blanks have
     // nothing to edit. Raw view is where both belong (spec §7).
@@ -53,8 +53,20 @@ export function rows(blocks: Block[]): Row[] {
   }));
 }
 
-function stripCR(text: string): string {
+export function stripCR(text: string): string {
   return text.endsWith("\r") ? text.slice(0, -1) : text;
+}
+
+/**
+ * What a row's editor contains — the task text for a checkbox, the source line for
+ * anything else, minus the display-only carriage return.
+ *
+ * 🔴 Every caret offset in `edit.ts` is an index into *this* string, not into
+ * `block.raw`. On a checkbox those differ by the length of the `- [ ] ` prefix, and
+ * confusing them puts the caret six characters from where the user left it.
+ */
+export function displayText(block: Block): string {
+  return stripCR(block.kind === "checkbox" ? (block.text ?? "") : block.raw);
 }
 
 // ── Reorder ──────────────────────────────────────────────────────────────────

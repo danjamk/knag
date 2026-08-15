@@ -233,19 +233,38 @@ export function toggle(block: Block): Block {
  * raw view is where multi-line edits belong (spec §7).
  */
 export function setText(block: Block, text: string): string {
+  return lineFor(block, text) + eolOf(block);
+}
+
+/**
+ * The line body — prefix plus text — with **no line ending**.
+ *
+ * Split needs this: the ending belongs to the second half of a split line, so the
+ * first half must be built without one. Composing it out of `setText` and stripping
+ * afterwards is what the original version did, and it deleted a `\r` that was part
+ * of the *content* rather than the ending.
+ */
+export function lineFor(block: Block, text: string): string {
   if (block.kind === "fence") {
-    throw new Error("setText() cannot edit a fence — use raw view");
+    throw new Error("lineFor() cannot edit a fence — use raw view");
   }
-
-  // Whatever line ending the block already had, regardless of which kind it is.
-  const eol = block.raw.endsWith("\r") ? "\r" : "";
-  const content = text.endsWith("\r") ? text.slice(0, -1) : text;
-
   if (block.kind === "checkbox") {
-    return `${block.indent}${block.marker} [${block.box}] ${content}${eol}`;
+    return `${block.indent}${block.marker} [${block.box}] ${text}`;
   }
+  return text;
+}
 
-  return `${content}${eol}`;
+/**
+ * Whatever line ending the block already had.
+ *
+ * 🔴 Note what is *not* here: the first version also stripped a trailing `\r` from
+ * the caller's text, on the assumption that it was a line ending arriving by
+ * accident. It cannot be — callers pass display text, which never contains one. What
+ * it did instead was silently delete a `\r` that was genuine content, which a
+ * property test found by splitting a line immediately after one.
+ */
+export function eolOf(block: Block): string {
+  return block.raw.endsWith("\r") ? "\r" : "";
 }
 
 /**
