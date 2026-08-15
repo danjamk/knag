@@ -66,11 +66,12 @@ writing to a column that no longer exists, against the only copy of the document
 `ENV=dev` is the default for every target. Production ships from Actions →
 Deploy to production, manually. Tagging a release does not deploy anything.
 
-**knag is in build mode.** Stay on `0.1.x` and bump the **patch** in every PR. No
-`CHANGELOG.md`, no tags, no GitHub Releases until the shape stops moving — then cap
-the phase with a real `0.1.<final>` and start release discipline properly. The build
-id in `/health` is mandatory regardless; it is the part that pays for itself
-immediately. Full doctrine:
+**knag is in release mode**, as of `v0.1.11` — the cap on the build phase. That
+means the version bump **and** a `CHANGELOG.md` entry land *in the feature PR*, not
+at release time when the reason for the change has been forgotten. After merge:
+a `vX.Y.Z` tag and a GitHub Release with curated notes, never a raw commit dump.
+
+Next feature starts `0.2.0`. Full doctrine:
 `~/yukon/claude-shared/docs/guides/versioning-and-releases.md`.
 
 Every deployment reports `<version>+<shortsha>`, when it was deployed, and **which
