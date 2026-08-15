@@ -39,7 +39,14 @@ let dirty = false;
 let focused = false;
 
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
-let lastEditAt = Number.NEGATIVE_INFINITY;
+/**
+ * Last local activity: an edit, a load, or the window regaining focus.
+ *
+ * 🔴 Initialised to "now" at boot rather than to -Infinity. Opening the document is
+ * an act of attention, and a freshly loaded tab with no edits would otherwise land in
+ * the 60s tier and look broken next to a device you *are* typing on.
+ */
+let lastActivityAt = Date.now();
 
 /**
  * A remote update that arrived while the editor was dirty or focused.
@@ -135,7 +142,7 @@ function schedulePoll(): void {
 
   const interval = pollInterval({
     visible: document.visibilityState === "visible",
-    msSinceEdit: Date.now() - lastEditAt,
+    msSinceActivity: Date.now() - lastActivityAt,
   });
   if (interval === null) return;
 
@@ -145,8 +152,15 @@ function schedulePoll(): void {
   }, interval);
 }
 
-/** Poll now, then resume the normal cadence. What makes device-switching feel live. */
+/**
+ * Poll now, then resume the normal cadence. What makes device-switching feel live.
+ *
+ * Counts as activity: coming back to a window is attention, and the tab should be in
+ * the fast tier while you are looking at it rather than on the 60s tier it backed off
+ * to while you were elsewhere.
+ */
 async function pollNow(): Promise<void> {
+  lastActivityAt = Date.now();
   stopPolling();
   await poll();
   schedulePoll();
@@ -206,7 +220,7 @@ async function save(): Promise<void> {
 
 function scheduleSave(): void {
   dirty = true;
-  lastEditAt = Date.now();
+  lastActivityAt = Date.now();
   setStatus("Editing…");
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => void save(), SAVE_DEBOUNCE_MS);

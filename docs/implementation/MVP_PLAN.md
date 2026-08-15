@@ -302,10 +302,37 @@ honours them needs a device. Manual check is in the issue.
   reports its own failures — a toast per dropped poll on a flaky connection is
   noise, not information.
 
-**Deployed to dev 2026-08-15.** Bundle 3.5kb → 5.5kb.
+**Deployed to dev 2026-08-15.** Bundle 3.5kb → 5.6kb.
 
 🔴 **The two-device test is outstanding and cannot be replaced by a unit test.**
 The suite pins the decisions; it cannot pin what the caret does in Safari.
+
+### Two bugs the manual test found that 150 passing tests did not
+
+Reported as "sync only works after a page reload, and only one way". One root
+cause each, both mine, both invisible to the suite because neither is a decision
+the pure functions make.
+
+- **The service worker was cache-first with a hand-bumped constant.** `CACHE`
+  was a literal with a comment saying it "has to change whenever the shell
+  changes" — and nothing made it change. Every deploy left the browser running
+  the *previous* `app.js` until a manual reload, so #6's polling appeared absent.
+  **A design that depends on remembering to bump a literal is a design that
+  fails.** Now network-first with cache fallback: the cache exists so the app
+  opens offline, not so it can serve last week's code. Correctness no longer
+  depends on the constant at all.
+- **The poll tier was measured from the last *edit*.** A tab opened but not typed
+  in had no edit to measure from, landed in the 60s tier, and looked broken next
+  to the device being typed on — which reads exactly as "syncs one way". Now
+  measured from **activity**: an edit, a page load, or the window regaining focus.
+  Opening a document is an act of attention. The backoff still applies two minutes
+  later.
+
+The budget test was also modelling the wrong day — it counted one editing session
+and ignored that every refocus restarts the fast tier, reporting roughly half the
+real traffic. Corrected to 30 bursts/day: ~3,450 per device, ~10,350 across three,
+against a 100k ceiling. **A budget test that models the wrong usage pattern is
+worse than none, because it reads as headroom that is not there.**
 
 **Watch for:** this phase contains the only catastrophic data-loss path in the
 product. The two-device test is not optional and cannot be replaced by a unit
