@@ -150,7 +150,7 @@ describe("conflict", () => {
     expect(doc.version).toBe(SEEDED_VERSION + 1);
   });
 
-  it("lets exactly one of two simultaneous writes win", async () => {
+  it("lets exactly one of two simultaneous requests win", async () => {
     const [a, b] = await Promise.all([
       put({ body: "from the phone", base_version: SEEDED_VERSION }),
       put({ body: "from the mac", base_version: SEEDED_VERSION }),
@@ -160,6 +160,25 @@ describe("conflict", () => {
     expect(statuses).toEqual([200, 409]);
 
     // One bump, not two — the loser must not have applied on top.
+    expect((await readDocument(env)).version).toBe(SEEDED_VERSION + 1);
+  });
+
+  it("lets exactly one of two writes that both read the same version win", async () => {
+    // 🔴 Two requests through SELF.fetch do NOT reach this state — the runtime
+    // serializes them, so the second one's *read* already sees the bump and it
+    // conflicts before the UPDATE is ever reached. That test therefore pins the
+    // base_version check and says nothing about the compare-and-swap.
+    //
+    // Called directly, the two awaits interleave: both read version 1, both proceed
+    // past the base check, and the `AND version = ?` in the UPDATE is the only thing
+    // standing between here and a silent overwrite. Weaken that clause and this test
+    // returns two `applied` — verified, not assumed.
+    const [a, b] = await Promise.all([
+      writeDocument(env, { body: "from the phone", baseVersion: SEEDED_VERSION, source: "pwa" }),
+      writeDocument(env, { body: "from the mac", baseVersion: SEEDED_VERSION, source: "agent" }),
+    ]);
+
+    expect([a.status, b.status].sort()).toEqual(["applied", "conflict"]);
     expect((await readDocument(env)).version).toBe(SEEDED_VERSION + 1);
   });
 });

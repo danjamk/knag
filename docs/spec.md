@@ -642,6 +642,13 @@ real migrations applied. Mocking a binding tests the mock.
 
 `pnpm test:security` runs `auth.test.ts` alone so it can be run in isolation.
 
+**`worker/test/setup.ts` resets the bindings and re-applies the migrations before
+every test, and that is load-bearing.** vitest-pool-workers dropped the automatic
+per-test storage stack in 0.18, so without it each test inherits the previous
+one's document — which in a suite about version numbers produces failures that
+all look like logic bugs. Any new suite gets this for free; nothing gets to opt
+out of it.
+
 ### Make targets
 
 `make help` is enough to work the project.
