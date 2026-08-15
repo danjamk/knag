@@ -26,7 +26,7 @@ import {
   toggle,
 } from "../../worker/src/blocks.js";
 import { mayApplyRemote, pollInterval } from "./sync.js";
-import { type ViewMode, readView, rows, writeView } from "./view.js";
+import { type ViewMode, linkify, readView, rows, writeView } from "./view.js";
 
 type Doc = { body: string; version: number; updated_at: string };
 
@@ -142,21 +142,56 @@ function paintRows(): void {
   if (clearButton) clearButton.textContent = `clear ${completed} done`;
 }
 
+/** `⠿`, the drag initiator. Inert until #13 wires SortableJS to it. */
+function gripElement(): HTMLSpanElement {
+  const grip = document.createElement("span");
+  grip.className = "grip";
+  grip.textContent = "⠿";
+  grip.setAttribute("aria-hidden", "true");
+  return grip;
+}
+
+/**
+ * Always visible, never on hover — there is no hover on touch (spec §7).
+ *
+ * Copies what the row displays: a checkbox row without its `- [ ] ` prefix, a fenced
+ * block whole. That is `row.text` in both cases, because `rows()` already made that
+ * distinction for rendering.
+ */
+function copyElement(text: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "copy";
+  button.textContent = "⧉";
+  button.title = "copy";
+  button.dataset.copy = text;
+  return button;
+}
+
 function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   const li = document.createElement("li");
   li.className = row.kind;
   li.dataset.index = String(row.index);
 
-  if (row.kind === "blank") return li;
+  // A blank row still gets a grip: it is a block, it reorders like one, and spacing
+  // that cannot be moved is spacing that fights you (spec §14.1).
+  if (row.kind === "blank") {
+    li.append(gripElement());
+    return li;
+  }
 
   if (row.kind === "fence") {
+    li.append(gripElement());
     const pre = document.createElement("pre");
     // 🔴 textContent, never innerHTML. The document is authored by a human *and* by
     // an agent, and one `<img onerror>` in a note would otherwise execute here.
     pre.textContent = row.text;
-    li.append(pre);
+    li.append(pre, copyElement(row.text));
     return li;
   }
+
+  // Left to right: grip, checkbox, text, copy (spec §7).
+  li.append(gripElement());
 
   if (row.kind === "checkbox") {
     if (row.checked) li.classList.add("checked");
@@ -169,9 +204,26 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
 
   const text = document.createElement("span");
   text.className = "text";
-  text.textContent = row.text;
   if (row.editable) text.tabIndex = 0;
-  li.append(text);
+
+  // 🔴 Real nodes from segments, never an innerHTML string with `<a>` spliced in.
+  // `linkify` returns data precisely so this stays a textContent assignment per
+  // segment — the document is authored by an agent as well as by a human.
+  for (const segment of linkify(row.text)) {
+    if (!segment.link) {
+      text.append(document.createTextNode(segment.value));
+      continue;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = segment.value;
+    anchor.textContent = segment.value;
+    anchor.target = "_blank";
+    // Without noopener the opened page gets a handle on this one via window.opener.
+    anchor.rel = "noopener noreferrer";
+    text.append(anchor);
+  }
+
+  li.append(text, copyElement(row.text));
   return li;
 }
 
@@ -527,15 +579,45 @@ clearButton?.addEventListener("click", async () => {
   }
 });
 
-// Delegated, so it survives every repaint. Only the text span opens an editor —
-// tapping the row elsewhere must stay inert, because the grip and copy controls land
-// in the same row in #11 and #13.
+// Delegated, so it survives every repaint.
 rowsEl?.addEventListener("click", (event) => {
   const target = event.target;
-  if (target instanceof HTMLElement && target.classList.contains("text") && target.tabIndex === 0) {
-    beginEdit(target);
+  if (!(target instanceof HTMLElement)) return;
+
+  // A link is a link. Tapping one navigates rather than opening the editor — which
+  // does mean a row that is nothing but a URL can only be edited from raw view, and
+  // that is the right trade: a bare URL row is a bookmark, not prose.
+  if (target.closest("a")) return;
+
+  const copy = target.closest<HTMLElement>("[data-copy]");
+  if (copy) {
+    void copyToClipboard(copy.dataset.copy ?? "", copy);
+    return;
   }
+
+  const text = target.closest<HTMLElement>(".text");
+  if (text && text.tabIndex === 0) beginEdit(text);
 });
+
+/**
+ * Copy, with the result shown on the button itself.
+ *
+ * `navigator.clipboard` rejects when the page is not a secure context or the gesture
+ * is not trusted, and a copy that silently does nothing is worse than one that says
+ * so — you find out when you paste.
+ */
+async function copyToClipboard(text: string, button: HTMLElement): Promise<void> {
+  const original = button.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "✓";
+  } catch {
+    button.textContent = "✗";
+  }
+  setTimeout(() => {
+    button.textContent = original;
+  }, 1200);
+}
 
 toggleViewButton?.addEventListener("click", () => {
   // Flush first. Switching views repaints the textarea from `body`, and an unsaved

@@ -449,7 +449,42 @@ Split into three issues, as anticipated below.
 - [x] Rebuilds only the one block; every other block keeps its `raw` verbatim
 - [x] Editing a checkbox row preserves indent, marker, and check state
 
-**#11 — copy, linkify, 380px polish:** not started.
+**#11 — copy, linkify, 380px polish:**
+- [x] Per-row copy button using `navigator.clipboard.writeText`
+- [x] Copy strips the `- [ ] ` prefix; a fenced block copies whole
+- [x] URLs linkified anywhere in a row, opening in a new tab
+- [x] Usable at 380px — grip and copy 28px fixed, text flexes
+- [x] Long text truncates with ellipsis rather than wrapping
+- [x] Clear-completed button in the footer (done in #12)
+
+**Decided during #11:**
+
+- 🔴 **`linkify` returns segments, never markup.** The obvious implementation
+  replaces matches with an `<a>` string and assigns `innerHTML`, which makes every
+  note an injection vector — and this document is written by an agent as well as by
+  a human. The caller builds real nodes and sets `textContent` per segment.
+- 🔴 **`http`/`https` only.** `javascript:`, `data:`, `vbscript:` and `file:` stay
+  plain text. Widening the pattern to any scheme immediately reds that test.
+- **Segments must concatenate back to the input exactly**, asserted as a property
+  over arbitrary text and over generated URL-bearing text. A linkifier that eats or
+  trims one character makes the row display something the document does not contain.
+- **Trailing punctuation comes off the link; a closing bracket only if nothing
+  opened it.** `https://…/Foo_(bar)` keeps its paren — dropping it links to the
+  wrong page — while `(https://…)` does not.
+- **Tapping a link navigates rather than opening the editor.** A row that is nothing
+  but a URL can therefore only be edited from raw view, which is the right trade: a
+  bare URL row is a bookmark, not prose.
+- **The grip ships here, inert.** #13 wires SortableJS to it. Building the row
+  layout once rather than twice is why the four targets land together.
+- **Blank rows get a grip too.** They are blocks and they reorder like blocks —
+  spacing that cannot be moved is spacing that fights you.
+- **Truncate rather than wrap.** A wrapping row stops the list being scannable, and
+  the full text is one tap away in the editor and always present in raw view — so
+  nothing is hidden, only deferred. **This is the most likely thing in the UI to be
+  wrong for real use; it is a deliberate spec §7 call, not an accident.**
+- **A failed copy says so on the button.** `navigator.clipboard` rejects outside a
+  secure context or an untrusted gesture, and a copy that silently does nothing is
+  discovered at paste time.
 
 **Decided during #10:**
 
