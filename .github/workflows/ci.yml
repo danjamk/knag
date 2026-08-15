@@ -35,3 +35,40 @@ jobs:
       # The whole gate, and the same command `make check` runs locally. If CI ever
       # checks something `check` does not, the local gate is a lie.
       - run: pnpm check
+
+  # 🔴 Separate from `check`, deliberately. The WebKit download is ~80MB and adds
+  # about a minute, so making every typecheck pay for it would make the fast gate
+  # slow — and a slow gate is one people stop running.
+  #
+  # It is not optional either. Three bugs have shipped that 263 unit tests could not
+  # see: a CSS specificity conflict, a toolbar that reflowed, and rows clipped to
+  # zero height. All three were found by a human on an iPhone. This job is what
+  # stops the next one costing that.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
+      # right; testing Chromium would report on a browser knag never runs on.
+      - run: pnpm exec playwright install --with-deps webkit
+
+      - run: pnpm test:browser
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-trace
+          path: test-results/
+          retention-days: 7

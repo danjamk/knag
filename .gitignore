@@ -19,3 +19,7 @@ PR_COMMENT.md
 .claude/settings.local.json
 .claude/settings.local.json.bak
 .claude/skills/*
+
+# Playwright output. Traces are large and per-run.
+test-results/
+playwright-report/

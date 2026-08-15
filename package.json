@@ -1,6 +1,6 @@
 {
   "name": "knag",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "description": "One plain-text document, always live, edited from any device and by the agent",
   "license": "MIT",
@@ -20,9 +20,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:security": "vitest run worker/test/auth.test.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p client/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p browser/tsconfig.json",
     "check": "pnpm typecheck && pnpm test",
-    "deploy": "wrangler deploy --config worker/wrangler.jsonc"
+    "deploy": "wrangler deploy --config worker/wrangler.jsonc",
+    "test:browser": "playwright test"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -33,6 +34,8 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.4",
     "@cloudflare/workers-types": "^5.20260714.1",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.2.0",
     "@types/sortablejs": "^1.15.9",
     "esbuild": "^0.25.0",
     "fast-check": "^4.9.0",

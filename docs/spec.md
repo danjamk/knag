@@ -776,6 +776,29 @@ real migrations applied. Mocking a binding tests the mock.
 
 `pnpm test:security` runs `auth.test.ts` alone so it can be run in isolation.
 
+### Browser tests
+
+`pnpm test:browser` — Playwright against **WebKit**, in `browser/`. Separate from
+`pnpm check` because the browser download is ~80MB; its own CI job.
+
+🔴 **WebKit specifically.** iOS mandates it, so Safari's engine is the one that
+has to be right. Chromium would report on a browser knag never runs on.
+
+It covers what the vitest suite structurally cannot reach — rendering, geometry,
+visibility, focus, caret — and deliberately **not** logic. The parser, the typing
+model and the sync policy are pure functions with their own tests; routing them
+through a browser would be slower and no more true.
+
+It exists because three bugs shipped that 263 green unit tests could not see: a
+CSS specificity conflict that collapsed every checkbox row's text, a toolbar
+control that changed shape after first use, and rows clipped to zero height
+because the first paint happened into a hidden container. All three were found by
+a human on an iPhone.
+
+The suite runs against `wrangler dev` on `http://localhost`, which also exercises
+the one branch no deployment can: the session cookie drops `Secure` on loopback
+(§5), and until now nothing tested it.
+
 **`worker/test/setup.ts` resets the bindings and re-applies the migrations before
 every test, and that is load-bearing.** vitest-pool-workers dropped the automatic
 per-test storage stack in 0.18, so without it each test inherits the previous
