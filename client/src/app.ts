@@ -17,6 +17,8 @@
  * parser, not two. See spec §2.
  */
 
+import { mayApplyRemote, pollInterval } from "./sync.js";
+
 type Doc = { body: string; version: number; updated_at: string };
 
 const SAVE_DEBOUNCE_MS = 800;
@@ -31,8 +33,21 @@ const buildEl = document.querySelector<HTMLElement>("[data-build]");
 /** The version we believe we are editing. Every write carries it (spec §6). */
 let baseVersion = 0;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
-/** True between an edit and its save landing. The dirty guard in #6 builds on this. */
+/** True between an edit and its save landing. Half of the dirty guard. */
 let dirty = false;
+/** The other half. Focus alone blocks a remote update — see `mayApplyRemote`. */
+let focused = false;
+
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
+let lastEditAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * A remote update that arrived while the editor was dirty or focused.
+ *
+ * 🔴 Held, not dropped and not applied. Dropping it means the device silently stops
+ * converging; applying it means the caret jumps mid-keystroke (spec §6).
+ */
+let pendingRemote: Doc | null = null;
 
 function setStatus(text: string): void {
   if (statusEl) statusEl.textContent = text;
@@ -61,7 +76,80 @@ function render(doc: Doc): void {
   editor.value = doc.body;
   baseVersion = doc.version;
   dirty = false;
+  pendingRemote = null;
   setStatus("Saved");
+}
+
+// ── Polling (spec §6, §14.4) ─────────────────────────────────────────────────
+
+/**
+ * Fetch and either apply or queue.
+ *
+ * `If-None-Match` carries the version we are holding, so an unchanged document costs
+ * a 304 with no body and the dirty-guard path is never reached at all — which is
+ * what keeps a day-long tab inside the free tier (spec §14.4).
+ */
+async function poll(): Promise<void> {
+  try {
+    const res = await fetch("/api/doc", {
+      headers: { Accept: "application/json", "If-None-Match": `"${baseVersion}"` },
+    });
+
+    if (res.status === 304) return;
+    if (res.status === 401) {
+      stopPolling();
+      showEditor(false);
+      return;
+    }
+    if (!res.ok) return;
+
+    const doc = (await res.json()) as Doc;
+    if (doc.version === baseVersion) return;
+
+    if (mayApplyRemote({ dirty, focused })) {
+      render(doc);
+      setStatus("Updated from another device");
+    } else {
+      // Queued. Applied on blur, or subsumed by the 409 the pending local save is
+      // about to get — either way the device converges without the caret moving.
+      pendingRemote = doc;
+    }
+  } catch {
+    // A failed poll is not worth surfacing; the next one is seconds away and the
+    // save path reports its own failures.
+  }
+}
+
+function stopPolling(): void {
+  clearTimeout(pollTimer);
+  pollTimer = undefined;
+}
+
+/**
+ * Reschedule from the current state. Called after every poll and on every event that
+ * could change the tier, so the interval always reflects now rather than whenever the
+ * timer was last set.
+ */
+function schedulePoll(): void {
+  stopPolling();
+
+  const interval = pollInterval({
+    visible: document.visibilityState === "visible",
+    msSinceEdit: Date.now() - lastEditAt,
+  });
+  if (interval === null) return;
+
+  pollTimer = setTimeout(async () => {
+    await poll();
+    schedulePoll();
+  }, interval);
+}
+
+/** Poll now, then resume the normal cadence. What makes device-switching feel live. */
+async function pollNow(): Promise<void> {
+  stopPolling();
+  await poll();
+  schedulePoll();
 }
 
 // ── Saving ───────────────────────────────────────────────────────────────────
@@ -74,9 +162,8 @@ function render(doc: Doc): void {
  * this project, and the 409 carries the current body precisely so that a second
  * round trip is unnecessary (spec §5, §6).
  *
- * Losing the local edit on conflict is deliberate for now and only survivable
- * because this is a single user on a debounce: #6 adds the dirty guard that stops a
- * remote update landing mid-keystroke.
+ * A 409 also subsumes anything sitting in `pendingRemote`: the server's copy is by
+ * definition at least as new as whatever the poll saw, so `render` clears the queue.
  */
 async function save(): Promise<void> {
   if (!editor) return;
@@ -119,10 +206,35 @@ async function save(): Promise<void> {
 
 function scheduleSave(): void {
   dirty = true;
+  lastEditAt = Date.now();
   setStatus("Editing…");
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => void save(), SAVE_DEBOUNCE_MS);
+  // An edit moves us into the fast tier, and the running timer was scheduled under
+  // the old one.
+  schedulePoll();
 }
+
+// ── Wiring ───────────────────────────────────────────────────────────────────
+
+editor?.addEventListener("input", scheduleSave);
+editor?.addEventListener("focus", () => {
+  focused = true;
+});
+
+editor?.addEventListener("blur", () => {
+  focused = false;
+
+  // Order matters. A dirty save goes first: if the document moved on underneath us
+  // its 409 carries the newer copy, which is at least as new as anything queued, so
+  // the queue would be stale. Only when there is nothing to save does the queued
+  // update get applied directly.
+  if (dirty) {
+    saveNow();
+    return;
+  }
+  applyPendingRemote();
+});
 
 function saveNow(): void {
   if (!dirty) return;
@@ -130,17 +242,26 @@ function saveNow(): void {
   void save();
 }
 
-// ── Wiring ───────────────────────────────────────────────────────────────────
-
-editor?.addEventListener("input", scheduleSave);
-editor?.addEventListener("blur", saveNow);
+function applyPendingRemote(): void {
+  if (!pendingRemote) return;
+  render(pendingRemote);
+  setStatus("Updated from another device");
+}
 
 // iOS does not reliably fire blur when the app is backgrounded or swiped away, so
 // this is the handler that actually catches "left mid-sentence" on the device this
-// product is built for.
+// product is built for. Polling stops while hidden and resumes with an immediate
+// fetch, which is what makes picking up another device feel live.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") saveNow();
+  if (document.visibilityState === "hidden") {
+    saveNow();
+    stopPolling();
+    return;
+  }
+  void pollNow();
 });
+
+window.addEventListener("focus", () => void pollNow());
 
 loginForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -169,6 +290,7 @@ loginForm?.addEventListener("submit", async (event) => {
       if (authedDoc) {
         render(authedDoc);
         showEditor(true);
+        schedulePoll();
       }
       return;
     }
@@ -189,6 +311,7 @@ const doc = await load();
 if (doc) {
   render(doc);
   showEditor(true);
+  schedulePoll();
 } else {
   showEditor(false);
 }

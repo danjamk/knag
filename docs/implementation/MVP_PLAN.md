@@ -272,11 +272,40 @@ honours them needs a device. Manual check is in the issue.
 **Spec:** §6, §14.4 · **Size:** 1 day · **Depends:** P4
 
 **Done when:**
-- [ ] Adaptive interval: 4s recent-edit → 15s idle 2–15min → 60s idle >15min → stopped when hidden
-- [ ] Immediate refetch on `visibilitychange` → visible and on `window.focus`
-- [ ] `If-None-Match` sent; a 304 skips the dirty-guard path entirely
-- [ ] **A remote update is never applied while the editor is dirty or focused** — queued, applied on blur
+- [x] Adaptive interval: 4s recent-edit → 15s idle 2–15min → 60s idle >15min → stopped when hidden
+- [x] Immediate refetch on `visibilitychange` → visible and on `window.focus`
+- [x] `If-None-Match` sent; a 304 skips the dirty-guard path entirely
+- [x] **A remote update is never applied while the editor is dirty or focused** — queued, applied on blur
 - [ ] Two-device test: one left open overnight, the 409 path confirmed by hand
+
+**Decided during implementation:**
+
+- **The decisions live in `client/src/sync.ts`, pure and tested.** Inside event
+  handlers they would be untestable, and both fail silently when wrong: an interval
+  tier that never backs off quietly burns the free tier, and a dirty guard with one
+  case missing corrupts an edit in progress. `client/test/` runs in the same
+  workers pool because the module has no DOM — the day a client test needs a
+  document, that stops being true and the config needs splitting into projects.
+- **The guard covers *focused*, not only *dirty*.** Assigning `textarea.value`
+  resets the selection, so a poll landing between two keystrokes throws the caret
+  to the end of the document even when nothing has been typed in this focus yet.
+  Guarding on `dirty` alone lets that through, and it is invisible in review.
+- **A queued update is held, never dropped.** Dropping it means the device silently
+  stops converging.
+- **On blur, a dirty save goes first and the queue is not applied.** If the
+  document moved on underneath us, the save's 409 carries a copy at least as new as
+  anything queued — so applying the queue first would render something already
+  stale. `render()` clears the queue for the same reason.
+- **Boundaries belong to the slower tier.** Exactly two minutes idle backs off to
+  15s. Defensible either way; the test exists so it is not accidental.
+- **A failed poll is silent.** The next one is seconds away and the save path
+  reports its own failures — a toast per dropped poll on a flaky connection is
+  noise, not information.
+
+**Deployed to dev 2026-08-15.** Bundle 3.5kb → 5.5kb.
+
+🔴 **The two-device test is outstanding and cannot be replaced by a unit test.**
+The suite pins the decisions; it cannot pin what the caret does in Safari.
 
 **Watch for:** this phase contains the only catastrophic data-loss path in the
 product. The two-device test is not optional and cannot be replaced by a unit

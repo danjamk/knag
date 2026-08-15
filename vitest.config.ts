@@ -53,7 +53,11 @@ export default defineConfig({
   ],
 
   test: {
-    include: ["worker/test/**/*.test.ts"],
+    // `client/test` holds pure logic only — no DOM, no fetch — so it runs in the same
+    // workers pool as everything else rather than earning a second environment. The
+    // moment a client test needs a document, that stops being true and this needs
+    // splitting into projects.
+    include: ["worker/test/**/*.test.ts", "client/test/**/*.test.ts"],
     // Applies worker/migrations against the real Miniflare D1 and resets it between
     // tests. Real D1, real schema — mocking a binding tests the mock.
     setupFiles: ["./worker/test/setup.ts"],
