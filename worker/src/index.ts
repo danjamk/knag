@@ -6,7 +6,8 @@ import {
   unauthorized,
 } from "./auth.js";
 import { type Env, buildInfo } from "./env.js";
-import { type DocumentSource, readDocument, writeDocument } from "./store.js";
+import { isCompleted, parse, serialize } from "./blocks.js";
+import { type DocumentSource, clearCompleted, readDocument, writeDocument } from "./store.js";
 
 /**
  * knag — one plain-text document, always live.
@@ -42,6 +43,19 @@ export default {
         );
       }
       return login(request, env);
+    }
+
+    if (url.pathname === "/api/doc/clear-completed") {
+      const principal = await authenticate(request, env);
+      if (!principal) return unauthorized();
+
+      if (request.method !== "POST") {
+        return Response.json(
+          { error: "Method not allowed" },
+          { status: 405, headers: { Allow: "POST" } },
+        );
+      }
+      return clear(request, env, principal);
     }
 
     if (url.pathname === "/api/doc") {
@@ -108,6 +122,69 @@ function loginFailed(request: Request, reason: string): Response {
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
   console.warn(`login failed from ${ip}: ${reason}`);
   return unauthorized();
+}
+
+/**
+ * Sweep the checked items (spec §5, §14.2).
+ *
+ * The parse lives here rather than in `store.ts` — the store owns SQL and the order
+ * of operations, this owns what "completed" means. That is `kind === 'checkbox' &&
+ * checked`, **at any indentation level**, and nothing else: a nested done item is
+ * still done, and a line that merely looks like a checkbox was never one.
+ *
+ * Serialization is `blocks.map(b => b.raw).join('\n')` over the survivors, so every
+ * line that stays is written back from its untouched source — indentation, markers,
+ * trailing whitespace and CRLF included.
+ */
+async function clear(request: Request, env: Env, principal: Principal): Promise<Response> {
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "Body must be JSON" }, { status: 400 });
+  }
+
+  const { base_version: baseVersion } = (payload ?? {}) as Record<string, unknown>;
+  if (typeof baseVersion !== "number" || !Number.isInteger(baseVersion) || baseVersion < 0) {
+    return Response.json({ error: "base_version must be a non-negative integer" }, { status: 400 });
+  }
+
+  const current = await readDocument(env);
+  const blocks = parse(current.body);
+  const completed = blocks.filter(isCompleted);
+
+  // Nothing to do. Reported as success with a count of zero rather than as an error:
+  // the caller asked for the checked items to be gone, and they are.
+  if (completed.length === 0) {
+    return Response.json(
+      { version: current.version, cleared_count: 0 },
+      { headers: { ETag: etagFor(current.version) } },
+    );
+  }
+
+  const result = await clearCompleted(
+    env,
+    {
+      baseVersion,
+      body: serialize(blocks.filter((block) => !isCompleted(block))),
+      // The full source line, not the task text — the done-record should read the
+      // way the document read.
+      clearedLines: completed.map((block) => block.raw),
+      source: sourceFor(principal),
+    },
+  );
+
+  if (result.status === "conflict") {
+    return Response.json(
+      { error: "version_conflict", ...result.current },
+      { status: 409, headers: { ETag: etagFor(result.current.version) } },
+    );
+  }
+
+  return Response.json(
+    { version: result.version, cleared_count: result.cleared_count },
+    { headers: { ETag: etagFor(result.version) } },
+  );
 }
 
 /**

@@ -97,11 +97,14 @@
         color: var(--dim);
         font-size: 0.75rem;
       }
-      [data-toggle-view] {
+      footer button {
         padding: 0.2rem 0.6rem;
         font-size: 0.75rem;
         border-radius: 4px;
       }
+      /* Pushed left of the view toggle so the destructive control is never the one
+         under your thumb by accident. */
+      [data-clear] { margin-left: auto; }
 
       [data-login] {
         display: flex;
@@ -175,6 +178,7 @@
 
       <footer>
         <span data-save-status>—</span>
+        <button type="button" data-clear hidden>clear done</button>
         <button type="button" data-toggle-view>raw</button>
         <span data-build>—</span>
       </footer>

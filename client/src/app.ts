@@ -17,7 +17,7 @@
  * parser, not two. See spec §2.
  */
 
-import { type Block, parse, serialize, toggle } from "../../worker/src/blocks.js";
+import { type Block, isCompleted, parse, serialize, toggle } from "../../worker/src/blocks.js";
 import { mayApplyRemote, pollInterval } from "./sync.js";
 import { type ViewMode, readView, rows, writeView } from "./view.js";
 
@@ -33,6 +33,10 @@ const statusEl = document.querySelector<HTMLElement>("[data-save-status]");
 const buildEl = document.querySelector<HTMLElement>("[data-build]");
 const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
 const toggleViewButton = document.querySelector<HTMLButtonElement>("[data-toggle-view]");
+const clearButton = document.querySelector<HTMLButtonElement>("[data-clear]");
+
+/** Above this many, a sweep gets a confirm. Below it, undo-by-history is enough. */
+const CONFIRM_CLEAR_ABOVE = 10;
 
 /**
  * The current document body, as bytes.
@@ -109,12 +113,26 @@ function paint(): void {
   editor?.toggleAttribute("hidden", view !== "raw");
   rowsEl?.toggleAttribute("hidden", view !== "list");
   if (toggleViewButton) toggleViewButton.textContent = view === "list" ? "raw" : "list";
-  if (view === "list") paintRows();
+
+  if (view === "list") {
+    paintRows();
+    return;
+  }
+  // Raw view is the escape hatch for bulk edits; sweeping from it would act on a
+  // document the reader is mid-way through rewriting by hand.
+  clearButton?.toggleAttribute("hidden", true);
 }
 
 function paintRows(): void {
   if (!rowsEl) return;
-  rowsEl.replaceChildren(...rows(parse(body)).map(rowElement));
+  const blocks = parse(body);
+  rowsEl.replaceChildren(...rows(blocks).map(rowElement));
+
+  // Hidden rather than disabled when there is nothing to sweep: a permanently greyed
+  // destructive button is clutter, and its absence is the clearer signal.
+  const completed = blocks.filter(isCompleted).length;
+  clearButton?.toggleAttribute("hidden", completed === 0);
+  if (clearButton) clearButton.textContent = `clear ${completed} done`;
 }
 
 function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
@@ -362,6 +380,58 @@ rowsEl?.addEventListener("change", (event) => {
   clearTimeout(saveTimer);
   void save();
   schedulePoll();
+});
+
+/**
+ * Sweep the checked items.
+ *
+ * The server does the work — it owns the ordering and the done-record — so this only
+ * asks, and never computes the post-clear body itself. Two implementations of "what
+ * counts as completed" is the same mistake as two parsers.
+ */
+clearButton?.addEventListener("click", async () => {
+  const completed = parse(body).filter(isCompleted).length;
+  if (completed === 0) return;
+
+  // Confirm only above the threshold. Prompting on every sweep trains the reflex that
+  // makes the prompt useless on the one that matters (spec §7).
+  if (completed > CONFIRM_CLEAR_ABOVE && !confirm(`Clear ${completed} completed items?`)) {
+    return;
+  }
+
+  saveNow();
+  setStatus("Clearing…");
+
+  try {
+    const res = await fetch("/api/doc/clear-completed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_version: baseVersion }),
+    });
+
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+
+    if (res.status === 409) {
+      render((await res.json()) as Doc);
+      setStatus("Reloaded — it had changed elsewhere");
+      return;
+    }
+
+    if (!res.ok) throw new Error(String(res.status));
+
+    const { cleared_count: count } = (await res.json()) as { cleared_count: number };
+
+    // Re-read rather than trusting a locally computed result. The server decided what
+    // "completed" meant and rewrote the document; this asks what it actually is.
+    const doc = await load();
+    if (doc) render(doc);
+    setStatus(count === 0 ? "Nothing to clear" : `Cleared ${count}`);
+  } catch {
+    setStatus("Not cleared — nothing was changed");
+  }
 });
 
 toggleViewButton?.addEventListener("click", () => {

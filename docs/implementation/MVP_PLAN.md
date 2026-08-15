@@ -480,13 +480,50 @@ Split into three issues, as anticipated below.
 **Spec:** §5, §14.2 · **Size:** half a day · **Depends:** P6, P7
 
 **Done when:**
-- [ ] Seals the newest revision, inserts a `clear_completed` revision with the pre-clear body, writes `cleared_items`, then updates `documents` — **in one D1 batch**
-- [ ] Removes only blocks where `kind === 'checkbox' && checked`, at any indentation
-- [ ] Returns `{ version, cleared_count }`
-- [ ] Footer button; confirms only above ~10 blocks
+- [x] Seals the newest revision, inserts a `clear_completed` revision with the pre-clear body, writes `cleared_items`, then updates `documents` — **in one D1 batch**
+- [x] Removes only blocks where `kind === 'checkbox' && checked`, at any indentation
+- [x] Returns `{ version, cleared_count }`
+- [x] Footer button; confirms only above ~10 blocks
 
 **Watch for:** a partial clear that seals a revision but loses the `cleared_items`
 write is worse than no clear at all. Test the ordering, not just the result.
+
+**Decided during implementation:**
+
+- 🔴 **Every statement carries the same `version = ?` guard, and the CAS is last.**
+  D1's `batch()` is a transaction but not a *conditional* one, so a mismatched
+  `base_version` would still seal a revision and write `cleared_items` for a sweep
+  that never happened — the authoritative done-record claiming items were finished
+  while they sit unchecked in the document. Guarding every statement on the
+  pre-clear version fixes it: statements 1–3 do not touch `version`, so all four
+  observe the same value, and nothing can interleave inside a transaction.
+- 🔴 **`last_insert_rowid()` does not work inside a D1 batch.** It does not observe
+  an INSERT from an earlier statement in the same batch — it returned a revision id
+  from a *previous request*, silently pointing every cleared item at the wrong row.
+  Rows from the earlier statement *are* visible to a subquery, so `(SELECT max(id)
+  FROM revisions)` resolves correctly. Caught by asserting the foreign key rather
+  than the row count.
+- **The `clear_completed` revision is sealed too.** It is the newest revision after
+  the batch, and an unsealed one would be coalesced into by the next save inside the
+  ten-minute window — overwriting the pre-clear body it exists to preserve.
+- **Nothing to clear is a 200 with `cleared_count: 0`.** The caller asked for the
+  checked items to be gone and they are; bumping a version for a no-op would also
+  invalidate every other client's `base_version` for nothing.
+- **The parse lives in the route, the ordering in the store.** The store owns SQL,
+  the route owns what "completed" means.
+- **The client never computes the post-clear body.** It asks the server and re-reads.
+  Two implementations of "what counts as completed" is the same mistake as two
+  parsers.
+- **The clear button is hidden in raw view** — raw is the escape hatch for bulk
+  edits, and sweeping from it would act on a document being rewritten by hand.
+
+**On testing the guard:** the early `base_version` check catches every stale request
+before the batch, which also hid the per-statement guard from every test. Neutering
+the guard left all 14 tests green. The path that reaches it is **two concurrent
+clears against the same base version** — a clear racing a *write* leaves which call
+loses up to the scheduler, so the loser's side effects only get inspected on some
+runs. With the guard neutered that test now shows 4 `cleared_items` instead of 2:
+a complete phantom sweep.
 
 ---
 
