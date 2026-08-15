@@ -769,10 +769,27 @@ textarea cannot tell prose from a code fence; one element per block can.
 **Spec:** §7 · **Size:** 1 day · **Depends:** P13
 
 **Done when:**
-- [ ] A reorder button swaps rows into drag mode; leaving returns to typing
-- [ ] In the mode: inputs read-only, grips large, a **delete** control per row
-- [ ] Delete removes the whole block and saves — **no confirm**
-- [ ] The always-visible grip from #13 is removed
+- [x] A reorder button swaps rows into drag mode; leaving returns to typing
+- [x] In the mode: inputs read-only, grips large, a **delete** control per row
+- [x] Delete removes the whole block and saves — **no confirm**
+- [x] The always-visible grip from #13 is removed
+
+**Decided during implementation:**
+
+- **The mode is never persisted.** Unlike the view preference, this is something you
+  are *doing*, not something you prefer. Landing in reorder mode after a reload would
+  be exactly the mode problem ADR-003 removed, reintroduced through the back door.
+- **Sortable ships `disabled: true` and is enabled by the mode**, rather than being
+  created and destroyed. One instance, one place that knows whether dragging is on.
+- **`removeAt` drops a whole block**, so a fence goes with its body and its closing
+  marker — dropping a line would leave an orphaned ``` and swallow everything after
+  it into a new unterminated fence. Same reason `move` works on blocks.
+- **Leaving the mode flushes the save**, so the document is settled before the caret
+  goes near it again.
+- **The mode belongs to list view only.** Switching to raw while reordering leaves
+  the mode on with nothing to drag, so `paint` turns it off.
+- **Delete does not confirm**, and that only holds because P6's revision log is
+  intact. A delete that is not recoverable from history is a delete that needed one.
 
 **Watch for:** delete does not confirm because the revision log is the undo. That
 is principle 4 finally paying for itself, and it only works if P6's log is intact.

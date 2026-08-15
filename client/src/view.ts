@@ -94,6 +94,20 @@ export function move<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
+/**
+ * Drop one block, returning a new array.
+ *
+ * 🔴 Removes a **whole block**, so a fence goes with its body and its closing marker
+ * rather than leaving an orphaned ``` behind. Same reason `move` works on blocks.
+ *
+ * Out-of-range is a no-op for the same reason as `move`: the caller is reacting to a
+ * click on a row that a repaint may already have replaced.
+ */
+export function removeAt<T>(items: T[], index: number): T[] {
+  if (!Number.isInteger(index) || index < 0 || index >= items.length) return items;
+  return items.filter((_, i) => i !== index);
+}
+
 // ── Linkify ──────────────────────────────────────────────────────────────────
 
 export type Segment = { link: boolean; value: string };
