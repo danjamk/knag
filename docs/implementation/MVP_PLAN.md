@@ -443,7 +443,34 @@ Split into three issues, as anticipated below.
 - [x] Toggling rewrites `[ ]`↔`[x]` in place and saves immediately
 - [x] Toggle to raw view, persisted per device in `localStorage`
 
-**#10 — tap-to-edit · #11 — copy, linkify, 380px polish:** not started.
+**#10 — tap-to-edit:**
+- [x] Tapping row text becomes a single-line `<input>`
+- [x] Commits on blur or Enter; Escape reverts without saving
+- [x] Rebuilds only the one block; every other block keeps its `raw` verbatim
+- [x] Editing a checkbox row preserves indent, marker, and check state
+
+**#11 — copy, linkify, 380px polish:** not started.
+
+**Decided during #10:**
+
+- **`Block` gained a `box` field** — the literal `" "`, `"x"` or `"X"`. Rebuilding
+  from `checked` alone would normalize `[X]` to `[x]` **every time someone fixed a
+  typo in the text beside it**: a silent rewrite of a line the user did not touch.
+- **`setText` returns a raw line, not a `Block`.** The caller serializes and
+  reparses, and the reparse decides the new kind — typing `- [ ] ` in front of a
+  plain line makes it a checkbox, emptying a line makes it blank. Returning a
+  `Block` would mean guessing the kind here and being wrong somewhere.
+- **Fences are not tap-editable.** They span lines and a single-line field would
+  flatten them; `setText` throws rather than accepting one. Raw view owns multi-line.
+- **The trailing `\r` is stripped for display and re-appended on commit.** It is
+  invisible in an input but present, so it would be edited by accident.
+- **The commit path reparses instead of reusing the block captured on tap.** A
+  remote update can land while the field is open, and editing a stale block writes
+  back a line from a document that no longer exists.
+- **Opening the editor sets `focused`**, so the dirty guard blocks a poll from
+  repainting the row list and destroying the field under the cursor.
+- **An edit that changes nothing repaints and saves nothing** — tapping a row and
+  pressing Enter is a no-op, asserted as a property over arbitrary documents.
 
 **Decided during #9:**
 

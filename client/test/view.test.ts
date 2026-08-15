@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { type Block, parse, serialize, toggle } from "../../worker/src/blocks.js";
+import { type Block, parse, serialize, setText, toggle } from "../../worker/src/blocks.js";
 import { VIEW_KEY, readView, rows, writeView } from "../src/view.js";
 
 describe("rows (spec §7)", () => {
@@ -147,5 +147,44 @@ describe("view preference (spec §8)", () => {
 
     expect(readView(hostile)).toBe("list");
     expect(() => writeView(hostile, "raw")).not.toThrow();
+  });
+});
+
+describe("which rows are editable (spec §7)", () => {
+  it("marks checkbox and text rows editable, fences and blanks not", () => {
+    const blocks = parse("- [ ] a\nplain\n\n```\ncode\n```");
+    const editable = Object.fromEntries(rows(blocks).map((r) => [r.kind, r.editable]));
+
+    // Fences span lines and a single-line editor would flatten them; blanks have
+    // nothing to edit. Raw view owns both.
+    expect(editable).toEqual({ checkbox: true, text: true, blank: false, fence: false });
+  });
+
+  it("strips the display-only carriage return from a CRLF document", () => {
+    // Invisible in an input, but present — so it would be edited by accident and
+    // land back in the document mangled. `setText` re-appends the block's own ending.
+    const [checkbox, text] = rows(parse("- [ ] a\r\nplain\r\n"));
+
+    expect(checkbox?.text).toBe("a");
+    expect(text?.text).toBe("plain");
+  });
+
+  it("round-trips an unedited row back to the identical document", () => {
+    // Tapping a row and pressing Enter without typing must be a no-op, including on
+    // CRLF and on lines with trailing whitespace.
+    fc.assert(
+      fc.property(fc.string({ maxLength: 300, unit: "binary" }), (bodyText) => {
+        const blocks = parse(bodyText);
+        const next = rows(blocks).reduce(
+          (acc, row) =>
+            row.editable
+              ? acc.map((b, i) => (i === row.index ? { ...b, raw: setText(b, row.text) } : b))
+              : acc,
+          blocks,
+        );
+        expect(serialize(next)).toBe(bodyText);
+      }),
+      { numRuns: 500 },
+    );
   });
 });

@@ -85,7 +85,22 @@
       }
       li.checkbox input { flex: none; width: 1.1rem; height: 1.1rem; accent-color: #6b8f6b; }
       li.checkbox.checked .text { text-decoration: line-through; color: #666; }
-      .text { white-space: pre-wrap; word-break: break-word; }
+      .text { flex: 1; white-space: pre-wrap; word-break: break-word; }
+      /* Tappable text gets a target big enough for a thumb without looking like a
+         button — the row is the affordance, not a control. */
+      span.text[tabindex] { cursor: text; }
+      span.text[tabindex]:focus-visible { outline: 1px solid #555; outline-offset: 2px; }
+      /* The inline editor sits exactly where the text was, so nothing shifts on tap. */
+      input.text {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-size: 16px;
+      }
+      input.text:focus { outline: none; }
 
       footer {
         display: flex;
