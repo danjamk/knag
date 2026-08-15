@@ -294,7 +294,10 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   const [first] = linkify(row.text).filter((segment) => segment.link);
   if (first) li.append(openElement(first.value));
 
-  li.append(copyElement(row.text));
+  // A blank row keeps its input — it is a line you can type into, and the arrow keys
+  // visit it — but there is nothing on it to copy. The button was rendering anyway
+  // and showed up as a column of orphaned icons down the right-hand side.
+  if (row.text.length > 0) li.append(copyElement(row.text));
   if (reordering) li.append(removeElement(row.index));
   return li;
 }

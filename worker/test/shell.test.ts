@@ -17,6 +17,9 @@ import { describe, expect, it } from "vitest";
 
 const shell = () => env.TEST_SHELL;
 
+/** Just the stylesheet, so a rule assertion cannot accidentally match the markup. */
+const styles = () => /<style>([\s\S]*?)<\/style>/.exec(shell())?.[1] ?? "";
+
 /**
  * The opening `<textarea>` tag alone.
  *
@@ -73,6 +76,28 @@ describe("PWA shell (spec §9)", () => {
     const outside = styles.replace(/:root[^{]*\{[^}]*\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
     expect(outside.match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull();
+  });
+
+  it("🔴 never styles a bare `input` or `button` globally", () => {
+    // The document is *made of* inputs. A global element selector reaches every row's
+    // text field and every row checkbox, at a specificity that outranks the rules
+    // written for them — which is exactly how a checkbox row's text collapsed to
+    // ~17px and a checkbox rendered at ~45px. Both looked like layout accidents and
+    // neither failed anything.
+    const styles = /<style>([\s\S]*?)<\/style>/.exec(shell())?.[1] ?? "";
+    const rules = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    for (const selector of rules.split("}").map((block) => block.split("{")[0] ?? "")) {
+      for (const part of selector.split(",").map((s) => s.trim())) {
+        expect(part).not.toMatch(/^(input|button|textarea)$/);
+      }
+    }
+  });
+
+  it("scopes the row checkbox rule by input type", () => {
+    // `li.checkbox input` also matches the row's text input. The type selector is
+    // what keeps the two apart.
+    expect(styles()).toContain('li.checkbox input[type="checkbox"]');
   });
 
   it("offers all three theme options through one control", () => {
