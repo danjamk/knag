@@ -289,11 +289,40 @@ test.
 **Spec:** §3 · **Size:** 1 day · **Depends:** P1
 
 **Done when:**
-- [ ] A save within 10 minutes of the newest **unsealed** revision updates it in place
-- [ ] Otherwise inserts a new revision
-- [ ] Sealed revisions are never coalesced into
-- [ ] Full snapshots, not diffs
-- [ ] Tested at the boundary — 9 minutes coalesces, 11 does not
+- [x] A save within 10 minutes of the newest **unsealed** revision updates it in place
+- [x] Otherwise inserts a new revision
+- [x] Sealed revisions are never coalesced into
+- [x] Full snapshots, not diffs
+- [x] Tested at the boundary — 9 minutes coalesces, 11 does not
+
+**Decided during implementation:**
+
+- **A revision snapshots the state *after* the write.** `version` is the version
+  the body became, so the log answers "what did the document look like at version
+  N" and the live row is simply the newest such state.
+- **Migration 0002 seeds a baseline revision from the current document, sealed.**
+  Without it, the one state never recoverable from the log is the state at the
+  moment the log was introduced — the first write after this ships snapshots its
+  own result. Sealed because an unsealed baseline would be coalesced into by the
+  very next save and lose exactly what it exists to preserve. Additive-only; the
+  deployed Worker does not read this table, so the migrate→deploy gap is
+  uneventful.
+- **`created_at` is not bumped on coalesce.** The window runs from when the burst
+  started, not the last keystroke — otherwise continuous typing holds one revision
+  open indefinitely and the log never gains an entry. Pinned by a test.
+- **The window boundary is exclusive**: ten minutes on the nose inserts. Either
+  choice is defensible; the test exists so it is not accidental.
+- **The revision write follows the CAS, never batched with it.** D1's `batch` is a
+  transaction but not a *conditional* one — the revision would apply even when the
+  UPDATE matched zero rows, recording a state that never existed. The cost is a
+  torn write if D1 fails between the two, which surfaces as a 500 rather than a
+  silent gap.
+- **`is_sealed = 0` lives in the WHERE clause**, not in a caller's check — the
+  same shape as session expiry in P2, and for the same reason.
+
+**Applied to dev 2026-08-15.** The baseline captured version 5 (45 bytes), sealed.
+`make backup ENV=dev` first, then migrate, then deploy — the ADR-002 order, run for
+real rather than rehearsed.
 
 ---
 
