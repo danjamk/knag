@@ -2,7 +2,8 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help setup install dev build check test test-security typecheck \
-        migrate deploy verify health logs backup destroy info preflight
+        migrate deploy verify health logs backup destroy info preflight \
+        test-browser
 
 # Command line > .env > default.
 -include .env
@@ -94,6 +95,12 @@ test: ## Run the test suite
 
 test-security: ## Run the auth suite alone
 	@pnpm test:security
+
+# 🔴 Separate from `check` on purpose — the WebKit download is ~80MB and adds about a
+# minute. A gate people stop running is worse than a slower one. This covers what the
+# unit suite structurally cannot: rendering, geometry, visibility, focus and caret.
+test-browser: ## Run the Playwright suite against WebKit
+	@pnpm test:browser
 
 typecheck: ## Typecheck without emitting
 	@pnpm typecheck

@@ -829,6 +829,33 @@ is principle 4 finally paying for itself, and it only works if P6's log is intac
 Spec §12's **Out** list is load-bearing and is not re-opened here. §17 records
 what a larger future would break; it is not MVP work.
 
+## Browser tests (#35)
+
+**Landed 2026-08-15.** Playwright against WebKit, 13 tests, ~20s.
+
+Filed as a good idea, promoted to urgent by evidence. **Three bugs shipped that
+263 green unit tests could not see**, all found by a human on an iPhone:
+
+| Bug | Why the suite was blind |
+|---|---|
+| `li.checkbox input` also matched the text input | CSS specificity — nothing executes |
+| The reorder button changed shape after first use | DOM state after an interaction |
+| Rows clipped to `height: 0` at boot | Geometry, and only when painted while hidden |
+
+**Both regressions were reintroduced to prove the tests catch them** — the boot bug
+reds three tests, the reorder one reds its own. A browser test that has never been
+watched to fail is the most convincing kind of theatre, and this project has already
+shipped three of those.
+
+What the suite covers is rendering, geometry, visibility, focus and caret. What it
+deliberately does **not** cover is logic: the parser, the typing model and the sync
+policy are pure functions with their own tests, and routing them through a browser
+would be slower and no more true.
+
+It also exercises one branch no deployment can — the session cookie dropping `Secure`
+on `http://localhost` (spec §5), which had never been tested and whose regression
+would silently break local development.
+
 ## Decided by use, not by guessing
 
 - **Truncate vs wrap on long rows — resolved: wrap.** Left open through #11 and

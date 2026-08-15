@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // Playwright runs in Node and drives a browser from outside it — so neither the
+    // Workers types nor DOM belong here. Playwright's own types carry everything
+    // these tests touch.
+    "lib": ["es2022"],
+    "types": ["node"]
+  },
+  // playwright.config.ts is included because the specs import the test credentials
+  // from it, and a config that does not typecheck is a config that silently drifts.
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}
