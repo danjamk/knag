@@ -181,7 +181,29 @@ The point of this phase is not the deployment. It is starting the ITP clock.
 - [x] **Date recorded in this file** so day 7 is unambiguous
 - [ ] **Day 7: reopen without touching it in between, confirm still logged in**
 
-**Clock started:** `2026-08-15`  ·  **Verify on:** `2026-08-22`
+**Clock started:** `2026-08-15`  ·  **Verify:** **deferred** — see below
+
+### The clock was deferred on 2026-08-15, deliberately
+
+Holding the phone untouched for a week blocks the more valuable activity: using
+knag on the device it was built for. Deferred rather than dropped.
+
+**The original argument no longer holds as strongly.** This phase existed because
+discovering a dead cookie late would mean eight phases built on a false assumption.
+That risk has largely passed — **nothing since P2 has touched auth.** The entire UX
+revision (#30–#47) was client-side, and the auth surface stayed stable throughout.
+
+**The failure mode also self-reports.** ITP fires only after seven days of
+*inactivity*. If knag is useful, that never happens; if it does, you get logged out
+on open, which is the signal without a test.
+
+**How to run it later, without giving up the phone:** a second iOS device is the
+clean answer — sessions are per-device, so an iPad added to the home screen and left
+alone tests ITP while the iPhone stays in daily use. Failing that, the first natural
+week-long gap *is* the test.
+
+If it ever fails: refresh-on-load token rotation in `auth.ts` and the client boot
+path. Contained, but not free.
 
 **Dev URL:** https://knag-dev.fractional-lab5.workers.dev
 **Dev D1:** `knag-dev` · `ac5d4b49-4556-43bd-abd1-151b01027c4f`
