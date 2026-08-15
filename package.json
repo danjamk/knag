@@ -15,7 +15,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "esbuild client/src/app.ts --bundle --format=esm --target=es2022 --outfile=public/app.js",
+    "build": "esbuild client/src/app.ts --bundle --minify --format=esm --target=es2022 --outfile=public/app.js",
     "dev": "wrangler dev --config worker/wrangler.jsonc",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -33,10 +33,14 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.4",
     "@cloudflare/workers-types": "^5.20260714.1",
+    "@types/sortablejs": "^1.15.9",
     "esbuild": "^0.25.0",
     "fast-check": "^4.9.0",
     "typescript": "^5.7.0",
     "vitest": "^4.1.0",
     "wrangler": "^4.110.0"
+  },
+  "dependencies": {
+    "sortablejs": "1.15.7"
   }
 }

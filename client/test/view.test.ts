@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type Block, parse, serialize, setText, toggle } from "../../worker/src/blocks.js";
-import { VIEW_KEY, linkify, readView, rows, writeView } from "../src/view.js";
+import { VIEW_KEY, linkify, move, readView, rows, writeView } from "../src/view.js";
 
 describe("rows (spec §7)", () => {
   it("emits exactly one row per block, in order", () => {
@@ -277,5 +277,77 @@ describe("linkify (spec §7)", () => {
     // characters through untouched rather than escaping or dropping them.
     const nasty = '<img src=x onerror="alert(1)">';
     expect(linkify(nasty)).toEqual([{ link: false, value: nasty }]);
+  });
+});
+
+describe("move (spec §7, §14.1)", () => {
+  it("moves an element and shifts the rest", () => {
+    expect(move(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
+    expect(move(["a", "b", "c", "d"], 3, 1)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("returns the array unchanged for a no-op or an out-of-range index", () => {
+    const items = ["a", "b", "c"];
+    expect(move(items, 1, 1)).toBe(items);
+    expect(move(items, -1, 0)).toBe(items);
+    expect(move(items, 0, 9)).toBe(items);
+    expect(move(items, 9, 0)).toBe(items);
+    expect(move(items, 0.5, 1)).toBe(items);
+  });
+
+  it("🔴 moves a fenced block as one unit", () => {
+    // The failure this prevents: reordering the *line* array splits a code block's
+    // opening fence from its body and scrambles the document permanently.
+    const body = "first\n```js\ncode one\ncode two\n```\nlast";
+    const blocks = parse(body);
+
+    expect(serialize(move(blocks, 1, 0))).toBe("```js\ncode one\ncode two\n```\nfirst\nlast");
+  });
+
+  it("keeps blank blocks as movable spacing", () => {
+    const blocks = parse("a\n\nb");
+    expect(serialize(move(blocks, 0, 2))).toBe("\nb\na");
+  });
+
+  it("preserves every byte, only reordering", () => {
+    // A reorder must be a permutation of the source lines and nothing else — no
+    // normalization, no lost trailing whitespace, no changed line endings.
+    fc.assert(
+      fc.property(
+        fc.string({ maxLength: 300, unit: "binary" }),
+        fc.nat({ max: 20 }),
+        fc.nat({ max: 20 }),
+        (bodyText, a, b) => {
+          const blocks = parse(bodyText);
+          if (blocks.length === 0) return;
+          const from = a % blocks.length;
+          const to = b % blocks.length;
+
+          const before = blocks.map((x) => x.raw).sort();
+          const after = move(blocks, from, to).map((x) => x.raw).sort();
+          expect(after).toEqual(before);
+        },
+      ),
+      { numRuns: 1000 },
+    );
+  });
+
+  it("round-trips the document when moved back", () => {
+    fc.assert(
+      fc.property(
+        fc.string({ maxLength: 300, unit: "binary" }),
+        fc.nat({ max: 20 }),
+        fc.nat({ max: 20 }),
+        (bodyText, a, b) => {
+          const blocks = parse(bodyText);
+          if (blocks.length === 0) return;
+          const from = a % blocks.length;
+          const to = b % blocks.length;
+
+          expect(serialize(move(move(blocks, from, to), to, from))).toBe(bodyText);
+        },
+      ),
+      { numRuns: 1000 },
+    );
   });
 });
