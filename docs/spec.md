@@ -285,6 +285,56 @@ Returns revisions in range plus derived, per adjacent pair:
 Plus all `cleared_items` in range, which are the authoritative "done" record.
 Line-set diff, not character diff. Trivial to implement, sufficient in practice.
 
+```json
+{
+  "timezone": "America/Chicago",
+  "since": "2026-03-08T06:00:00.000Z",
+  "until": "2026-03-09T05:00:00.000Z",
+  "truncated": false,
+  "days": [
+    { "date": "2026-03-08",
+      "revisions": [
+        { "id": 12, "version": 40, "created_at": "2026-03-08T13:00:00.000Z",
+          "local_time": "08:00", "source": "pwa", "event_type": null,
+          "appeared": ["- [ ] call the bank"], "disappeared": [],
+          "cleared_count": 0 }
+      ],
+      "cleared": [
+        { "id": 3, "revision_id": 12, "line_text": "- [x] laundry",
+          "cleared_at": "2026-03-08T22:00:00.000Z", "local_time": "17:00" }
+      ] }
+  ]
+}
+```
+
+Both parameters take a **bare date** (`2026-03-08`, resolved to local midnight in
+`KNAG_TZ` per §14.3) or a **full ISO instant**. Defaults are the last seven days
+to now. Malformed values and an inverted range are **400**, never an empty
+result — an empty answer to a typo is indistinguishable from a quiet week.
+
+Four things are decided rather than obvious:
+
+- **`until` from a bare date is the *next* local midnight**, so a range is
+  half-open and `since=X&until=X` returns X. The alternative makes the query a
+  human actually types return nothing.
+- **The first revision in range diffs against the last revision before it.** That
+  row is read and never returned. Without it every range opens by reporting the
+  whole document as `appeared`.
+- **Bodies are never returned.** The response grows with what happened, not with
+  the document.
+- **A `clear_completed` entry has an empty diff by construction** — it snapshots
+  the *pre*-clear body, identical to the revision before it (§14.2), and the
+  swept body enters the log on the next ordinary save. `cleared_count` and the
+  day's `cleared` rows are the record of what was finished; the diff is not, and
+  §5 already says so.
+
+Capped at 500 revisions per request, **keeping the newest**, with `truncated`
+saying when the cap bit. `cleared_items` are uncapped — they are single lines.
+
+Day grouping and both boundaries are local (§14.3). No parameter overrides the
+zone: knag has one user in one place, and a second opinion about what "Tuesday"
+means is how the same question starts having two answers.
+
 ---
 
 ## 6. Sync
@@ -683,6 +733,27 @@ after ~7pm local if handled in UTC.
   query. Use `Intl.DateTimeFormat` with `timeZone` — it handles DST, manual
   offset arithmetic does not.
 - Day grouping in results is by local date, not UTC date.
+
+**`Intl.DateTimeFormat` is not enough on its own**, and this is the part that got
+found by writing the tests. It converts an instant *into* a zone; the boundary
+question is the other direction — which instant does this zone's clock read as
+midnight — and there is no API for that. Subtracting "the" offset requires
+knowing the offset, which requires knowing the instant, which is what is being
+computed.
+
+So `zonedInstant` in `worker/src/history.ts` is a **fixed point**: probe, guess,
+re-probe, settle. Luxon's `fixOffset`, followed rather than reinvented. A single
+probe is right for every local midnight in Chicago and wrong by an hour for
+03:30 on a spring-forward morning — which is exactly the kind of thing that
+ships.
+
+**Where a wall time does not exist, knag takes the later instant; Luxon takes the
+earlier.** Chicago transitions at 02:00 so its midnights never hit this, but
+America/Santiago springs forward *at* midnight and `KNAG_TZ` is a var. The later
+instant is the first moment that exists on the requested date; the earlier one
+sits before the date begins and would file the closing hour of the previous day
+under this one — this section's own failure, reintroduced at the one boundary a
+year nobody would look at.
 
 ### 14.4 Polling budget
 
