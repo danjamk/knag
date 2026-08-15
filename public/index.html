@@ -94,6 +94,11 @@
       }
       .copy { cursor: pointer; }
       .copy:active { background: #2a2a2a; }
+      /* The row being dragged. Kept subtle — the movement is the feedback. */
+      li.dragging { opacity: 0.4; background: #1d1d1d; }
+      /* Without this, a drag starting on the grip selects text across rows on
+         desktop and fights the gesture on touch. */
+      .grip { touch-action: none; user-select: none; }
       /* Always visible. There is no hover on touch, so revealing controls on hover
          would make them unreachable on the device this is built for. */
       .grip { cursor: grab; }

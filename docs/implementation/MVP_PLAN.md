@@ -594,10 +594,36 @@ a complete phantom sweep.
 **Spec:** §7 · **Size:** half a day · **Depends:** P8
 
 **Done when:**
-- [ ] SortableJS **vendored and pinned** in `public/vendor/`, not from a CDN
-- [ ] `handle: '.grip'` — the grip is the only drag initiator
-- [ ] Operates on the **block** array; a fence moves as one unit
-- [ ] Blank lines survive a reorder
+- [x] SortableJS **pinned**, not from a CDN — as an npm dependency, see below
+- [x] `handle: '.grip'` — the grip is the only drag initiator
+- [x] Operates on the **block** array; a fence moves as one unit
+- [x] Blank lines survive a reorder
+- [x] Saves immediately on drop
+
+**Decided during implementation:**
+
+- **SortableJS is a pinned npm dependency bundled by esbuild, not a committed
+  `public/vendor/sortable.min.js`.** A deviation from the spec's letter, taken for
+  its own stated reason: the rule exists so the service worker's shell promise
+  stays true, and bundling satisfies that as completely — the library ends up
+  inside `app.js`, already in the shell cache. What the committed blob lacks is an
+  **integrity hash and anything that can audit it**; `pnpm-lock.yaml` has both. And
+  "prefer the boring tool" points at npm, since hand-copying a minified file into
+  the repo is the unusual move. Spec §7 amended.
+- 🔴 **`pnpm build` now minifies.** Bundling SortableJS unminified took the shell
+  from 17kB to 97kB. It was never minified — that simply did not matter until the
+  first real dependency arrived. 45.9kB now, and the free tier is a design input.
+- **`onEnd` reparses and reorders the block array rather than reading the DOM.**
+  The library has already rearranged the rows; trusting that as the new truth would
+  mean the document is defined by whatever the drag left behind.
+- **Out-of-range indices are a no-op, not a throw.** The caller is a drag library
+  reporting DOM positions, and a repaint racing a drop should do nothing rather
+  than raise inside an event handler.
+- **`delayOnTouchOnly`** — touch needs a moment to distinguish a drag from a
+  scroll; a mouse does not, and adding the delay there just feels broken.
+- **A reorder is a permutation and nothing else**, asserted as a property: the
+  multiset of `raw` values is identical before and after, and moving a block back
+  reproduces the document byte for byte.
 
 ---
 

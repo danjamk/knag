@@ -351,10 +351,23 @@ does it correctly.
 SortableJS bound to the row container, `handle: '.grip'`. On drop, reorder the
 **block** array, serialize, save. Fenced blocks move as one unit.
 
-Vendored to `public/vendor/sortable.min.js` at a pinned version, not loaded from
-a CDN. §9 promises the service worker caches the shell; a third-party script
-makes that promise false, and "prefer the boring tool" favors a file in the repo
-over a network dependency on someone else's uptime.
+**A pinned npm dependency, bundled by esbuild** — not a CDN, and not a committed
+`public/vendor/sortable.min.js` as an earlier draft of this section said.
+
+The reason that draft gave was right and is unchanged: §9 promises the service
+worker caches the shell, and a third-party script fetched at runtime makes that
+promise false. Bundling satisfies it just as completely — the library ends up
+inside `app.js`, which is already in the shell cache — while a committed minified
+blob has one disadvantage the lockfile does not: **no integrity hash and nothing
+that can audit it.** `pnpm-lock.yaml` pins the version and its checksum, and
+ordinary dependency tooling can see it.
+
+"Prefer the boring tool" points the same way. npm *is* the boring tool for a
+JavaScript dependency; hand-copying a minified file into the repo is the unusual
+move, and it is the same trust decision made once with less machinery around it.
+
+Bundling SortableJS is also why `pnpm build` minifies: unminified it takes the
+shell from 17kB to 97kB, and the free tier is a design input (§14.4).
 
 ### Clear completed
 Single button, footer. Confirm only if clearing more than ~10 blocks.

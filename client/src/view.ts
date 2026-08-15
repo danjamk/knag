@@ -57,6 +57,31 @@ function stripCR(text: string): string {
   return text.endsWith("\r") ? text.slice(0, -1) : text;
 }
 
+// ── Reorder ──────────────────────────────────────────────────────────────────
+
+/**
+ * Move one block from `from` to `to`, returning a new array.
+ *
+ * 🔴 Operates on **blocks**, which is the whole point (spec §7). A fenced block is
+ * one element here and moves as one unit; the line-array version of this scrambles a
+ * code block on its first drag, splitting its opening fence from its body. Blank
+ * blocks move too, so spacing goes where you put it rather than collapsing.
+ *
+ * Out-of-range indices return the array unchanged rather than throwing: the caller is
+ * a drag library reporting DOM positions, and a repaint racing a drop should be a
+ * no-op, not an exception in an event handler.
+ */
+export function move<T>(items: T[], from: number, to: number): T[] {
+  if (!Number.isInteger(from) || !Number.isInteger(to)) return items;
+  if (from < 0 || to < 0 || from >= items.length || to >= items.length) return items;
+  if (from === to) return items;
+
+  const next = items.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved as T);
+  return next;
+}
+
 // ── Linkify ──────────────────────────────────────────────────────────────────
 
 export type Segment = { link: boolean; value: string };

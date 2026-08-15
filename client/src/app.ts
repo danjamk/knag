@@ -26,7 +26,8 @@ import {
   toggle,
 } from "../../worker/src/blocks.js";
 import { mayApplyRemote, pollInterval } from "./sync.js";
-import { type ViewMode, linkify, readView, rows, writeView } from "./view.js";
+import Sortable from "sortablejs";
+import { type ViewMode, linkify, move, readView, rows, writeView } from "./view.js";
 
 type Doc = { body: string; version: number; updated_at: string };
 
@@ -617,6 +618,51 @@ async function copyToClipboard(text: string, button: HTMLElement): Promise<void>
   setTimeout(() => {
     button.textContent = original;
   }, 1200);
+}
+
+/**
+ * Drag to reorder, over blocks.
+ *
+ * 🔴 `handle: ".grip"` — the grip is the *only* drag initiator. Whole-row dragging
+ * conflicts with tap-to-edit and produces accidental reorders every time a tap drifts
+ * a few pixels, which on a phone is most taps (spec §7).
+ *
+ * Bound once to the container rather than per row, so it survives every repaint.
+ */
+if (rowsEl) {
+  Sortable.create(rowsEl, {
+    handle: ".grip",
+    animation: 120,
+    // Touch needs a moment to distinguish a drag from a scroll; a mouse does not.
+    delay: 120,
+    delayOnTouchOnly: true,
+    ghostClass: "dragging",
+
+    onEnd: (event) => {
+      const from = event.oldIndex;
+      const to = event.newIndex;
+      if (from === undefined || to === undefined || from === to) return;
+
+      // 🔴 Reparse and reorder the *block* array, then repaint from the result. The
+      // DOM has already been rearranged by the library, and trusting that as the new
+      // truth would mean the document was defined by whatever the drag left behind.
+      const next = serialize(move(parse(body), from, to));
+      if (next === body) {
+        paintRows();
+        return;
+      }
+
+      body = next;
+      paintRows();
+
+      // Immediately, like a toggle and a clear — a drop is a complete intent (spec §6).
+      dirty = true;
+      lastActivityAt = Date.now();
+      clearTimeout(saveTimer);
+      void save();
+      schedulePoll();
+    },
+  });
 }
 
 toggleViewButton?.addEventListener("click", () => {
