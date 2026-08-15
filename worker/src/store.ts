@@ -121,3 +121,39 @@ export async function writeDocument(
 export async function sweepExpiredSessions(env: Env, now: Date = new Date()): Promise<void> {
   await env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now.toISOString()).run();
 }
+
+/**
+ * Record a new session. Only the SHA-256 of the cookie value is ever stored, so a
+ * dump of this table does not let the holder log in as anyone.
+ */
+export async function createSession(
+  env: Env,
+  input: { tokenHash: string; deviceLabel: string | null; expiresAt: Date },
+  now: Date = new Date(),
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO sessions (token_hash, created_at, expires_at, device_label) VALUES (?, ?, ?, ?)",
+  )
+    .bind(input.tokenHash, now.toISOString(), input.expiresAt.toISOString(), input.deviceLabel)
+    .run();
+}
+
+/**
+ * Look up a live session by token hash.
+ *
+ * 🔴 `expires_at > ?` is in the WHERE clause, not checked by the caller. The sweep
+ * runs on login only, so an expired row can sit here for a year — a lookup that
+ * returned it and trusted a caller to compare dates would be a session that never
+ * actually expires.
+ */
+export async function findLiveSession(
+  env: Env,
+  tokenHash: string,
+  now: Date = new Date(),
+): Promise<{ device_label: string | null } | null> {
+  return await env.DB.prepare(
+    "SELECT device_label FROM sessions WHERE token_hash = ? AND expires_at > ?",
+  )
+    .bind(tokenHash, now.toISOString())
+    .first<{ device_label: string | null }>();
+}

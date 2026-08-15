@@ -211,6 +211,25 @@ nothing about the document. Baked at deploy from `package.json` + git, so
 `make health` can assert that what is live matches this checkout — the one
 check that catches "deployed from the wrong branch."
 
+### `POST /api/login`
+```json
+{ "passphrase": "...", "device_label": "iphone" }
+```
+The one unauthenticated `/api/*` route, necessarily — it is how a principal comes
+into existence. On match: 200 `{ ok: true }` and a **server-set** `Set-Cookie`
+(§4). `device_label` is optional and truncated at 64 characters.
+
+Every failure — wrong passphrase, missing field, wrong type, malformed body —
+returns the **same opaque 401** with the same body, and sets no cookie. The
+reason is logged with the source IP, never returned. A `GET` is **405**, not a
+failed login.
+
+**`Secure` is set on every cookie except over plain `http:` on `localhost` /
+`127.0.0.1`.** Safari refuses to store a `Secure` cookie there and `wrangler dev`
+serves exactly that, so the exception is what makes the PWA developable locally
+on the browser it targets. It is unreachable in any deployed environment —
+Cloudflare terminates TLS, so a deployed request is never `http:`.
+
 ### `GET /api/doc`
 ```json
 { "body": "...", "version": 42, "updated_at": "2026-08-14T15:04:05Z" }
