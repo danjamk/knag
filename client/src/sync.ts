@@ -15,15 +15,28 @@ export const POLL_ACTIVE_MS = 4_000;
 export const POLL_IDLE_MS = 15_000;
 export const POLL_STALE_MS = 60_000;
 
-/** Tier boundaries, measured from the last local edit. */
+/** Tier boundaries, measured from the last local activity. */
 export const ACTIVE_WINDOW_MS = 2 * 60_000;
 export const IDLE_WINDOW_MS = 15 * 60_000;
 
 export type PollState = {
   /** `document.visibilityState === "visible"`. */
   visible: boolean;
-  /** Milliseconds since the last local edit. `Infinity` if there has not been one. */
-  msSinceEdit: number;
+  /**
+   * Milliseconds since the last local **activity** — an edit, a page load, or the
+   * window regaining focus.
+   *
+   * 🔴 Not "since the last edit", which is what this was first written as and what
+   * spec §14.4's table literally says. A tab that has been opened but not typed in
+   * then has no edit to measure from, lands in the slowest tier, and takes a full
+   * minute to notice anything — so a second device looks broken, and a change made
+   * on the device you *are* typing on appears to sync one way only, because the
+   * other tab is still on 60s.
+   *
+   * Opening a document is an act of attention. Treating it as activity is what makes
+   * device-switching feel live, and the backoff still applies two minutes later.
+   */
+  msSinceActivity: number;
 };
 
 /**
@@ -39,8 +52,8 @@ export type PollState = {
  */
 export function pollInterval(state: PollState): number | null {
   if (!state.visible) return null;
-  if (state.msSinceEdit < ACTIVE_WINDOW_MS) return POLL_ACTIVE_MS;
-  if (state.msSinceEdit < IDLE_WINDOW_MS) return POLL_IDLE_MS;
+  if (state.msSinceActivity < ACTIVE_WINDOW_MS) return POLL_ACTIVE_MS;
+  if (state.msSinceActivity < IDLE_WINDOW_MS) return POLL_IDLE_MS;
   return POLL_STALE_MS;
 }
 

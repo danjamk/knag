@@ -1,24 +1,31 @@
 /**
- * knag service worker — caches the shell, and never the document.
+ * knag service worker — network-first for the shell, and never the document.
  *
- * 🔴 The rule that matters (spec §9, §12): **no document response is ever cached.**
- * A stale body served from cache is worse than an offline error, because it looks
- * like the truth, and the next save would carry a `base_version` from a document
- * that has since moved on. Offline editing is explicitly out of scope.
+ * 🔴 Rule one (spec §9, §12): **no document response is ever cached.** A stale body
+ * served from cache is worse than an offline error, because it looks like the truth,
+ * and the next save would carry a `base_version` from a document that has since moved
+ * on. So `/api/*` and `/health` are not merely uncached — they are not intercepted at
+ * all. `fetch` falls through to the network and a failed request surfaces as a failed
+ * request. Offline editing is explicitly out of scope.
  *
- * So `/api/*` and `/health` are not merely uncached — they are not intercepted at
- * all. `fetch` falls through to the network, and a failed request surfaces as a
- * failed request in the UI. That is the intended behaviour.
+ * 🔴 Rule two, learned the hard way: **the shell is network-first, not cache-first.**
+ * The first version of this file was cache-first with a hand-bumped `knag-shell-v1`
+ * constant and a comment saying the constant "has to change whenever the shell
+ * changes". It never changed, because nothing made it — so every deploy left the
+ * browser running the *previous* `app.js` until a manual reload, and the polling
+ * added in #6 appeared not to work at all.
  *
- * Not bundled: this file is served verbatim from `public/`, so it is plain JS. It is
- * also not a module — `importScripts` semantics differ and there is nothing to share
- * with the app.
+ * A design that depends on someone remembering to bump a literal is a design that
+ * fails. Network-first removes the requirement instead of restating it: the cache
+ * exists so the app opens when the network is gone, not so it can serve last week's
+ * code. The shell is ~10kB and this product is online-first by definition.
+ *
+ * Not bundled: served verbatim from `public/`, so it is plain JS and not a module.
  */
 
-// Bumping this evicts the old shell. It has to change whenever the shell changes,
-// which is why it is a literal here rather than anything derived — a cache name
-// computed at runtime cannot be a version.
-const CACHE = "knag-shell-v1";
+// Only has to change if the *set* of cached paths changes. Correctness no longer
+// depends on it, which is the point of the rewrite above.
+const CACHE = "knag-shell-v2";
 
 const SHELL = ["/", "/index.html", "/app.js", "/manifest.json", "/icon-192.png", "/icon-512.png"];
 
@@ -41,28 +48,24 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // 🔴 Never touch the API or the health endpoint. Not cache-first, not
-  // network-first, not stale-while-revalidate — untouched. See the header.
+  // 🔴 Never touch the API or the health endpoint. Not cache-first, not network-first,
+  // not stale-while-revalidate — untouched. See rule one.
   if (url.pathname.startsWith("/api/") || url.pathname === "/health") return;
 
   // Same-origin GETs only. A cross-origin request has nothing to do with the shell.
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
 
-  // Cache-first for the shell, with the network as the fallback and a cache refresh
-  // on the way past, so a deploy is picked up on the next load rather than never.
   event.respondWith(
-    caches.match(event.request).then((hit) => {
-      const live = fetch(event.request)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            void caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-          }
-          return res;
-        })
-        .catch(() => hit);
-
-      return hit ?? live;
-    }),
+    fetch(event.request)
+      .then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          void caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+        }
+        return res;
+      })
+      // Network unreachable. Now the cache earns its keep — this is the only path
+      // that reads from it.
+      .catch(async () => (await caches.match(event.request)) ?? Response.error()),
   );
 });
