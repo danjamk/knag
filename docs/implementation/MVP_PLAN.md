@@ -434,17 +434,44 @@ the list view may be built before its round-trip test passes.
 **Spec:** §7 · **Size:** 3–4 days — **the largest phase; split if it grows**
 **Depends:** P4, P7
 
-**Done when:**
-- [ ] Rows render from blocks: checkbox, text, fence-as-one-row, blank
-- [ ] Checked items stay in place — no auto-sink
-- [ ] Tap-to-edit becomes a single-line `<input>`; commits on blur or Enter, Escape reverts
-- [ ] Per-row copy button, always visible, strips the `- [ ] ` prefix
-- [ ] URLs linkified, open in a new tab
-- [ ] Usable at 380px — grip and copy ~28px, text flexes and truncates rather than wrapping
-- [ ] Toggle to raw view, persisted per device in `localStorage`
+Split into three issues, as anticipated below.
 
-**Split candidates if this runs long:** rows + checkboxes · tap-to-edit ·
-copy/linkify/polish.
+**#9 — rows and checkboxes:**
+- [x] Rows render from blocks: checkbox, text, fence-as-one-row, blank
+- [x] `- [x]` rows render checked, struck through, dimmed
+- [x] Checked items stay in place — no auto-sink
+- [x] Toggling rewrites `[ ]`↔`[x]` in place and saves immediately
+- [x] Toggle to raw view, persisted per device in `localStorage`
+
+**#10 — tap-to-edit · #11 — copy, linkify, 380px polish:** not started.
+
+**Decided during #9:**
+
+- 🔴 **One row per block, always — the mapping is the identity function.** The
+  tidier-looking version filters blank blocks out, which makes a row's position
+  stop matching its block index. Everything downstream indexes by position: tap
+  row 4, toggle block 4. With blanks skipped those are different lines and the app
+  silently edits the wrong one. Blanks render as thin spacers instead, which also
+  keeps them draggable so spacing survives a reorder. **This is the parser's "rows
+  are not lines" problem one layer up.**
+- **I miscounted a block index by hand three times while writing tests for this**,
+  which is the argument for the identity mapping rather than against it. A property
+  test now asserts `row.index === position` and that `blocks[row.index].kind`
+  matches, over arbitrary documents.
+- **`body` is the single source of truth for both views.** The textarea holds it in
+  raw view and the rows derive from it in list view, but neither is authoritative —
+  otherwise the two drift and a view switch saves whichever happened to be stale.
+  `save()` sends `body`, never `editor.value`.
+- **`textContent`, never `innerHTML`.** The document is authored by a human *and*
+  by an agent; one `<img onerror>` in a note would otherwise execute.
+- **A toggle saves immediately, not on the debounce.** It is a complete intent, and
+  spec §6 lists it alongside reorder and clear.
+- **`readView` catches rather than checks.** Safari *throws* from `localStorage`
+  when storage is blocked — private browsing, or an evicted PWA — and an uncaught
+  throw during boot blanks the whole app. Tested against a storage that throws.
+- **An out-of-range or non-checkbox index repaints instead of guessing.** The box
+  has already flipped visually, and leaving it flipped would show a state the
+  document does not have.
 
 ---
 

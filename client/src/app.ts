@@ -17,7 +17,9 @@
  * parser, not two. See spec §2.
  */
 
+import { type Block, parse, serialize, toggle } from "../../worker/src/blocks.js";
 import { mayApplyRemote, pollInterval } from "./sync.js";
+import { type ViewMode, readView, rows, writeView } from "./view.js";
 
 type Doc = { body: string; version: number; updated_at: string };
 
@@ -29,6 +31,18 @@ const editorView = document.querySelector<HTMLElement>("[data-editor]");
 const editor = document.querySelector<HTMLTextAreaElement>("[data-body]");
 const statusEl = document.querySelector<HTMLElement>("[data-save-status]");
 const buildEl = document.querySelector<HTMLElement>("[data-build]");
+const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
+const toggleViewButton = document.querySelector<HTMLButtonElement>("[data-toggle-view]");
+
+/**
+ * The current document body, as bytes.
+ *
+ * 🔴 The single source of truth for both views. The textarea holds it in raw view and
+ * the row list is derived from it in list view — but neither is authoritative, or the
+ * two would drift and a view switch would save whichever one happened to be stale.
+ */
+let body = "";
+let view: ViewMode = "list";
 
 /** The version we believe we are editing. Every write carries it (spec §6). */
 let baseVersion = 0;
@@ -76,15 +90,63 @@ async function load(): Promise<Doc | null> {
 }
 
 function render(doc: Doc): void {
-  if (!editor) return;
   // Assigned verbatim. An empty body is a valid document and renders as an empty
   // editor — never an error, never a placeholder that could be saved back over it
   // (spec §14.5).
-  editor.value = doc.body;
+  body = doc.body;
   baseVersion = doc.version;
   dirty = false;
   pendingRemote = null;
+  paint();
   setStatus("Saved");
+}
+
+// ── Rendering (spec §7) ──────────────────────────────────────────────────────
+
+/** Draw whichever view is active from `body`. Never the other way round. */
+function paint(): void {
+  if (editor) editor.value = body;
+  editor?.toggleAttribute("hidden", view !== "raw");
+  rowsEl?.toggleAttribute("hidden", view !== "list");
+  if (toggleViewButton) toggleViewButton.textContent = view === "list" ? "raw" : "list";
+  if (view === "list") paintRows();
+}
+
+function paintRows(): void {
+  if (!rowsEl) return;
+  rowsEl.replaceChildren(...rows(parse(body)).map(rowElement));
+}
+
+function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
+  const li = document.createElement("li");
+  li.className = row.kind;
+  li.dataset.index = String(row.index);
+
+  if (row.kind === "blank") return li;
+
+  if (row.kind === "fence") {
+    const pre = document.createElement("pre");
+    // 🔴 textContent, never innerHTML. The document is authored by a human *and* by
+    // an agent, and one `<img onerror>` in a note would otherwise execute here.
+    pre.textContent = row.text;
+    li.append(pre);
+    return li;
+  }
+
+  if (row.kind === "checkbox") {
+    if (row.checked) li.classList.add("checked");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = row.checked === true;
+    // Checked items stay where they are. No auto-sink (spec §7).
+    li.append(box);
+  }
+
+  const text = document.createElement("span");
+  text.className = "text";
+  text.textContent = row.text;
+  li.append(text);
+  return li;
 }
 
 // ── Polling (spec §6, §14.4) ─────────────────────────────────────────────────
@@ -180,16 +242,17 @@ async function pollNow(): Promise<void> {
  * definition at least as new as whatever the poll saw, so `render` clears the queue.
  */
 async function save(): Promise<void> {
-  if (!editor) return;
-
-  const body = editor.value;
+  // Sent from `body`, not from the textarea. In list view the textarea is hidden and
+  // its value is whatever was last painted into it; reading from the element would
+  // save the wrong document the moment a checkbox is toggled.
+  const sent = body;
   setStatus("Saving…");
 
   try {
     const res = await fetch("/api/doc", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body, base_version: baseVersion }),
+      body: JSON.stringify({ body: sent, base_version: baseVersion }),
     });
 
     if (res.status === 401) {
@@ -208,8 +271,8 @@ async function save(): Promise<void> {
     const { version } = (await res.json()) as { version: number };
     baseVersion = version;
 
-    // Only clear the flag if nothing was typed while the request was in flight.
-    if (editor.value === body) {
+    // Only clear the flag if nothing changed while the request was in flight.
+    if (body === sent) {
       dirty = false;
       setStatus("Saved");
     }
@@ -231,7 +294,10 @@ function scheduleSave(): void {
 
 // ── Wiring ───────────────────────────────────────────────────────────────────
 
-editor?.addEventListener("input", scheduleSave);
+editor?.addEventListener("input", () => {
+  if (editor) body = editor.value;
+  scheduleSave();
+});
 editor?.addEventListener("focus", () => {
   focused = true;
 });
@@ -261,6 +327,52 @@ function applyPendingRemote(): void {
   render(pendingRemote);
   setStatus("Updated from another device");
 }
+
+/**
+ * Toggle a checkbox, delegated from the row list.
+ *
+ * 🔴 Reparses `body` and edits **only the block the row points at**, then serializes.
+ * `data-index` is the block index — `rows()` guarantees it equals the row's position,
+ * which is the whole reason blank blocks are rendered rather than filtered.
+ *
+ * Everything not targeted is written back from its untouched `raw`, so indentation,
+ * `*` vs `-`, trailing whitespace and CRLF all survive a toggle (spec §14.2).
+ */
+rowsEl?.addEventListener("change", (event) => {
+  const box = event.target;
+  if (!(box instanceof HTMLInputElement) || box.type !== "checkbox") return;
+
+  const index = Number(box.closest("li")?.dataset.index);
+  const blocks = parse(body);
+  const target = blocks[index];
+  if (!Number.isInteger(index) || target?.kind !== "checkbox") {
+    // Repaint rather than guess: the checkbox has already flipped visually, and
+    // leaving it flipped would show a state the document does not have.
+    paintRows();
+    return;
+  }
+
+  body = serialize(blocks.map((b: Block, i: number) => (i === index ? toggle(b) : b)));
+  paintRows();
+
+  // Immediately, not on the debounce — a toggle is a complete intent, and spec §6
+  // lists it alongside reorder and clear as a save trigger.
+  dirty = true;
+  lastActivityAt = Date.now();
+  clearTimeout(saveTimer);
+  void save();
+  schedulePoll();
+});
+
+toggleViewButton?.addEventListener("click", () => {
+  // Flush first. Switching views repaints the textarea from `body`, and an unsaved
+  // edit still sitting on the debounce would be preserved but its save would race
+  // the repaint.
+  saveNow();
+  view = view === "list" ? "raw" : "list";
+  writeView(globalThis.localStorage, view);
+  paint();
+});
 
 // iOS does not reliably fire blur when the app is backgrounded or swiped away, so
 // this is the handler that actually catches "left mid-sentence" on the device this
@@ -320,6 +432,8 @@ loginForm?.addEventListener("submit", async (event) => {
 });
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
+
+view = readView(globalThis.localStorage);
 
 const doc = await load();
 if (doc) {
