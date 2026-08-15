@@ -1,0 +1,79 @@
+import { env } from "cloudflare:test";
+import { describe, expect, it } from "vitest";
+
+/**
+ * The PWA shell's load-bearing attributes.
+ *
+ * 🔴 Why a test and not just a comment in the HTML: every attribute below is
+ * invisible when it goes missing. Removing `wrap="off"` or `autocorrect="off"` breaks
+ * no build, throws no error, and renders identically — it just quietly lets the
+ * browser rewrite the user's document, which is a violation of principle 3 and the
+ * exact class of bug the CRLF finding in `blocks.ts` came from.
+ *
+ * `public/index.html` arrives as a binding because Miniflare does not serve the
+ * `assets` binding in tests; a request for `/` falls through to the Worker and 404s.
+ * See vitest.config.ts.
+ */
+
+const shell = () => env.TEST_SHELL;
+
+/**
+ * The opening `<textarea>` tag alone.
+ *
+ * 🔴 Matching against the whole document was the first version of this, and it was
+ * theatre: the CSS comment above the rule *mentions* `wrap="off"`, so `toContain`
+ * stayed green after the real attribute was deleted. Verified by deleting it.
+ * Assertions about an element have to be scoped to that element.
+ */
+function textarea(): string {
+  const match = /<textarea\b[^>]*>/.exec(shell());
+  if (!match) throw new Error("no <textarea> in the shell");
+  return match[0];
+}
+
+describe("byte preservation depends on these (spec §8)", () => {
+  const required: Array<[string, string]> = [
+    ["wrap off, so no hard-wrap inserts newlines into the value", 'wrap="off"'],
+    ["spellcheck off, so nothing is auto-corrected", 'spellcheck="false"'],
+    ["autocapitalize off, iOS", 'autocapitalize="off"'],
+    ["autocorrect off, iOS", 'autocorrect="off"'],
+  ];
+
+  for (const [name, attribute] of required) {
+    it(name, () => {
+      expect(textarea()).toContain(attribute);
+    });
+  }
+
+  it("has exactly one textarea — the document is one field, not a form", () => {
+    expect(shell().match(/<textarea/g)).toHaveLength(1);
+  });
+});
+
+describe("PWA shell (spec §9)", () => {
+  it("registers no inline script that could drift from the bundle", () => {
+    // app.js is built from client/src/app.ts. A second, inline implementation is the
+    // same failure mode as a second block parser.
+    expect(shell()).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?\S[\s\S]*?<\/script>/);
+  });
+
+  it("links the manifest and an apple-touch-icon", () => {
+    expect(shell()).toContain('rel="manifest"');
+    // iOS uses this rather than the manifest's icons for Add to Home Screen; without
+    // it the home screen shows a screenshot of the page, which reads as a bug.
+    expect(shell()).toContain('rel="apple-touch-icon"');
+  });
+
+  it("declares a theme colour matching the background", () => {
+    // A mismatch shows as a bright status bar strip above a dark app on iOS.
+    expect(shell()).toContain('name="theme-color" content="#111111"');
+  });
+
+  it("sets viewport-fit=cover so safe-area insets resolve", () => {
+    expect(shell()).toContain("viewport-fit=cover");
+  });
+
+  it("keeps the input font at 16px, or iOS zooms on focus and never returns", () => {
+    expect(shell()).toMatch(/font-size:\s*16px/);
+  });
+});

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
@@ -12,6 +13,16 @@ import { defineConfig } from "vitest/config";
 const migrations = await readD1Migrations(
   fileURLToPath(new URL("./worker/migrations", import.meta.url)),
 );
+
+// The PWA shell, same trick, for the same reason: read in Node, handed over as a
+// binding. Miniflare does not serve the `assets` binding in tests — a request for `/`
+// falls through to the Worker and 404s — so this is the only way the suite can assert
+// on the shell at all.
+//
+// It exists to pin the textarea attributes that make byte preservation work
+// (spec §8). Losing `wrap="off"` or `autocorrect="off"` does not break a build or a
+// render; it silently lets iOS rewrite the user's document.
+const shell = readFileSync(fileURLToPath(new URL("./public/index.html", import.meta.url)), "utf8");
 
 // vitest-pool-workers 0.18 (the Vitest 4 line) exposes this as a Vite plugin.
 // `defineWorkersConfig` from ".../config" is the Vitest 3 API and is gone.
@@ -33,8 +44,9 @@ export default defineConfig({
           KNAG_PASSPHRASE: "test-passphrase-do-not-use-in-production",
           KNAG_BEARER_TOKEN: "test-bearer-do-not-use-in-production",
 
-          // Consumed by worker/test/setup.ts, not by the Worker.
+          // Consumed by the test suite, not by the Worker.
           TEST_MIGRATIONS: migrations,
+          TEST_SHELL: shell,
         },
       },
     }),
