@@ -17,6 +17,15 @@ export interface Env {
   /** ISO 8601, baked at deploy. Blank in dev and in tests. */
   KNAG_DEPLOYED_AT: string;
 
+  /**
+   * `dev` or `prod`, baked at deploy.
+   *
+   * 🔴 Declared in **both** wrangler env blocks. Named environments do not inherit
+   * vars, so one added only at the top level works in dev and reports the wrong
+   * thing in prod — which is exactly the failure this variable exists to catch.
+   */
+  KNAG_ENV: string;
+
   /** IANA zone for history boundaries. Defaults to America/Chicago. See spec §14.3. */
   KNAG_TZ: string;
 
@@ -27,11 +36,24 @@ export interface Env {
   KNAG_BEARER_TOKEN?: string;
 }
 
-/** What `/health` reports, so `make health` can compare it to the checkout. */
-export function buildInfo(env: Env): { ok: true; version: string; deployed_at: string } {
+/**
+ * What `/health` reports, so `make health` can compare it to the checkout — and so a
+ * human can answer "is my change live, and on which environment" without a curl.
+ *
+ * `environment` is the field people skip and then need: **a deploy that looks right
+ * and went to the wrong environment is indistinguishable from one that failed**,
+ * until someone checks.
+ */
+export function buildInfo(env: Env): {
+  ok: true;
+  version: string;
+  deployed_at: string;
+  environment: string;
+} {
   return {
     ok: true,
     version: env.KNAG_VERSION || "dev",
     deployed_at: env.KNAG_DEPLOYED_AT || "",
+    environment: env.KNAG_ENV || "local",
   };
 }

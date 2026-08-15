@@ -176,6 +176,19 @@
          under your thumb by accident. */
       [data-clear] { margin-left: auto; }
 
+      /* Non-prod is labelled. Dev holds test content only and sits behind no
+         rate-limit rule, so it should not be mistakable for the real thing. */
+      .env {
+        padding: 0.05rem 0.35rem;
+        border-radius: 3px;
+        background: #4a3a1a;
+        color: #d8b878;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      [data-build] { cursor: help; }
+
       [data-login] {
         display: flex;
         flex-direction: column;

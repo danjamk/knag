@@ -831,9 +831,47 @@ if (doc) {
   showEditor(false);
 }
 
+/**
+ * The build id, with everything else on hover.
+ *
+ * 🔴 "Is my change live?" cost a round trip before this existed, and "which
+ * environment am I looking at" was not answerable at all. A deploy that looks right
+ * and went to the wrong environment is indistinguishable from one that failed.
+ *
+ * The timestamp renders in **local** time. A UTC string in a tooltip is a second
+ * conversion the reader has to do in their head, at the moment they are least
+ * inclined to.
+ */
 if (buildEl) {
-  const info = (await (await fetch("/health")).json()) as { version: string };
+  const info = (await (await fetch("/health")).json()) as {
+    version: string;
+    deployed_at: string;
+    environment: string;
+  };
+
   buildEl.textContent = info.version;
+  buildEl.dataset.env = info.environment;
+
+  const deployed = info.deployed_at ? new Date(info.deployed_at) : null;
+  const when =
+    deployed && !Number.isNaN(deployed.getTime())
+      ? deployed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+      : "not recorded";
+
+  buildEl.title = [
+    `build     ${info.version}`,
+    `deployed  ${when}`,
+    `env       ${info.environment}`,
+  ].join("\n");
+
+  // Dev holds test content only and sits behind no rate-limit rule. It should look
+  // like somewhere you would not paste anything real (ADR-002).
+  if (info.environment !== "prod") {
+    const badge = document.createElement("span");
+    badge.className = "env";
+    badge.textContent = info.environment;
+    buildEl.before(badge);
+  }
 }
 
 // Caches the shell and never a document response — a stale body is worse than an

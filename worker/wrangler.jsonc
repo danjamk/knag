@@ -70,6 +70,12 @@
     "KNAG_VERSION": "",
     "KNAG_DEPLOYED_AT": "",
 
+    // dev or prod, baked at deploy. Blank here and in tests, which report "local".
+    // 🔴 Also declared under env.prod below — named environments do not inherit
+    // vars, and one declared in only one place reports the wrong environment in the
+    // other. That is the exact failure this variable exists to catch.
+    "KNAG_ENV": "",
+
     // Local timezone for history boundaries. D1 stores UTC; "what did I finish
     // Tuesday" is a local-time question and files to the wrong day after ~7pm
     // local if answered in UTC. See spec §14.3.
@@ -115,6 +121,7 @@
       "vars": {
         "KNAG_VERSION": "",
         "KNAG_DEPLOYED_AT": "",
+        "KNAG_ENV": "",
         "KNAG_TZ": "America/Chicago"
       },
 
