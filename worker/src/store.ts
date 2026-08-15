@@ -1,4 +1,5 @@
 import type { Env } from "./env.js";
+import type { ClearedRecord, RevisionRecord } from "./history.js";
 
 /**
  * Every D1 statement in knag lives in this file.
@@ -282,6 +283,122 @@ export async function clearCompleted(
   }
 
   return { status: "cleared", version: version + 1, cleared_count: input.clearedLines.length };
+}
+
+/**
+ * The most revisions one history request will return.
+ *
+ * The log gains roughly six entries an hour of continuous editing, so a year of heavy
+ * use is inside this. The cap exists so a caller asking for "everything" cannot make
+ * the Worker assemble an unbounded response against the only copy of the document —
+ * and when it bites, `truncated` says so rather than the answer quietly being partial.
+ */
+export const MAX_HISTORY_REVISIONS = 500;
+
+const REVISION_COLUMNS = "id, body, version, created_at, source, event_type";
+
+export type RevisionPage = {
+  /** In range and under the cap, **oldest first** — the order the diff chain needs. */
+  revisions: RevisionRecord[];
+  /**
+   * The revision immediately before `revisions[0]`, when the cap dropped it. Becomes
+   * the diff floor in place of `revisionBefore`, so a truncated page still diffs its
+   * first entry against something real.
+   */
+  precedingDropped: RevisionRecord | null;
+  truncated: boolean;
+};
+
+/**
+ * Revisions in `[since, until)`, capped.
+ *
+ * 🔴 Half-open, and that is what makes adjacent days tile. `until` resolved from a bare
+ * date is the *next* local midnight (see `resolveBoundary`), so an inclusive upper
+ * bound would put midnight's revision in both Tuesday and Wednesday.
+ *
+ * 🔴 **The query runs newest-first and the result is reversed.** Ascending with a LIMIT
+ * would drop the recent end of a long range, which is the end anyone asking about their
+ * history wants. Descending drops the far end instead, and hands back the row just
+ * past the cap for free — which is exactly the diff floor the kept window needs.
+ *
+ * The comparison is lexicographic on ISO8601 text, which is a correct chronological
+ * sort only because every writer here uses `toISOString()`. The one exception is the
+ * baseline row, which migration 0002 copies from the document seeded by 0001 with
+ * `strftime` at second precision. `2026-08-15T13:00:00Z` sorts *after*
+ * `2026-08-15T13:00:00.000Z` — `Z` is above `.` — so the two disagree inside a single
+ * second and nowhere else. Every day boundary is further away than that, and `id` is
+ * the tiebreak.
+ */
+export async function revisionsInRange(
+  env: Env,
+  range: { since: Date; until: Date; limit?: number },
+): Promise<RevisionPage> {
+  const limit = range.limit ?? MAX_HISTORY_REVISIONS;
+
+  const { results } = await env.DB.prepare(
+    `SELECT ${REVISION_COLUMNS} FROM revisions
+      WHERE created_at >= ? AND created_at < ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?`,
+  )
+    .bind(
+      range.since.toISOString(),
+      range.until.toISOString(),
+      // One past the cap, so "exactly at the limit" is distinguishable from "more than
+      // the limit" without a second count query — and so the extra row can serve as the
+      // floor when it turns out there was one.
+      limit + 1,
+    )
+    .all<RevisionRecord>();
+
+  const truncated = results.length > limit;
+  const kept = truncated ? results.slice(0, limit) : results;
+
+  return {
+    revisions: kept.reverse(),
+    precedingDropped: truncated ? (results[limit] ?? null) : null,
+    truncated,
+  };
+}
+
+/**
+ * The newest revision strictly before `since` — the diff floor, never returned to the
+ * caller.
+ *
+ * Without it the first entry in any range has nothing to diff against and reports the
+ * entire document as `appeared`. `null` is a correct answer and means the range reaches
+ * back past the start of the log.
+ */
+export async function revisionBefore(env: Env, since: Date): Promise<RevisionRecord | null> {
+  return await env.DB.prepare(
+    `SELECT ${REVISION_COLUMNS} FROM revisions
+      WHERE created_at < ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  )
+    .bind(since.toISOString())
+    .first<RevisionRecord>();
+}
+
+/**
+ * Swept lines in `[since, until)`, oldest first — the authoritative done-record.
+ *
+ * Not capped. A clear writes one row per checked item and they are short; the thing
+ * worth protecting is the revision bodies, which are whole documents.
+ */
+export async function clearedItemsInRange(
+  env: Env,
+  range: { since: Date; until: Date },
+): Promise<ClearedRecord[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, revision_id, line_text, cleared_at FROM cleared_items
+      WHERE cleared_at >= ? AND cleared_at < ?
+      ORDER BY cleared_at, id`,
+  )
+    .bind(range.since.toISOString(), range.until.toISOString())
+    .all<ClearedRecord>();
+
+  return results;
 }
 
 /** Drop sessions that have already expired. Called on login; no cron trigger. */

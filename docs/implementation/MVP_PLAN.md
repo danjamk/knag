@@ -671,11 +671,23 @@ a complete phantom sweep.
 **Spec:** §5, §14.3 · **Size:** 1–2 days · **Depends:** P6
 
 **Done when:**
-- [ ] `GET /api/history?since=&until=` returns revisions plus per-adjacent-pair `appeared` / `disappeared` line sets
-- [ ] `cleared_items` in range returned as the authoritative done-record
-- [ ] Bare dates resolve to local-midnight boundaries in `KNAG_TZ` via `Intl.DateTimeFormat` — **never manual offset arithmetic**
-- [ ] Day grouping is by local date, not UTC
-- [ ] Tested across a DST boundary
+- [x] `GET /api/history?since=&until=` returns revisions plus per-adjacent-pair `appeared` / `disappeared` line sets
+- [x] `cleared_items` in range returned as the authoritative done-record
+- [x] Bare dates resolve to local-midnight boundaries in `KNAG_TZ` via `Intl.DateTimeFormat` — **never manual offset arithmetic**
+- [x] Day grouping is by local date, not UTC
+- [x] Tested across a DST boundary
+
+Two things the phase did not anticipate, both in `worker/src/history.ts`:
+
+- **The first revision in range needs a diff floor from outside it.** Without one
+  every range opens by reporting the whole document as new. One extra row is
+  read below `since` and never returned.
+- **`Intl.DateTimeFormat` converts the wrong direction** for a boundary, so
+  resolving local midnight is a fixed point rather than a subtraction. See
+  spec §14.3, amended with what the tests found.
+
+The `knag_history` MCP tool moves to **Phase 11**, where the server it needs
+lives. `buildHistory` is pure and takes rows, so the tool is a thin call.
 
 ---
 

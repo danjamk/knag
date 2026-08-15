@@ -14,6 +14,23 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **`GET /api/history?since=&until=`** — what changed and what got finished, grouped by
+  local day ([#15](https://github.com/danjamk/knag/issues/15)). Each revision in range
+  carries the lines that `appeared` and `disappeared` since the one before it, and each
+  day carries the `cleared_items` swept that day, which are the authoritative record of
+  what was done. Both parameters take a bare date or a full ISO instant; the default is
+  the last seven days.
+- **Timezone-aware day boundaries.** "What did I finish Tuesday" is a local-time
+  question, and answered in UTC it files everything after ~7pm Chicago onto Wednesday.
+  Boundaries resolve to local midnight in `KNAG_TZ` and grouping is by local date. The
+  conversion is a fixed point over `Intl.DateTimeFormat` rather than offset arithmetic:
+  a single probe is right for every local midnight in Chicago and an hour wrong for
+  03:30 on a spring-forward morning. Verified against both US transitions and against a
+  zone that springs forward *at* midnight, where the day knag reports starts when the
+  day actually starts.
+
 ### Changed
 
 - **The 7-day iOS cookie check is deferred**, not dropped ([#4](https://github.com/danjamk/knag/issues/4)).
