@@ -10,7 +10,7 @@
     // sides, not a reason to widen this list.
     "types": []
   },
-  // Only the client entry. worker/src/blocks.ts is pulled in by following the
-  // import, which is the point — it has to typecheck under these settings too.
-  "include": ["src/**/*.ts"]
+  // The client entry and its tests. worker/src/blocks.ts is pulled in by following
+  // the import, which is the point — it has to typecheck under these settings too.
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }
