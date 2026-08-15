@@ -27,6 +27,7 @@ import {
 } from "../../worker/src/blocks.js";
 import { mayApplyRemote, pollInterval } from "./sync.js";
 import Sortable from "sortablejs";
+import { type EditResult, mergeBackward, neighbor, splitAt } from "./edit.js";
 import { type ViewMode, linkify, move, readView, rows, writeView } from "./view.js";
 
 type Doc = { body: string; version: number; updated_at: string };
@@ -136,10 +137,19 @@ function paintRows(): void {
   const blocks = parse(body);
   rowsEl.replaceChildren(...rows(blocks).map(rowElement));
 
-  // Hidden rather than disabled when there is nothing to sweep: a permanently greyed
-  // destructive button is clutter, and its absence is the clearer signal.
-  const completed = blocks.filter(isCompleted).length;
-  clearButton?.toggleAttribute("hidden", completed === 0);
+  refreshClearButton();
+}
+
+/**
+ * Hidden rather than disabled when there is nothing to sweep: a permanently greyed
+ * destructive button is clutter, and its absence is the clearer signal.
+ *
+ * Separate from `paintRows` so typing can update the count without rebuilding rows
+ * and resetting the caret.
+ */
+function refreshClearButton(): void {
+  const completed = parse(body).filter(isCompleted).length;
+  clearButton?.toggleAttribute("hidden", completed === 0 || view !== "list");
   if (clearButton) clearButton.textContent = `clear ${completed} done`;
 }
 
@@ -174,25 +184,24 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   li.className = row.kind;
   li.dataset.index = String(row.index);
 
-  // A blank row still gets a grip: it is a block, it reorders like one, and spacing
-  // that cannot be moved is spacing that fights you (spec §14.1).
-  if (row.kind === "blank") {
-    li.append(gripElement());
-    return li;
-  }
-
-  if (row.kind === "fence") {
-    li.append(gripElement());
-    const pre = document.createElement("pre");
-    // 🔴 textContent, never innerHTML. The document is authored by a human *and* by
-    // an agent, and one `<img onerror>` in a note would otherwise execute here.
-    pre.textContent = row.text;
-    li.append(pre, copyElement(row.text));
-    return li;
-  }
-
-  // Left to right: grip, checkbox, text, copy (spec §7).
   li.append(gripElement());
+
+  // 🔴 A fence is a textarea, not a <pre>. It is one block and inherently
+  // multi-line, so it gets the element that is natively multi-line — and that is
+  // what removes the last thing raw view was *required* for (ADR-003 §2).
+  if (row.kind === "fence") {
+    const area = document.createElement("textarea");
+    area.className = "fence";
+    area.value = row.text;
+    area.rows = Math.min(row.text.split("\n").length, 20);
+    // Off inside a fence, always. Autocapitalize turning `const` into `Const` is the
+    // one real risk the MVP's blanket "off everywhere" was guarding against.
+    area.spellcheck = false;
+    area.autocapitalize = "off";
+    area.setAttribute("autocorrect", "off");
+    li.append(area, copyElement(row.text));
+    return li;
+  }
 
   if (row.kind === "checkbox") {
     if (row.checked) li.classList.add("checked");
@@ -203,114 +212,111 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
     li.append(box);
   }
 
-  const text = document.createElement("span");
-  text.className = "text";
-  if (row.editable) text.tabIndex = 0;
-
-  // 🔴 Real nodes from segments, never an innerHTML string with `<a>` spliced in.
-  // `linkify` returns data precisely so this stays a textContent assignment per
-  // segment — the document is authored by an agent as well as by a human.
-  for (const segment of linkify(row.text)) {
-    if (!segment.link) {
-      text.append(document.createTextNode(segment.value));
-      continue;
-    }
-    const anchor = document.createElement("a");
-    anchor.href = segment.value;
-    anchor.textContent = segment.value;
-    anchor.target = "_blank";
-    // Without noopener the opened page gets a handle on this one via window.opener.
-    anchor.rel = "noopener noreferrer";
-    text.append(anchor);
-  }
-
-  li.append(text, copyElement(row.text));
-  return li;
-}
-
-/**
- * Replace a row's text with a single-line input.
- *
- * 🔴 Single-line, and that is the design, not a limitation. A general multi-line row
- * editor means handling backspace-merges-previous-row, arrow-up-at-boundary,
- * cross-row selection and paste-splitting — a day of fiddly work and the source of
- * every cursor bug in this class of app. Everything multi-line lives in raw view,
- * where a textarea already does it correctly (spec §7).
- */
-function beginEdit(span: HTMLElement): void {
-  const li = span.closest("li");
-  const index = Number(li?.dataset.index);
-  const block = parse(body)[index];
-  if (!li || !Number.isInteger(index) || !block || block.kind === "fence") return;
-
+  // 🔴 A live input, not a span you tap to activate. This is the whole point of
+  // ADR-003: the editor is where you land, and typing is the primary interaction.
   const input = document.createElement("input");
   input.type = "text";
   input.className = "text";
-  input.value = span.textContent ?? "";
-  // Same reasons as the raw textarea: no autocorrect rewriting the document, and
-  // 16px so iOS does not zoom the viewport on focus and never zoom back.
-  input.spellcheck = false;
-  input.autocapitalize = "off";
-  input.setAttribute("autocorrect", "off");
+  input.value = row.text;
+  // On for prose, off inside fences above. Autocorrect is the user typing, mediated
+  // by their keyboard — not knag rewriting bytes (ADR-003 §6).
+  input.spellcheck = true;
+  input.autocapitalize = "sentences";
+  input.setAttribute("autocorrect", "on");
+  li.append(input);
 
-  let settled = false;
+  // 🔴 A link affordance rather than an inline anchor. An <input> cannot contain
+  // one, and the alternatives are contenteditable (rejected by ADR-003) or swapping
+  // the element on focus (the tap-to-activate step this issue removes). So a row
+  // holding a URL gets a button that opens it, and the URL stays editable text.
+  const [first] = linkify(row.text).filter((segment) => segment.link);
+  if (first) li.append(openElement(first.value));
 
-  const finish = (commit: boolean): void => {
-    if (settled) return;
-    settled = true;
-    focused = false;
+  li.append(copyElement(row.text));
+  return li;
+}
 
-    if (!commit) {
-      // Escape reverts by repainting from `body`, which was never touched.
-      paintRows();
-      return;
-    }
+/** Opens the row's first URL. Only rendered when there is one. */
+function openElement(url: string): HTMLAnchorElement {
+  const anchor = document.createElement("a");
+  anchor.className = "open";
+  anchor.href = url;
+  anchor.textContent = "\u2197";
+  anchor.title = url;
+  anchor.target = "_blank";
+  // Without noopener the opened page gets a handle on this one via window.opener.
+  anchor.rel = "noopener noreferrer";
+  return anchor;
+}
 
-    // Reparse rather than reusing the block captured above: a remote update could
-    // have landed while the field was open, and editing a stale block would write
-    // back a line from a document that no longer exists.
-    const current = parse(body);
-    const target = current[index];
-    if (!target || target.kind === "fence") {
-      paintRows();
-      return;
-    }
+/** The editor element inside a row — the text input, or a fence's textarea. */
+function editorIn(index: number): HTMLInputElement | HTMLTextAreaElement | null {
+  return (
+    rowsEl?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+      `li[data-index="${index}"] .text, li[data-index="${index}"] .fence`,
+    ) ?? null
+  );
+}
 
-    const next = serialize(
-      current.map((b: Block, i: number) => (i === index ? { ...b, raw: setText(b, input.value) } : b)),
-    );
-    if (next === body) {
-      paintRows();
-      return;
-    }
+/**
+ * Put the caret in a row after a repaint.
+ *
+ * 🔴 Every structural edit repaints, and a repaint destroys focus. Restoring it is
+ * not polish — without it, pressing Enter drops you out of the document entirely and
+ * the next keystroke goes nowhere.
+ */
+function focusRow(index: number, offset: number): void {
+  const editor = editorIn(index);
+  if (!editor) return;
+  focused = true;
+  editor.focus();
+  const at = Math.max(0, Math.min(offset, editor.value.length));
+  editor.setSelectionRange(at, at);
+}
 
-    body = next;
+/**
+ * Apply a structural edit: new document, repaint, caret where the model said.
+ *
+ * Saves immediately rather than on the debounce. A split, a merge or a demotion is a
+ * complete intent, the same as a toggle or a drop (spec §6).
+ */
+function applyEdit(result: EditResult): void {
+  if (result.body !== body) {
+    body = result.body;
     paintRows();
     dirty = true;
     lastActivityAt = Date.now();
     clearTimeout(saveTimer);
     void save();
     schedulePoll();
-  };
+  } else {
+    paintRows();
+  }
+  focusRow(result.focusIndex, result.focusOffset);
+}
 
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      finish(true);
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      finish(false);
-    }
-  });
-  input.addEventListener("blur", () => finish(true));
+/**
+ * Typing inside a row.
+ *
+ * 🔴 Deliberately does **not** repaint. The row already shows what was typed, and
+ * rebuilding it would reset the caret to the end on every keystroke — the single
+ * most common way this class of editor gets it wrong.
+ */
+function syncFromRow(index: number, value: string): void {
+  const blocks = parse(body);
+  const block = blocks[index];
+  if (!block) return;
 
-  span.replaceWith(input);
-  // Focus counts for the dirty guard: a poll landing mid-edit would repaint the row
-  // list and destroy the field under the cursor (spec §6).
-  focused = true;
-  input.focus();
-  input.setSelectionRange(input.value.length, input.value.length);
+  const next = serialize(
+    blocks.map((b: Block, i: number) =>
+      i === index ? { ...b, raw: block.kind === "fence" ? value : setText(b, value) } : b,
+    ),
+  );
+  if (next === body) return;
+
+  body = next;
+  refreshClearButton();
+  scheduleSave();
 }
 
 // ── Polling (spec §6, §14.4) ─────────────────────────────────────────────────
@@ -492,6 +498,88 @@ function applyPendingRemote(): void {
   setStatus("Updated from another device");
 }
 
+// ── The typing model (ADR-003, spec §7) ──────────────────────────────────────
+
+// Delegated so it survives every repaint, and so the row count can change freely.
+rowsEl?.addEventListener("input", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
+  if (target.type === "checkbox") return;
+
+  const index = Number(target.closest("li")?.dataset.index);
+  if (Number.isInteger(index)) syncFromRow(index, target.value);
+});
+
+rowsEl?.addEventListener("focusin", (event) => {
+  // Focus alone blocks a remote update from repainting under the caret — the other
+  // half of the dirty guard (spec §6).
+  if ((event.target as HTMLElement).closest(".text, .fence")) focused = true;
+});
+
+rowsEl?.addEventListener("focusout", (event) => {
+  // Moving between rows fires focusout before focusin, so settle on the next tick
+  // rather than tearing down state a keystroke is about to need.
+  const leaving = event.target as HTMLElement;
+  if (!leaving.closest(".text, .fence")) return;
+  setTimeout(() => {
+    if (rowsEl?.contains(document.activeElement) && document.activeElement !== document.body) return;
+    focused = false;
+    if (dirty) {
+      saveNow();
+      return;
+    }
+    applyPendingRemote();
+  }, 0);
+});
+
+rowsEl?.addEventListener("keydown", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
+  if (target.type === "checkbox") return;
+
+  const index = Number(target.closest("li")?.dataset.index);
+  if (!Number.isInteger(index)) return;
+
+  const start = target.selectionStart ?? 0;
+  const end = target.selectionEnd ?? 0;
+  const isFence = target.classList.contains("fence");
+
+  // A fence's textarea owns Enter and Backspace — newlines inside a code block are
+  // the point, and merging one into its neighbour is never what backspace meant.
+  if (isFence && (event.key === "Enter" || event.key === "Backspace")) return;
+
+  if (event.key === "Enter") {
+    event.preventDefault();
+    // The live value, not `body`: an `input` event may not have landed yet on some
+    // IME and autocorrect paths, and splitting a stale line drops the last word.
+    syncFromRow(index, target.value);
+    applyEdit(splitAt(body, index, start));
+    return;
+  }
+
+  if (event.key === "Backspace" && start === 0 && end === 0) {
+    event.preventDefault();
+    syncFromRow(index, target.value);
+    applyEdit(mergeBackward(body, index));
+    return;
+  }
+
+  // Arrows only cross a row boundary when the caret is already at one — otherwise
+  // they belong to the field, which is what makes long lines navigable.
+  if (event.key === "ArrowUp" && start === 0) {
+    event.preventDefault();
+    const result = neighbor(body, index, -1, start);
+    focusRow(result.focusIndex, editorIn(result.focusIndex)?.value.length ?? 0);
+    return;
+  }
+
+  if (event.key === "ArrowDown" && end === target.value.length) {
+    event.preventDefault();
+    const result = neighbor(body, index, 1, end);
+    focusRow(result.focusIndex, result.focusOffset);
+  }
+});
+
 /**
  * Toggle a checkbox, delegated from the row list.
  *
@@ -596,8 +684,6 @@ rowsEl?.addEventListener("click", (event) => {
     return;
   }
 
-  const text = target.closest<HTMLElement>(".text");
-  if (text && text.tabIndex === 0) beginEdit(text);
 });
 
 /**

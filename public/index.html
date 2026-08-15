@@ -104,46 +104,58 @@
       .grip { cursor: grab; }
 
       li.blank { min-height: 1.25rem; padding: 0 0.5rem; }
-      li.fence { flex-wrap: wrap; }
-      li.fence pre { flex: 1 1 100%; order: 2; }
+      li.fence { flex-wrap: wrap; align-items: flex-start; }
       li.fence .grip { order: 1; }
       li.fence .copy { order: 1; margin-left: auto; }
-      li.fence pre {
+      /* A fence is one block and inherently multi-line, so it gets the element that
+         is natively multi-line. This is what removes the last thing raw view was
+         required for (ADR-003 §2). */
+      textarea.fence {
+        flex: 1 1 100%;
+        order: 2;
         margin: 0;
         padding: 0.6rem 0.8rem;
+        border: 0;
         border-radius: 6px;
         background: #191919;
-        overflow-x: auto;
+        color: inherit;
         font: inherit;
+        font-size: 16px;
+        resize: vertical;
+        white-space: pre;
+        overflow-x: auto;
+      }
+      textarea.fence:focus { outline: 1px solid #333; }
+
+      .open {
+        flex: none;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #7aa2d2;
+        text-decoration: none;
+        border-radius: 4px;
       }
       li.checkbox input { flex: none; width: 1.1rem; height: 1.1rem; accent-color: #6b8f6b; }
-      li.checkbox.checked .text { text-decoration: line-through; color: #666; }
-      /* Truncate rather than wrap (spec §7). A wrapping row makes the list stop
-         being scannable, and the full text is one tap away in the editor and always
-         present in raw view — so nothing is hidden, only deferred. */
-      .text {
+      /* Every row's text is a live input now — no tap-to-activate, no span/input
+         swap. Truncation happens naturally: an input scrolls its own content, so a
+         long line stays one row and the caret stays visible while typing. */
+      input.text {
         flex: 1;
         min-width: 0;
-        white-space: pre;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .text a { color: #7aa2d2; }
-      /* Tappable text gets a target big enough for a thumb without looking like a
-         button — the row is the affordance, not a control. */
-      span.text[tabindex] { cursor: text; }
-      span.text[tabindex]:focus-visible { outline: 1px solid #555; outline-offset: 2px; }
-      /* The inline editor sits exactly where the text was, so nothing shifts on tap. */
-      input.text {
         padding: 0;
         border: 0;
         border-radius: 0;
         background: transparent;
         color: inherit;
         font: inherit;
+        /* 16px or iOS zooms the viewport on focus and never zooms back. */
         font-size: 16px;
       }
       input.text:focus { outline: none; }
+      li.checked input.text { text-decoration: line-through; color: #666; }
 
       footer {
         display: flex;

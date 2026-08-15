@@ -683,14 +683,48 @@ suite. Focus management, caret position and the iOS keyboard are where it goes
 wrong, and no test in this repo runs a browser.
 
 **Done when:**
-- [ ] Every text and checkbox row is a **live input** — no tap-to-activate step
-- [ ] `Enter` at end of row inserts an empty row below and focuses it
-- [ ] `Enter` mid-row splits the block in two
-- [ ] `Backspace` at position 0 merges into the previous row, caret at the join
-- [ ] `↑` / `↓` at a row boundary move focus between rows
-- [ ] Fenced blocks are an inline `<textarea>`, one block, natively multi-line
-- [ ] Raw view still reachable, but the editor is where every load lands
-- [ ] Split and merge are block-array operations; the round-trip property still holds
+- [x] Every text and checkbox row is a **live input** — no tap-to-activate step
+- [x] `Enter` at end of row inserts an empty row below and focuses it
+- [x] `Enter` mid-row splits the block in two
+- [x] `Backspace` at position 0 merges into the previous row, caret at the join
+- [x] `↑` / `↓` at a row boundary move focus between rows
+- [x] Fenced blocks are an inline `<textarea>`, one block, natively multi-line
+- [x] Raw view still reachable, but the editor is where every load lands
+- [x] Split and merge are block-array operations; the round-trip property still holds
+
+**Decided during implementation:**
+
+- **`client/src/edit.ts` holds the typing model as pure functions** — `splitAt`,
+  `mergeBackward`, `neighbor`, each taking a document and returning a document plus
+  where the caret goes. No DOM. This is the only defence available against "the
+  source of every cursor bug" without a browser, and it is why 235 tests cover work
+  the suite supposedly cannot reach.
+- 🔴 **A `setText` bug shipped in #10, found by a property test here.** It stripped a
+  trailing `\r` from the *caller's* text, assuming a line ending — so splitting a
+  line immediately after a content `\r` silently deleted that character. Replaced by
+  `lineFor` (body, no ending) plus `eolOf`, with the strip removed entirely: callers
+  pass display text, which never contains one.
+- **A split moves the line ending to the *second* half.** Leaving it on the head
+  produces `hello\r\n world` — a stray carriage return mid-document that survives
+  every round trip, because `raw` is honoured verbatim.
+- **`Enter` on an empty checkbox exits the list.** Without it there is no way to
+  stop making checkboxes except reaching for raw view — the exact mode switch
+  ADR-003 removed.
+- **`Backspace` demotes a checkbox before merging it.** One keystroke that both
+  strips a checkbox and joins two lines destroys more than was asked for.
+- **Typing does not repaint.** The row already shows what was typed; rebuilding it
+  would reset the caret to the end on every keystroke.
+- 🔴 **Inline linkified anchors are gone, replaced by a per-row `↗` button.** An
+  `<input>` cannot contain an `<a>`. The alternatives were contenteditable (rejected
+  by ADR-003) or swapping span↔input on focus — which is the tap-to-activate step
+  this phase exists to remove. **This is a real regression from #11 and the most
+  likely thing here to want revisiting.**
+- **The grip stays for now.** Removing it would leave no reorder at all until P15.
+
+**Known limit, inherent rather than a bug:** splitting a line immediately after a
+lone content `\r` loses that character, because the head then ends `\r` followed by
+`\n`, which *is* a CRLF ending by the parser's rules. Excluded from the round-trip
+property with its own documenting test.
 
 **Watch for:** the foundation carries this — rows already map 1:1 to blocks (#9),
 edits already go through `setText` (#10), reorder already operates on the block
