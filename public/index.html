@@ -224,7 +224,20 @@
         text-decoration: none;
         border-radius: 4px;
       }
-      li.checkbox input { flex: none; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+      /* 🔴 `input[type="checkbox"]`, not `input`. A bare `li.checkbox input` also
+         matches the row's *text* input — and at (0,1,2) it outranks `input.text` at
+         (0,1,1), so `flex: none; width: 1.1rem` collapsed every checkbox row's text
+         to about 17px with the copy button jammed against it. The row still worked;
+         it was just unreadable. */
+      li.checkbox input[type="checkbox"] {
+        flex: none;
+        width: 1.15rem;
+        height: 1.15rem;
+        margin: 0;
+        padding: 0;
+        border-radius: 4px;
+        accent-color: var(--accent);
+      }
       /* Every row's text is a live input now — no tap-to-activate, no span/input
          swap. Truncation happens naturally: an input scrolls its own content, so a
          long line stays one row and the caret stays visible while typing. */
@@ -285,16 +298,23 @@
       }
       [data-login] h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem; }
 
-      input, button {
+      /* 🔴 Scoped to the login form and the footer. A bare `input, button` selector
+         also styles every row's text input and checkbox — 0.75rem of padding and a
+         border on each — which is how a row checkbox ended up rendering at ~45px. A
+         global element selector in a document made of inputs is a rule that hits
+         everything you did not mean. */
+      [data-login] input,
+      [data-login] button,
+      footer button {
         font: inherit;
         font-size: 16px;
-        padding: 0.75rem;
         border-radius: 6px;
         border: 1px solid var(--line);
         background: var(--field);
         color: inherit;
       }
-      button { background: var(--button); cursor: pointer; }
+      [data-login] input, [data-login] button { padding: 0.75rem; }
+      [data-login] button, footer button { background: var(--button); cursor: pointer; }
       button:disabled { opacity: 0.5; cursor: default; }
 
       [hidden] { display: none !important; }
