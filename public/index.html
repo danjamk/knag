@@ -12,17 +12,61 @@
       :root { color-scheme: dark; }
       body {
         margin: 0;
-        padding: 2rem 1rem;
+        /* env(safe-area-inset-*) matters in a home-screen PWA: it runs fullscreen,
+           so without it the notch eats the first line. */
+        padding: max(2rem, env(safe-area-inset-top)) 1rem env(safe-area-inset-bottom);
         background: #111;
         color: #e8e8e8;
         font: 16px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
       }
+      h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 1.5rem; }
       p { color: #888; }
+      form { display: flex; flex-direction: column; gap: 0.75rem; max-width: 28rem; }
+      input, button {
+        font: inherit;
+        padding: 0.75rem;
+        border-radius: 6px;
+        border: 1px solid #333;
+        background: #1a1a1a;
+        color: inherit;
+      }
+      button { background: #2a2a2a; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      [hidden] { display: none !important; }
+      [data-error] { color: #e06c6c; min-height: 1.5rem; }
+      [data-build] { color: #555; font-size: 0.8rem; margin-top: 3rem; }
     </style>
   </head>
   <body>
     <h1>knag</h1>
-    <p>Scaffold. Build <span data-status>—</span>.</p>
+
+    <form data-login hidden>
+      <!-- autocomplete="current-password" so the browser and iOS Keychain offer to
+           save it. Retyping a long random passphrase on a phone is the friction that
+           decides whether this app gets opened. -->
+      <input
+        type="password"
+        name="passphrase"
+        placeholder="passphrase"
+        autocomplete="current-password"
+        required
+      />
+      <input
+        type="text"
+        name="device_label"
+        placeholder="device label (optional)"
+        autocomplete="off"
+      />
+      <button type="submit">Log in</button>
+      <span data-error role="alert"></span>
+    </form>
+
+    <div data-authed hidden>
+      <p>Logged in. The document arrives with the raw view.</p>
+    </div>
+
+    <p data-build>—</p>
+
     <script type="module" src="/app.js"></script>
   </body>
 </html>
