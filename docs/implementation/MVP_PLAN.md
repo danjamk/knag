@@ -226,12 +226,44 @@ A textarea and a save. At this point knag is already useful and already replaces
 the transfer use case.
 
 **Done when:**
-- [ ] Full-bleed monospace `<textarea>`, entire document unmodified
-- [ ] **Round-trips byte-for-byte** — no trimming, no whitespace normalization, no line-ending rewriting
-- [ ] Saves on 800ms debounce after typing stops, and immediately on blur
-- [ ] Login screen when unauthenticated
-- [ ] `manifest.json` with 192/512 icons, `display: standalone`, matching `theme_color`
-- [ ] Service worker caches the **shell only** — never a document response
+- [x] Full-bleed monospace `<textarea>`, entire document unmodified
+- [x] **Round-trips byte-for-byte** — no trimming, no whitespace normalization, no line-ending rewriting
+- [x] Saves on 800ms debounce after typing stops, and immediately on blur
+- [x] Login screen when unauthenticated
+- [x] `manifest.json` with 192/512 icons, `display: standalone`, matching `theme_color`
+- [x] Service worker caches the **shell only** — never a document response
+
+**Decided during implementation:**
+
+- **The shell's textarea attributes are pinned by a test**, not just a comment.
+  `wrap="off"`, `spellcheck`, `autocapitalize`, `autocorrect` — losing any of them
+  breaks no build, throws nothing, and renders identically while letting iOS
+  rewrite the document. `vitest.config.ts` reads `public/index.html` in Node and
+  passes it as `TEST_SHELL`, the same trick already used for migrations, because
+  Miniflare does not serve the `assets` binding in tests.
+- 🔴 **The first version of that test was theatre.** `toContain('wrap="off"')`
+  matched the CSS comment that *mentions* the attribute, so deleting the real one
+  left it green. Caught by deleting the attribute and watching nothing fail. The
+  assertion is now scoped to the `<textarea>` tag itself. **Assertions about an
+  element must be scoped to that element** — a whole-file `toContain` is a
+  substring search, not a test.
+- **`visibilitychange` saves, not just `blur`.** iOS does not reliably fire blur
+  when the app is backgrounded or swiped away, which is the exact way this app
+  gets closed on the device it was built for.
+- **Icons are generated, not designed.** `scripts/make-icons.py` draws a peg on a
+  wall. There is no brand asset for knag yet and the manifest was pointing at two
+  404s — iOS silently substitutes a screenshot of the page, which reads as a bug
+  on the home screen. Replace when real artwork exists; nothing depends on how it
+  looks.
+- **On 409 the server's copy wins and the local edit is lost.** Deliberate and
+  temporary: it is survivable only because this is one user on an 800ms debounce.
+  P5 adds the dirty guard. What is *never* done is retrying with the stale body —
+  that is the catastrophic path, and the 409 carries the current body so a retry
+  is unnecessary.
+
+**Not covered by any test:** the textarea's behaviour in Safari itself. The
+attributes are pinned and the API round-trip is covered, but whether iOS actually
+honours them needs a device. Manual check is in the issue.
 
 ---
 

@@ -6,44 +6,99 @@
     <meta name="theme-color" content="#111111" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="knag" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>knag</title>
     <link rel="manifest" href="/manifest.json" />
     <style>
-      :root { color-scheme: dark; }
+      :root {
+        color-scheme: dark;
+        --bg: #111;
+        --fg: #e8e8e8;
+        --dim: #888;
+        --line: #333;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
       body {
         margin: 0;
-        /* env(safe-area-inset-*) matters in a home-screen PWA: it runs fullscreen,
-           so without it the notch eats the first line. */
-        padding: max(2rem, env(safe-area-inset-top)) 1rem env(safe-area-inset-bottom);
-        background: #111;
-        color: #e8e8e8;
+        background: var(--bg);
+        color: var(--fg);
         font: 16px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
       }
-      h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 1.5rem; }
-      p { color: #888; }
-      form { display: flex; flex-direction: column; gap: 0.75rem; max-width: 28rem; }
+
+      /* Full-bleed editor. Safe-area insets matter because a home-screen PWA runs
+         fullscreen — without them the notch eats the first line. */
+      [data-editor] {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right)
+                 env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+
+      /* 🔴 Nothing in this rule may introduce text-transform, white-space collapsing,
+         or anything else that makes what is displayed differ from what is stored.
+         `wrap="off"` lives on the element rather than here, because it changes what
+         the textarea *does* to long lines, not how they look. */
+      [data-body] {
+        flex: 1;
+        width: 100%;
+        margin: 0;
+        padding: 1rem;
+        border: 0;
+        resize: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        tab-size: 4;
+        /* 16px minimum, or iOS Safari zooms the viewport on focus and never zooms back. */
+        font-size: 16px;
+      }
+      [data-body]:focus { outline: none; }
+
+      footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.5rem 1rem;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 0.75rem;
+      }
+
+      [data-login] {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        max-width: 28rem;
+        margin: 0 auto;
+        padding: max(3rem, env(safe-area-inset-top)) 1rem 1rem;
+      }
+      [data-login] h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem; }
+
       input, button {
         font: inherit;
+        font-size: 16px;
         padding: 0.75rem;
         border-radius: 6px;
-        border: 1px solid #333;
+        border: 1px solid var(--line);
         background: #1a1a1a;
         color: inherit;
       }
       button { background: #2a2a2a; cursor: pointer; }
       button:disabled { opacity: 0.5; cursor: default; }
+
       [hidden] { display: none !important; }
       [data-error] { color: #e06c6c; min-height: 1.5rem; }
-      [data-build] { color: #555; font-size: 0.8rem; margin-top: 3rem; }
     </style>
   </head>
   <body>
-    <h1>knag</h1>
-
     <form data-login hidden>
-      <!-- autocomplete="current-password" so the browser and iOS Keychain offer to
-           save it. Retyping a long random passphrase on a phone is the friction that
-           decides whether this app gets opened. -->
+      <h1>knag</h1>
+      <!-- autocomplete="current-password" so the browser and the iOS Keychain offer
+           to save it. Retyping a long random passphrase on a phone is the friction
+           that decides whether this app gets opened. -->
       <input
         type="password"
         name="passphrase"
@@ -61,11 +116,27 @@
       <span data-error role="alert"></span>
     </form>
 
-    <div data-authed hidden>
-      <p>Logged in. The document arrives with the raw view.</p>
+    <div data-editor hidden>
+      <!-- 🔴 Every attribute on this element is load-bearing for byte preservation.
+           Hard wrapping can insert newlines into the value; autocorrect and
+           autocapitalize rewrite words on iOS. A textarea is the one component in
+           this stack that mangles input silently if you let it, and none of these
+           going missing breaks a build or changes how anything looks. Pinned by
+           worker/test/shell.test.ts. See spec §8. -->
+      <textarea
+        data-body
+        wrap="off"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        autocomplete="off"
+        aria-label="document"
+      ></textarea>
+      <footer>
+        <span data-save-status>—</span>
+        <span data-build>—</span>
+      </footer>
     </div>
-
-    <p data-build>—</p>
 
     <script type="module" src="/app.js"></script>
   </body>
