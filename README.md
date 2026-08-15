@@ -29,11 +29,19 @@ corrupts a document. See [docs/spec.md](docs/spec.md) §2.
 ## Quick start
 
 ```bash
-make setup                                 # install, create .env, report what's missing
-pnpm exec wrangler d1 create knag-dev      # paste the id into worker/wrangler.jsonc
+make setup            # install, create .env, report what's missing
 make migrate ENV=local
 make dev
 ```
+
+The dev D1 already exists and its id is committed in `worker/wrangler.jsonc` — a
+database id is not a secret. `make migrate ENV=local` targets a **local** SQLite
+file, so `make dev` needs no Cloudflare credential at all.
+
+Reaching the real dev environment does, and it needs two things this repo cannot
+give you: a `CLOUDFLARE_API_TOKEN` in `.env.local` for the dev account, and the
+`KNAG_PASSPHRASE` / `KNAG_BEARER_TOKEN` secrets already set on the Worker.
+`make preflight` tells you whether the credential you have points where you think.
 
 `make help` lists everything. `ENV` is a variable, never a target suffix —
 `make deploy ENV=prod` — and it defaults to `dev`.

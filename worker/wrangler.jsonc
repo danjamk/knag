@@ -36,15 +36,19 @@
   // second source of truth. `make backup` and D1 Time Travel (30 days) are the
   // recovery paths; treat both as load-bearing.
   //
-  // Placeholder. Against the DEV account:
-  //   pnpm exec wrangler d1 create knag-dev
-  // Wrangler validates this as a non-empty string even for local tests, so it
-  // cannot be blank. Deploying with the placeholder fails loudly, which is correct.
+  // Created on the DEV account 2026-08-15 with `wrangler d1 create knag-dev`. The id
+  // is not a secret — it names a resource that only a credentialed request can reach,
+  // which is why this file is committed and the token is not.
+  //
+  // The binding stays `DB`. Wrangler's create output suggests naming it after the
+  // database (`knag_dev`); taking that suggestion would make the binding differ
+  // between dev and prod, and every `env.DB` in the tree would have to know which
+  // environment it was running in.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "knag-dev",
-      "database_id": "REPLACE_WITH_DEV_D1_DATABASE_ID",
+      "database_id": "ac5d4b49-4556-43bd-abd1-151b01027c4f",
       "migrations_dir": "migrations"
     }
   ],

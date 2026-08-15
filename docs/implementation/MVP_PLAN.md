@@ -172,18 +172,49 @@ test.
 The point of this phase is not the deployment. It is starting the ITP clock.
 
 **Done when:**
-- [ ] `CF_ACCOUNT_ID_DEV` set in `.env`; `make preflight` passes
-- [ ] `wrangler d1 create knag-dev`, id pasted into `wrangler.jsonc`
-- [ ] `make migrate ENV=dev` applied
-- [ ] `KNAG_PASSPHRASE` and `KNAG_BEARER_TOKEN` set as dev secrets — **different values from whatever prod will use**
-- [ ] `make deploy ENV=dev` succeeds; `make health ENV=dev` matches the checkout
-- [ ] Added to the iPhone home screen, logged in once
-- [ ] **Date recorded in this file** so day 7 is unambiguous
+- [x] `CF_ACCOUNT_ID_DEV` set in `.env`; `make preflight` passes
+- [x] `wrangler d1 create knag-dev`, id pasted into `wrangler.jsonc`
+- [x] `make migrate ENV=dev` applied
+- [x] `KNAG_PASSPHRASE` and `KNAG_BEARER_TOKEN` set as dev secrets — **different values from whatever prod will use**
+- [x] `make deploy ENV=dev` succeeds; `make health ENV=dev` matches the checkout
+- [x] Added to the iPhone home screen, logged in once
+- [x] **Date recorded in this file** so day 7 is unambiguous
+- [ ] **Day 7: reopen without touching it in between, confirm still logged in**
 
-**Clock started:** `__________`  ·  **Verify on:** `__________`
+**Clock started:** `2026-08-15`  ·  **Verify on:** `2026-08-22`
+
+**Dev URL:** https://knag-dev.fractional-lab5.workers.dev
+**Dev D1:** `knag-dev` · `ac5d4b49-4556-43bd-abd1-151b01027c4f`
+
+The session that starts the clock, read off the live database rather than assumed:
+
+```
+device_label  iphone
+created_at    2026-08-15T13:40:23.553Z
+expires_at    2027-08-15T13:40:23.553Z    exactly one year
+hash_len      64                          SHA-256 hex — the raw token is not stored
+```
+
+🔴 **Do not open knag on the iPhone before 2026-08-22.** Opening it resets the
+inactivity window, and the whole point is to prove the cookie survives one
+untouched. Use the laptop if you need to poke at it.
 
 **Watch for:** the dev Worker is on `*.workers.dev` with no WAF rate-limit rule
 in front of it. Dev holds test content only.
+
+**Decided during implementation:**
+
+- **A minimal login screen shipped here, not in P4.** This phase's task list said
+  "logged in once" while the only issue building a way to log in was the next one —
+  an ordering error in this plan. `/api/login` existed and nothing on the phone
+  could call it, so the clock could not start. What shipped is a passphrase field
+  and an authed/unauthed toggle; no textarea, no debounce, no service worker. P4
+  inherits it rather than building it, and its own task list already listed it.
+- **The authed check probes `GET /api/doc`** rather than adding `/api/me`. 200 or
+  401 already answers the question; a second endpoint would be a second answer.
+- **The D1 binding stays `DB`.** `wrangler d1 create` suggests naming the binding
+  after the database (`knag_dev`), which would make it differ between dev and prod
+  and force every `env.DB` in the tree to know which environment it is in.
 
 ---
 
