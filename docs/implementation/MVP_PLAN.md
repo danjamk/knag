@@ -736,11 +736,30 @@ needing to reach for the DOM as the source of truth, stop.
 **Spec:** §7 · **Size:** 1 day · **Depends:** P13
 
 **Done when:**
-- [ ] `--` + space rewrites the line prefix to `- [ ] `
-- [ ] `Backspace` immediately after reverts the conversion
-- [ ] A single `- ` stays a literal dash — **no bullet rendering**
-- [ ] `spellcheck` / `autocorrect` / `autocapitalize` **on** for text and checkbox rows
-- [ ] All three **off** inside fences
+- [x] `--` + space rewrites the line prefix to `- [ ] `
+- [x] `Backspace` immediately after reverts the conversion
+- [x] A single `- ` stays a literal dash — **no bullet rendering**
+- [x] `spellcheck` / `autocorrect` / `autocapitalize` **on** for text and checkbox rows
+- [x] All three **off** inside fences
+
+**Decided during implementation:**
+
+- **The shorthand also marks an existing line.** Put the caret at the start of
+  `buy milk`, type `-- `, and it becomes `- [ ] buy milk`. Useful enough to support
+  explicitly rather than restricting the trigger to an empty line.
+- **It fires only with the caret immediately after the space.** Typing `--`
+  mid-sentence, or arrowing back into a line that happens to start with two dashes,
+  is left completely alone.
+- **The undo window closes on the next keystroke.** An undo that stays available
+  indefinitely stops being an undo: backspacing at the start of a checkbox made an
+  hour ago must demote it, not resurrect two dashes.
+- **Revert matches only the exact shape the conversion produces** — not `- [x] ` and
+  not `* [ ] `. Anything else was typed or toggled by the user and is not this
+  shortcut's to undo.
+- **A round-trip property covers it**, because a shortcut that makes `--` untypeable
+  is worse than no shortcut.
+- **Autocorrect landed with P13**, since one element per block is what made the
+  prose/fence distinction possible in the first place.
 
 **Watch for:** the autocorrect setting is only available because of P13. One
 textarea cannot tell prose from a code fence; one element per block can.

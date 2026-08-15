@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { parse } from "../../worker/src/blocks.js";
-import { mergeBackward, neighbor, splitAt } from "../src/edit.js";
+import { applyShorthand, mergeBackward, neighbor, revertShorthand, splitAt } from "../src/edit.js";
 import { displayText } from "../src/view.js";
 
 /**
@@ -261,6 +261,81 @@ describe("what typing may never do", () => {
         expect(result.body.replace(/[\n\r]/g, "").length).toBeLessThanOrEqual(
           body.replace(/[\n\r]/g, "").length,
         );
+      }),
+      { numRuns: 1000 },
+    );
+  });
+});
+
+describe("checkbox shorthand (spec §7, ADR-003 §4)", () => {
+  it("converts `-- ` at the start of a line", () => {
+    expect(applyShorthand("-- ", 3)).toEqual({ text: "- [ ] ", caret: 6 });
+  });
+
+  it("keeps indentation", () => {
+    expect(applyShorthand("  -- ", 5)).toEqual({ text: "  - [ ] ", caret: 8 });
+    expect(applyShorthand("\t-- ", 4)).toEqual({ text: "\t- [ ] ", caret: 7 });
+  });
+
+  it("marks an existing line as a task", () => {
+    // Caret at the start of "buy milk", type `-- `, and it becomes a checkbox with
+    // the text intact. Useful enough to be worth supporting explicitly.
+    expect(applyShorthand("-- buy milk", 3)).toEqual({ text: "- [ ] buy milk", caret: 6 });
+  });
+
+  it("🔴 does not fire when the caret is anywhere else", () => {
+    // Typing `--` mid-sentence, or arrowing back into a line that starts with two
+    // dashes, must be left completely alone.
+    expect(applyShorthand("-- ", 0)).toBeNull();
+    expect(applyShorthand("-- ", 2)).toBeNull();
+    expect(applyShorthand("-- buy milk", 8)).toBeNull();
+    expect(applyShorthand("a -- b", 4)).toBeNull();
+  });
+
+  it("🔴 does not fire on a single dash", () => {
+    // A single `- ` stays a literal dash. Rendering it as a bullet would be the first
+    // place the display differs from the bytes.
+    expect(applyShorthand("- ", 2)).toBeNull();
+    expect(applyShorthand("- buy milk", 2)).toBeNull();
+    expect(applyShorthand("  - ", 4)).toBeNull();
+  });
+
+  it("does not fire without the space", () => {
+    expect(applyShorthand("--", 2)).toBeNull();
+    expect(applyShorthand("---", 3)).toBeNull();
+  });
+
+  it("reverts on the immediate backspace", () => {
+    expect(revertShorthand("- [ ] ", 6)).toEqual({ text: "-- ", caret: 3 });
+    expect(revertShorthand("  - [ ] buy milk", 8)).toEqual({ text: "  -- buy milk", caret: 5 });
+  });
+
+  it("only reverts with the caret right after the prefix", () => {
+    // Backspace anywhere else in a checkbox is ordinary editing, not an undo.
+    expect(revertShorthand("- [ ] buy", 9)).toBeNull();
+    expect(revertShorthand("- [ ] ", 3)).toBeNull();
+  });
+
+  it("does not revert a checked box or a `*` marker", () => {
+    // Only the exact shape the conversion produces. Anything else was typed or
+    // toggled by the user and is not this shortcut's to undo.
+    expect(revertShorthand("- [x] ", 6)).toBeNull();
+    expect(revertShorthand("* [ ] ", 6)).toBeNull();
+  });
+
+  it("🔴 round-trips, so `--` at the start of a line stays typeable", () => {
+    // A shortcut that takes a character away from you is worse than no shortcut.
+    fc.assert(
+      fc.property(fc.constantFrom("", " ", "  ", "\t"), fc.string({ maxLength: 40 }), (ind, rest) => {
+        const typed = `${ind}-- ${rest}`;
+        const converted = applyShorthand(typed, ind.length + 3);
+        expect(converted).not.toBeNull();
+
+        const reverted = revertShorthand(
+          (converted as { text: string }).text,
+          (converted as { caret: number }).caret,
+        );
+        expect(reverted).toEqual({ text: typed, caret: ind.length + 3 });
       }),
       { numRuns: 1000 },
     );

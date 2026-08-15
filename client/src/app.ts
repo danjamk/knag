@@ -27,7 +27,14 @@ import {
 } from "../../worker/src/blocks.js";
 import { mayApplyRemote, pollInterval } from "./sync.js";
 import Sortable from "sortablejs";
-import { type EditResult, mergeBackward, neighbor, splitAt } from "./edit.js";
+import {
+  type EditResult,
+  applyShorthand,
+  mergeBackward,
+  neighbor,
+  revertShorthand,
+  splitAt,
+} from "./edit.js";
 import { type ViewMode, linkify, move, readView, rows, writeView } from "./view.js";
 
 type Doc = { body: string; version: number; updated_at: string };
@@ -501,13 +508,38 @@ function applyPendingRemote(): void {
 // ── The typing model (ADR-003, spec §7) ──────────────────────────────────────
 
 // Delegated so it survives every repaint, and so the row count can change freely.
+/**
+ * The row a `--` conversion just happened in, so the next `Backspace` can undo it.
+ *
+ * 🔴 Cleared by any other keystroke. An undo that stays available indefinitely stops
+ * being an undo and becomes a rule nobody can predict — backspacing at the start of
+ * a checkbox you made an hour ago must demote it, not resurrect two dashes.
+ */
+let shorthandAt: { index: number } | null = null;
+
 rowsEl?.addEventListener("input", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
   if (target.type === "checkbox") return;
 
   const index = Number(target.closest("li")?.dataset.index);
-  if (Number.isInteger(index)) syncFromRow(index, target.value);
+  if (!Number.isInteger(index)) return;
+
+  // `-- ` → `- [ ] `, on the space. The row becomes a checkbox, so unlike ordinary
+  // typing this one does have to repaint — and therefore has to put the caret back.
+  if (!target.classList.contains("fence")) {
+    const converted = applyShorthand(target.value, target.selectionStart ?? 0);
+    if (converted) {
+      syncFromRow(index, converted.text);
+      paintRows();
+      focusRow(index, converted.caret);
+      shorthandAt = { index };
+      return;
+    }
+  }
+
+  shorthandAt = null;
+  syncFromRow(index, target.value);
 });
 
 rowsEl?.addEventListener("focusin", (event) => {
@@ -548,6 +580,9 @@ rowsEl?.addEventListener("keydown", (event) => {
   // the point, and merging one into its neighbour is never what backspace meant.
   if (isFence && (event.key === "Enter" || event.key === "Backspace")) return;
 
+  // Any keystroke that is not the undo closes the window on it.
+  if (event.key !== "Backspace") shorthandAt = null;
+
   if (event.key === "Enter") {
     event.preventDefault();
     // The live value, not `body`: an `input` event may not have landed yet on some
@@ -555,6 +590,21 @@ rowsEl?.addEventListener("keydown", (event) => {
     syncFromRow(index, target.value);
     applyEdit(splitAt(body, index, start));
     return;
+  }
+
+  // Undo the shorthand, but only on the keystroke straight after it. Otherwise
+  // `--` at the start of a line would be untypeable, and a shortcut that takes a
+  // character away from you is worse than no shortcut (ADR-003 §4).
+  if (event.key === "Backspace" && shorthandAt?.index === index) {
+    const reverted = revertShorthand(target.value, start);
+    if (reverted) {
+      event.preventDefault();
+      shorthandAt = null;
+      syncFromRow(index, reverted.text);
+      paintRows();
+      focusRow(index, reverted.caret);
+      return;
+    }
   }
 
   if (event.key === "Backspace" && start === 0 && end === 0) {

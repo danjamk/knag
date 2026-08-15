@@ -136,6 +136,64 @@ export function mergeBackward(body: string, index: number): EditResult {
   return { body: serialize(next), focusIndex: index - 1, focusOffset: offset };
 }
 
+// ── Checkbox shorthand (spec §7) ─────────────────────────────────────────────
+
+/** `--` then a space, at the start of a line, with only indentation before it. */
+const SHORTHAND = /^(\s*)-- /;
+/** What that becomes, and what a revert has to recognise. */
+const CONVERTED = /^(\s*)- \[ \] /;
+
+export type Shorthand = { text: string; caret: number } | null;
+
+/**
+ * `--` + space becomes `- [ ] `.
+ *
+ * Converts **on the space**, which is what makes it feel like a shortcut rather than
+ * a delayed transformation. That is only safe because `revertShorthand` undoes it on
+ * an immediate `Backspace` — the standard autoformat contract, and the reason a
+ * literal `--` is still typeable.
+ *
+ * Fires whether or not the line already has text after it, so an existing line can
+ * be marked as a task by putting the caret at the start and typing `-- `. Returns
+ * `null` when the caret is anywhere but immediately after that space, so typing `--`
+ * mid-sentence is left alone.
+ *
+ * A single `- ` is deliberately not a trigger. It stays a literal dash — rendering
+ * it as a bullet would be the first place the display differs from the bytes, and
+ * principle 3 has held absolutely (ADR-003 §4).
+ */
+export function applyShorthand(text: string, caret: number): Shorthand {
+  const match = SHORTHAND.exec(text);
+  if (!match) return null;
+
+  const indent = match[1] ?? "";
+  // Only at the moment the space lands. Anywhere else and the user is editing text
+  // that merely happens to begin with two dashes.
+  if (caret !== indent.length + 3) return null;
+
+  const rest = text.slice(indent.length + 3);
+  return { text: `${indent}- [ ] ${rest}`, caret: indent.length + 6 };
+}
+
+/**
+ * Undo a conversion, on the `Backspace` immediately following it.
+ *
+ * 🔴 Without this, `--` at the start of a line is untypeable — and a shortcut that
+ * takes a character away from you is worse than no shortcut. The caller is
+ * responsible for only calling it when the previous keystroke was the conversion;
+ * this just performs the inverse.
+ */
+export function revertShorthand(text: string, caret: number): Shorthand {
+  const match = CONVERTED.exec(text);
+  if (!match) return null;
+
+  const indent = match[1] ?? "";
+  if (caret !== indent.length + 6) return null;
+
+  const rest = text.slice(indent.length + 6);
+  return { text: `${indent}-- ${rest}`, caret: indent.length + 3 };
+}
+
 /**
  * `↑` / `↓` — the row to move to, and where the caret sits in it.
  *
