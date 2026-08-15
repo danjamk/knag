@@ -275,6 +275,66 @@
          under your thumb by accident. */
       [data-clear] { margin-left: auto; }
 
+      /* Settings. Rare controls live here so the footer can stay at three. */
+      dialog[data-settings] {
+        width: min(28rem, 100vw - 2rem);
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      dialog[data-settings]::backdrop { background: rgb(0 0 0 / 0.55); }
+      dialog[data-settings] form { padding: 1.25rem; }
+      dialog[data-settings] h2 { font-size: 1rem; margin: 0 0 1rem; }
+      dialog[data-settings] h3 {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--dim);
+        margin: 0 0 0.5rem;
+      }
+      dialog[data-settings] section { margin-bottom: 1.5rem; }
+      .choices { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+      .choices button {
+        flex: 1;
+        min-width: 5rem;
+        padding: 0.5rem;
+        font-size: 0.85rem;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--field);
+        color: inherit;
+        cursor: pointer;
+      }
+      .choices button[aria-pressed="true"] {
+        background: var(--mode-bg);
+        color: var(--mode-fg);
+        border-color: var(--mode-fg);
+      }
+      .note { margin: 0.6rem 0 0; font-size: 0.75rem; color: var(--dim); line-height: 1.4; }
+      /* Build info: one tap from anywhere, because "is my change live" cost a round
+         trip once already. Moved off the footer, not buried. */
+      [data-build-detail] {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.3rem 1rem;
+        margin: 0;
+        font-size: 0.75rem;
+      }
+      [data-build-detail] dt { color: var(--dim); }
+      [data-build-detail] dd { margin: 0; word-break: break-all; }
+      .done {
+        width: 100%;
+        padding: 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: inherit;
+        cursor: pointer;
+      }
+
       /* Non-prod is labelled. Dev holds test content only and sits behind no
          rate-limit rule, so it should not be mistakable for the real thing. */
       .env {
@@ -365,15 +425,61 @@
            index. -->
       <ul data-rows hidden></ul>
 
+      <!-- 🔴 Three controls, one conditional. The footer is the only chrome in the
+           app and it sits right above the keyboard on a phone — every control here
+           is one the reader steps over to reach the document. Rare things live in
+           settings, not on this bar. -->
       <footer>
         <span data-save-status>—</span>
-        <button type="button" data-clear hidden>clear done</button>
-        <button type="button" data-reorder>reorder</button>
-        <button type="button" data-theme-toggle title="theme">◐</button>
-        <button type="button" data-toggle-view>raw</button>
-        <span data-build>—</span>
+        <button type="button" data-clear hidden title="clear completed">
+          ⌫ <span data-clear-count>0</span>
+        </button>
+        <button type="button" data-reorder title="rearrange, copy, delete">⇅</button>
+        <button type="button" data-settings-open title="settings">⚙</button>
       </footer>
     </div>
+
+    <!-- <dialog> rather than a hand-rolled overlay: it gets the backdrop, Escape,
+         focus trapping and inertness from the platform, all of which are easy to
+         get subtly wrong and none of which are this project's problem. -->
+    <dialog data-settings>
+      <form method="dialog">
+        <h2>Settings</h2>
+
+        <section>
+          <h3>Theme</h3>
+          <div class="choices">
+            <button type="button" data-theme-set="system">System</button>
+            <button type="button" data-theme-set="light">Light</button>
+            <button type="button" data-theme-set="dark">Dark</button>
+          </div>
+        </section>
+
+        <section>
+          <h3>View</h3>
+          <div class="choices">
+            <button type="button" data-view-set="list">List</button>
+            <button type="button" data-view-set="raw">Raw text</button>
+          </div>
+          <p class="note">
+            Raw is the escape hatch — bulk paste, sweeps, anything the rows cannot
+            express. The editor is where you land.
+          </p>
+        </section>
+
+        <section>
+          <h3>Build</h3>
+          <dl data-build-detail>
+            <dt>version</dt><dd data-build-version>—</dd>
+            <dt>environment</dt><dd data-build-env>—</dd>
+            <dt>commit</dt><dd data-build-commit>—</dd>
+            <dt>deployed</dt><dd data-build-when>—</dd>
+          </dl>
+        </section>
+
+        <button type="submit" class="done">Done</button>
+      </form>
+    </dialog>
 
     <script type="module" src="/app.js"></script>
   </body>

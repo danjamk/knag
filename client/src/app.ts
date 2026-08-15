@@ -40,7 +40,6 @@ import {
   type ViewMode,
   linkify,
   move,
-  nextTheme,
   readTheme,
   readView,
   removeAt,
@@ -59,12 +58,12 @@ const loginError = document.querySelector<HTMLElement>("[data-error]");
 const editorView = document.querySelector<HTMLElement>("[data-editor]");
 const editor = document.querySelector<HTMLTextAreaElement>("[data-body]");
 const statusEl = document.querySelector<HTMLElement>("[data-save-status]");
-const buildEl = document.querySelector<HTMLElement>("[data-build]");
+const settingsDialog = document.querySelector<HTMLDialogElement>("[data-settings]");
+const settingsOpen = document.querySelector<HTMLButtonElement>("[data-settings-open]");
+const clearCountEl = document.querySelector<HTMLElement>("[data-clear-count]");
 const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
-const toggleViewButton = document.querySelector<HTMLButtonElement>("[data-toggle-view]");
 const clearButton = document.querySelector<HTMLButtonElement>("[data-clear]");
 const reorderButton = document.querySelector<HTMLButtonElement>("[data-reorder]");
-const themeButton = document.querySelector<HTMLButtonElement>("[data-theme-toggle]");
 
 /** Above this many, a sweep gets a confirm. Below it, undo-by-history is enough. */
 const CONFIRM_CLEAR_ABOVE = 10;
@@ -153,7 +152,6 @@ function paint(): void {
   if (editor) editor.value = body;
   editor?.toggleAttribute("hidden", view !== "raw");
   rowsEl?.toggleAttribute("hidden", view !== "list");
-  if (toggleViewButton) toggleViewButton.textContent = view === "list" ? "raw" : "list";
 
   reorderButton?.toggleAttribute("hidden", view !== "list");
 
@@ -185,7 +183,8 @@ function paintRows(): void {
 function refreshClearButton(): void {
   const completed = parse(body).filter(isCompleted).length;
   clearButton?.toggleAttribute("hidden", completed === 0 || view !== "list");
-  if (clearButton) clearButton.textContent = `clear ${completed} done`;
+  // Only the count changes — rewriting the button's whole text would drop the icon.
+  if (clearCountEl) clearCountEl.textContent = String(completed);
 }
 
 /**
@@ -260,8 +259,8 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
     area.spellcheck = false;
     area.autocapitalize = "off";
     area.setAttribute("autocorrect", "off");
-    li.append(area, copyElement(row.text));
-    if (reordering) li.append(removeElement(row.index));
+    li.append(area);
+    if (reordering) li.append(copyElement(row.text), removeElement(row.index));
     return li;
   }
 
@@ -294,10 +293,14 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   const [first] = linkify(row.text).filter((segment) => segment.link);
   if (first) li.append(openElement(first.value));
 
-  // A blank row keeps its input — it is a line you can type into, and the arrow keys
-  // visit it — but there is nothing on it to copy. The button was rendering anyway
-  // and showed up as a column of orphaned icons down the right-hand side.
-  if (row.text.length > 0) li.append(copyElement(row.text));
+  // 🔴 Copy lives in row mode now, not on every row forever. It is a whole-row
+  // operation like reorder and delete, and a 28px control on every line is what made
+  // the list feel dense on a phone. The ad-hoc case is already covered — iOS
+  // long-press → Select All → Copy works in any text field. What the button adds is
+  // copying a whole fenced block and stripping the `- [ ] ` prefix.
+  //
+  // A blank row has nothing to copy, so it gets no button even in the mode.
+  if (reordering && row.text.length > 0) li.append(copyElement(row.text));
   if (reordering) li.append(removeElement(row.index));
   return li;
 }
@@ -904,16 +907,44 @@ function applyTheme(): void {
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute("content", themeColor(theme, prefersDark));
 
-  if (themeButton) {
-    themeButton.textContent = theme === "system" ? "◐" : theme === "light" ? "☀" : "☾";
-    themeButton.title = `theme: ${theme}`;
+  markChoices("[data-theme-set]", "themeSet", theme);
+}
+
+/** Show which option in a group is active, via `aria-pressed`. */
+function markChoices(selector: string, key: string, active: string): void {
+  for (const button of document.querySelectorAll<HTMLButtonElement>(selector)) {
+    button.setAttribute("aria-pressed", String(button.dataset[key] === active));
   }
 }
 
-themeButton?.addEventListener("click", () => {
-  theme = nextTheme(theme);
-  writeTheme(globalThis.localStorage, theme);
-  applyTheme();
+settingsDialog?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const chosenTheme = target.closest<HTMLElement>("[data-theme-set]")?.dataset.themeSet;
+  if (chosenTheme) {
+    theme = chosenTheme as Theme;
+    writeTheme(globalThis.localStorage, theme);
+    applyTheme();
+    return;
+  }
+
+  const chosenView = target.closest<HTMLElement>("[data-view-set]")?.dataset.viewSet;
+  if (chosenView && chosenView !== view) {
+    // Flush first: switching views repaints from `body`, and an unsaved edit still
+    // on the debounce would have its save race the repaint.
+    saveNow();
+    view = chosenView as ViewMode;
+    writeView(globalThis.localStorage, view);
+    paint();
+    markChoices("[data-view-set]", "viewSet", view);
+  }
+});
+
+settingsOpen?.addEventListener("click", () => {
+  markChoices("[data-theme-set]", "themeSet", theme);
+  markChoices("[data-view-set]", "viewSet", view);
+  settingsDialog?.showModal();
 });
 
 // Following the system means following it as it changes, not as it was at boot.
@@ -953,16 +984,6 @@ rowsEl?.addEventListener("click", (event) => {
   clearTimeout(saveTimer);
   void save();
   schedulePoll();
-});
-
-toggleViewButton?.addEventListener("click", () => {
-  // Flush first. Switching views repaints the textarea from `body`, and an unsaved
-  // edit still sitting on the debounce would be preserved but its save would race
-  // the repaint.
-  saveNow();
-  view = view === "list" ? "raw" : "list";
-  writeView(globalThis.localStorage, view);
-  paint();
 });
 
 // iOS does not reliably fire blur when the app is backgrounded or swiped away, so
@@ -1040,25 +1061,26 @@ if (doc) {
 }
 
 /**
- * The build id, with everything else on hover.
+ * Build info, into the settings panel.
  *
  * 🔴 "Is my change live?" cost a round trip before this existed, and "which
- * environment am I looking at" was not answerable at all. A deploy that looks right
+ * environment am I looking at" was not answerable at all — a deploy that looks right
  * and went to the wrong environment is indistinguishable from one that failed.
  *
- * The timestamp renders in **local** time. A UTC string in a tooltip is a second
- * conversion the reader has to do in their head, at the moment they are least
- * inclined to.
+ * It left the footer to make room, but it is **one tap away, not buried**. The
+ * timestamp renders in **local** time: a UTC string is a second conversion the
+ * reader has to do in their head, at the moment they are least inclined to.
  */
-if (buildEl) {
+{
   const info = (await (await fetch("/health")).json()) as {
     version: string;
     deployed_at: string;
     environment: string;
   };
 
-  buildEl.textContent = info.version;
-  buildEl.dataset.env = info.environment;
+  // `0.1.5+abc1234-dirty` — the version is what a human reads, the commit is what
+  // pins it to exact code. Shown apart rather than as one unreadable string.
+  const [version, commit] = info.version.split("+");
 
   const deployed = info.deployed_at ? new Date(info.deployed_at) : null;
   const when =
@@ -1066,19 +1088,23 @@ if (buildEl) {
       ? deployed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
       : "not recorded";
 
-  buildEl.title = [
-    `build     ${info.version}`,
-    `deployed  ${when}`,
-    `env       ${info.environment}`,
-  ].join("\n");
+  const set = (selector: string, value: string): void => {
+    const el = document.querySelector<HTMLElement>(selector);
+    if (el) el.textContent = value;
+  };
+  set("[data-build-version]", version ?? "unknown");
+  set("[data-build-commit]", commit ?? "not recorded");
+  set("[data-build-when]", when);
+  set("[data-build-env]", info.environment);
 
-  // Dev holds test content only and sits behind no rate-limit rule. It should look
-  // like somewhere you would not paste anything real (ADR-002).
+  // Dev holds test content only and sits behind no rate-limit rule, so it stays
+  // visible on the bar rather than hiding in settings — you should never have to
+  // check which one you are typing into (ADR-002).
   if (info.environment !== "prod") {
     const badge = document.createElement("span");
     badge.className = "env";
     badge.textContent = info.environment;
-    buildEl.before(badge);
+    document.querySelector("footer")?.prepend(badge);
   }
 }
 
