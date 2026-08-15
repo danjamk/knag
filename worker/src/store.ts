@@ -191,6 +191,99 @@ async function recordRevision(
     .run();
 }
 
+export type ClearResult =
+  | { status: "cleared"; version: number; cleared_count: number }
+  | { status: "conflict"; current: DocumentRow };
+
+/**
+ * Sweep the checked items, keeping an explicit record of what went (spec §5).
+ *
+ * The caller decides *what* to clear — it owns the parser — and hands over the
+ * rewritten body plus the removed lines. This function owns only the order, which is
+ * the part that has to be right.
+ *
+ * 🔴 **Every statement carries the same `version = ?` guard, and the CAS is last.**
+ *
+ * D1's `batch()` is a transaction, but not a *conditional* one: a mismatched
+ * `base_version` would otherwise still seal a revision and write `cleared_items` rows
+ * for a sweep that never happened — leaving the authoritative done-record claiming
+ * items were finished while they sit unchecked in the document. Worse than not
+ * clearing at all, and invisible until someone reads their history.
+ *
+ * Guarding every statement on the *pre-clear* version fixes it. Statements 1–3 do not
+ * touch `documents.version`, so all four observe the same value, and no other writer
+ * can interleave inside a transaction. Either the version matches at batch start and
+ * all four apply, or it does not and none do.
+ */
+export async function clearCompleted(
+  env: Env,
+  input: { baseVersion: number; body: string; clearedLines: string[]; source: DocumentSource },
+  now: Date = new Date(),
+): Promise<ClearResult> {
+  const current = await readDocument(env);
+  if (input.baseVersion !== current.version) {
+    return { status: "conflict", current };
+  }
+
+  const timestamp = now.toISOString();
+  const version = current.version;
+
+  // Repeated on every statement below. `documents` has CHECK (id = 1), so this reads
+  // the single row.
+  const guard = "(SELECT version FROM documents WHERE id = ?) = ?";
+
+  const statements = [
+    // 1. Seal the newest revision, so the pre-clear state cannot be swallowed by the
+    //    ten-minute coalescing window (spec §3).
+    env.DB.prepare(
+      `UPDATE revisions SET is_sealed = 1
+        WHERE id = (SELECT max(id) FROM revisions) AND ${guard}`,
+    ).bind(DOC_ID, version),
+
+    // 2. Record the pre-clear document. Sealed as well: it is the newest revision
+    //    after this batch, and an unsealed one would be coalesced into by the next
+    //    save inside the window — overwriting the very state this row exists to keep.
+    env.DB.prepare(
+      `INSERT INTO revisions (body, version, created_at, is_sealed, source, event_type)
+       SELECT ?, ?, ?, 1, ?, 'clear_completed' WHERE ${guard}`,
+    ).bind(current.body, version, timestamp, input.source, DOC_ID, version),
+
+    // 3. The authoritative done-record, so "what did I finish" is a lookup rather
+    //    than a diff.
+    //
+    //    🔴 `max(id)`, not `last_insert_rowid()`. The obvious version does not work:
+    //    inside a D1 batch, `last_insert_rowid()` does not observe an INSERT from an
+    //    earlier statement in the same batch — it returned the id of a revision from
+    //    a previous request, silently pointing every cleared item at the wrong row.
+    //    Rows from statement 2 *are* visible to a subquery, so `max(id)` resolves
+    //    correctly. Caught by asserting the foreign key rather than the row count.
+    //
+    //    If statement 2 was guarded out, so is this, and `max(id)` is never consulted.
+    ...input.clearedLines.map((line) =>
+      env.DB.prepare(
+        `INSERT INTO cleared_items (revision_id, line_text, cleared_at)
+         SELECT (SELECT max(id) FROM revisions), ?, ? WHERE ${guard}`,
+      ).bind(line, timestamp, DOC_ID, version),
+    ),
+
+    // 4. The document itself, last, because this is the statement that moves the
+    //    version the other three are guarding on.
+    env.DB.prepare(
+      `UPDATE documents SET body = ?, version = version + 1, updated_at = ?, source = ?
+        WHERE id = ? AND version = ?`,
+    ).bind(input.body, timestamp, input.source, DOC_ID, version),
+  ];
+
+  const results = await env.DB.batch(statements);
+
+  // The CAS is the authority on whether anything happened at all.
+  if (results[results.length - 1]?.meta.changes !== 1) {
+    return { status: "conflict", current: await readDocument(env) };
+  }
+
+  return { status: "cleared", version: version + 1, cleared_count: input.clearedLines.length };
+}
+
 /** Drop sessions that have already expired. Called on login; no cron trigger. */
 export async function sweepExpiredSessions(env: Env, now: Date = new Date()): Promise<void> {
   await env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now.toISOString()).run();
