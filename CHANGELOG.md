@@ -14,6 +14,13 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`make health ENV=dev` now checks dev.** A single `HOST` in `.env` satisfied both
+  environments and silently overrode the Makefile's per-environment default, so the
+  dev check pointed at the prod domain — which does not resolve. The one command
+  whose job is verifying a deployment had therefore never verified dev.
+
 ## [0.1.11] — 2026-08-15
 
 The first plateau: a legal pad you can actually live in.
