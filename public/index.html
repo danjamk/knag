@@ -11,12 +11,81 @@
     <title>knag</title>
     <link rel="manifest" href="/manifest.json" />
     <style>
+      /* 🔴 Every colour below is a token. The MVP hard-coded dark, which is the
+         right default and the wrong only option — knag gets opened outdoors and in
+         meetings, unreadable in the first and conspicuous in the second.
+
+         `system` follows the OS; `data-theme` on <html> overrides it in either
+         direction. Both blocks redefine the same names, so nothing outside :root
+         ever names a colour. */
       :root {
         color-scheme: dark;
         --bg: #111;
+        --surface: #191919;
+        --raised: #1d1d1d;
         --fg: #e8e8e8;
         --dim: #888;
+        --faint: #4a4a4a;
         --line: #333;
+        --field: #1a1a1a;
+        --button: #2a2a2a;
+        --accent: #6b8f6b;
+        --link: #7aa2d2;
+        --danger: #a05a5a;
+        --danger-bg: #3a2020;
+        --done: #666;
+        --badge-bg: #4a3a1a;
+        --badge-fg: #d8b878;
+        --mode-bg: #3a3a2a;
+        --mode-fg: #d8d8a8;
+      }
+
+      /* Light. Warm rather than pure white — this is a legal pad, and a page of
+         plain text on #fff at arm's length in daylight is glare, not contrast. */
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg: #faf9f7;
+        --surface: #f0eee9;
+        --raised: #eceae4;
+        --fg: #23211e;
+        --dim: #6b6862;
+        --faint: #a8a49c;
+        --line: #d8d5cd;
+        --field: #fff;
+        --button: #e8e5de;
+        --accent: #4a7a4a;
+        --link: #2d5f96;
+        --danger: #a03030;
+        --danger-bg: #f5dede;
+        --done: #a8a49c;
+        --badge-bg: #f0e2c0;
+        --badge-fg: #7a5f20;
+        --mode-bg: #e6e2c8;
+        --mode-fg: #5a5520;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme="dark"]) {
+          color-scheme: light;
+          --bg: #faf9f7;
+          --surface: #f0eee9;
+          --raised: #eceae4;
+          --fg: #23211e;
+          --dim: #6b6862;
+          --faint: #a8a49c;
+          --line: #d8d5cd;
+          --field: #fff;
+          --button: #e8e5de;
+          --accent: #4a7a4a;
+          --link: #2d5f96;
+          --danger: #a03030;
+          --danger-bg: #f5dede;
+          --done: #a8a49c;
+          --badge-bg: #f0e2c0;
+          --badge-fg: #7a5f20;
+          --mode-bg: #e6e2c8;
+          --mode-fg: #5a5520;
+        }
       }
       * { box-sizing: border-box; }
       html, body { height: 100%; }
@@ -87,20 +156,20 @@
         padding: 0;
         border: 0;
         background: transparent;
-        color: #4a4a4a;
+        color: var(--faint);
         font: inherit;
         font-size: 0.9rem;
         border-radius: 4px;
       }
       .copy { cursor: pointer; }
-      .copy:active { background: #2a2a2a; }
+      .copy:active { background: var(--button); }
       /* The row being dragged. Kept subtle — the movement is the feedback. */
-      li.dragging { opacity: 0.4; background: #1d1d1d; }
+      li.dragging { opacity: 0.4; background: var(--raised); }
 
       /* 🔴 Reorder is a mode, not an always-on grip. A drag handle competing for the
          same touch as an always-live text field is worse than one competing with a
          tap target — which is what live rows made it (ADR-003 §5). */
-      [data-rows].reorder li { background: #171717; margin-bottom: 1px; }
+      [data-rows].reorder li { background: var(--surface); margin-bottom: 1px; }
       [data-rows].reorder input.text,
       [data-rows].reorder textarea.fence {
         pointer-events: none;
@@ -116,9 +185,9 @@
         touch-action: none;
         user-select: none;
       }
-      .remove { cursor: pointer; color: #a05a5a; }
-      .remove:active { background: #3a2020; }
-      [data-reorder].on { background: #3a3a2a; color: #d8d8a8; }
+      .remove { cursor: pointer; color: var(--danger); }
+      .remove:active { background: var(--danger-bg); }
+      [data-reorder].on { background: var(--mode-bg); color: var(--mode-fg); }
 
       li.blank { min-height: 1.25rem; padding: 0 0.5rem; }
       li.fence { flex-wrap: wrap; align-items: flex-start; }
@@ -134,7 +203,7 @@
         padding: 0.6rem 0.8rem;
         border: 0;
         border-radius: 6px;
-        background: #191919;
+        background: var(--surface);
         color: inherit;
         font: inherit;
         font-size: 16px;
@@ -142,7 +211,7 @@
         white-space: pre;
         overflow-x: auto;
       }
-      textarea.fence:focus { outline: 1px solid #333; }
+      textarea.fence:focus { outline: 1px solid var(--line); }
 
       .open {
         flex: none;
@@ -151,11 +220,11 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #7aa2d2;
+        color: var(--link);
         text-decoration: none;
         border-radius: 4px;
       }
-      li.checkbox input { flex: none; width: 1.1rem; height: 1.1rem; accent-color: #6b8f6b; }
+      li.checkbox input { flex: none; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
       /* Every row's text is a live input now — no tap-to-activate, no span/input
          swap. Truncation happens naturally: an input scrolls its own content, so a
          long line stays one row and the caret stays visible while typing. */
@@ -172,7 +241,7 @@
         font-size: 16px;
       }
       input.text:focus { outline: none; }
-      li.checked input.text { text-decoration: line-through; color: #666; }
+      li.checked input.text { text-decoration: line-through; color: var(--done); }
 
       footer {
         display: flex;
@@ -198,8 +267,8 @@
       .env {
         padding: 0.05rem 0.35rem;
         border-radius: 3px;
-        background: #4a3a1a;
-        color: #d8b878;
+        background: var(--badge-bg);
+        color: var(--badge-fg);
         font-size: 0.7rem;
         text-transform: uppercase;
         letter-spacing: 0.04em;
@@ -222,14 +291,14 @@
         padding: 0.75rem;
         border-radius: 6px;
         border: 1px solid var(--line);
-        background: #1a1a1a;
+        background: var(--field);
         color: inherit;
       }
-      button { background: #2a2a2a; cursor: pointer; }
+      button { background: var(--button); cursor: pointer; }
       button:disabled { opacity: 0.5; cursor: default; }
 
       [hidden] { display: none !important; }
-      [data-error] { color: #e06c6c; min-height: 1.5rem; }
+      [data-error] { color: var(--danger); min-height: 1.5rem; }
     </style>
   </head>
   <body>
@@ -280,6 +349,7 @@
         <span data-save-status>—</span>
         <button type="button" data-clear hidden>clear done</button>
         <button type="button" data-reorder>reorder</button>
+        <button type="button" data-theme-toggle title="theme">◐</button>
         <button type="button" data-toggle-view>raw</button>
         <span data-build>—</span>
       </footer>

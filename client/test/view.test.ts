@@ -1,7 +1,20 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type Block, parse, serialize, setText, toggle } from "../../worker/src/blocks.js";
-import { VIEW_KEY, linkify, move, readView, removeAt, rows, writeView } from "../src/view.js";
+import {
+  THEME_KEY,
+  VIEW_KEY,
+  linkify,
+  move,
+  nextTheme,
+  readTheme,
+  readView,
+  removeAt,
+  rows,
+  themeColor,
+  writeTheme,
+  writeView,
+} from "../src/view.js";
 
 describe("rows (spec §7)", () => {
   it("emits exactly one row per block, in order", () => {
@@ -397,5 +410,66 @@ describe("removeAt (spec §7)", () => {
       }),
       { numRuns: 1000 },
     );
+  });
+});
+
+describe("theme (spec §9)", () => {
+  function store(initial?: string): Storage {
+    const map = new Map<string, string>();
+    if (initial !== undefined) map.set(THEME_KEY, initial);
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    } as Storage;
+  }
+
+  it("defaults to following the system", () => {
+    expect(readTheme(store())).toBe("system");
+  });
+
+  it("round-trips each option", () => {
+    for (const theme of ["system", "light", "dark"] as const) {
+      const s = store();
+      writeTheme(s, theme);
+      expect(readTheme(s)).toBe(theme);
+    }
+  });
+
+  it("treats anything unrecognised as system", () => {
+    expect(readTheme(store("solarized"))).toBe("system");
+    expect(readTheme(store(""))).toBe("system");
+  });
+
+  it("survives storage that throws", () => {
+    // Safari throws rather than returning null when storage is blocked, and an
+    // uncaught throw here runs during boot and blanks the whole app.
+    const hostile = {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    } as unknown as Storage;
+
+    expect(readTheme(hostile)).toBe("system");
+    expect(() => writeTheme(hostile, "dark")).not.toThrow();
+    expect(readTheme(undefined)).toBe("system");
+  });
+
+  it("cycles through all three and back", () => {
+    expect(nextTheme("system")).toBe("light");
+    expect(nextTheme("light")).toBe("dark");
+    expect(nextTheme("dark")).toBe("system");
+  });
+
+  it("🔴 reports the colour actually in effect, so the iOS status bar matches", () => {
+    // Leaving the meta tag dark under a light theme puts a black strip above a white
+    // app, which reads as a rendering bug rather than a preference.
+    expect(themeColor("dark", false)).toBe("#111111");
+    expect(themeColor("light", true)).toBe("#faf9f7");
+    // `system` defers to the OS in both directions.
+    expect(themeColor("system", true)).toBe("#111111");
+    expect(themeColor("system", false)).toBe("#faf9f7");
   });
 });

@@ -35,7 +35,20 @@ import {
   revertShorthand,
   splitAt,
 } from "./edit.js";
-import { type ViewMode, linkify, move, readView, removeAt, rows, writeView } from "./view.js";
+import {
+  type Theme,
+  type ViewMode,
+  linkify,
+  move,
+  nextTheme,
+  readTheme,
+  readView,
+  removeAt,
+  rows,
+  themeColor,
+  writeTheme,
+  writeView,
+} from "./view.js";
 
 type Doc = { body: string; version: number; updated_at: string };
 
@@ -51,6 +64,7 @@ const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
 const toggleViewButton = document.querySelector<HTMLButtonElement>("[data-toggle-view]");
 const clearButton = document.querySelector<HTMLButtonElement>("[data-clear]");
 const reorderButton = document.querySelector<HTMLButtonElement>("[data-reorder]");
+const themeButton = document.querySelector<HTMLButtonElement>("[data-theme-toggle]");
 
 /** Above this many, a sweep gets a confirm. Below it, undo-by-history is enough. */
 const CONFIRM_CLEAR_ABOVE = 10;
@@ -71,6 +85,9 @@ let view: ViewMode = "list";
  * mode after a reload would be the mode problem ADR-003 removed, reintroduced.
  */
 let reordering = false;
+
+/** Persisted, unlike the mode — this is a preference, not something you are doing. */
+let theme: Theme = "system";
 
 /** The version we believe we are editing. Every write carries it (spec §6). */
 let baseVersion = 0;
@@ -865,6 +882,44 @@ function setReordering(on: boolean): void {
   paintRows();
 }
 
+/**
+ * Apply the theme to the document, and to the iOS status bar.
+ *
+ * 🔴 The `theme-color` meta tag is what iOS paints the status bar from. Leaving it
+ * dark under a light theme puts a black strip above a white app, which reads as a
+ * rendering bug rather than a preference (spec §9).
+ */
+function applyTheme(): void {
+  const root = document.documentElement;
+  // `system` sets no attribute at all, so the CSS media query decides — rather than
+  // this having to re-read the OS preference on every change.
+  if (theme === "system") root.removeAttribute("data-theme");
+  else root.dataset.theme = theme;
+
+  const prefersDark = globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", themeColor(theme, prefersDark));
+
+  if (themeButton) {
+    themeButton.textContent = theme === "system" ? "◐" : theme === "light" ? "☀" : "☾";
+    themeButton.title = `theme: ${theme}`;
+  }
+}
+
+themeButton?.addEventListener("click", () => {
+  theme = nextTheme(theme);
+  writeTheme(globalThis.localStorage, theme);
+  applyTheme();
+});
+
+// Following the system means following it as it changes, not as it was at boot.
+globalThis
+  .matchMedia?.("(prefers-color-scheme: dark)")
+  .addEventListener("change", () => {
+    if (theme === "system") applyTheme();
+  });
+
 reorderButton?.addEventListener("click", () => {
   // Switching to raw view while reordering would leave the mode on with nothing to
   // drag, so the mode belongs to the list view only.
@@ -965,6 +1020,10 @@ loginForm?.addEventListener("submit", async (event) => {
 });
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
+
+// Before the first paint, so the app never flashes the wrong theme.
+theme = readTheme(globalThis.localStorage);
+applyTheme();
 
 view = readView(globalThis.localStorage);
 

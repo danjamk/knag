@@ -198,3 +198,53 @@ export function writeView(storage: KeyValueStore | undefined, view: ViewMode): v
     // Ignored, deliberately. See readView.
   }
 }
+
+// ── Theme (spec §9) ──────────────────────────────────────────────────────────
+
+/**
+ * `system` follows `prefers-color-scheme`; the other two override it.
+ *
+ * Three options rather than a light/dark switch: the MVP hard-coded dark, which is
+ * the right *default* and the wrong *only* option — knag gets opened outdoors and in
+ * meetings, unreadable in the first and conspicuous in the second.
+ */
+export type Theme = "system" | "light" | "dark";
+
+export const THEME_KEY = "knag.theme";
+
+const THEMES: Theme[] = ["system", "light", "dark"];
+
+/** Same catch as `readView` — Safari *throws* when storage is blocked. */
+export function readTheme(storage: KeyValueStore | undefined): Theme {
+  try {
+    const saved = storage?.getItem(THEME_KEY);
+    return THEMES.includes(saved as Theme) ? (saved as Theme) : "system";
+  } catch {
+    return "system";
+  }
+}
+
+export function writeTheme(storage: KeyValueStore | undefined, theme: Theme): void {
+  try {
+    storage?.setItem(THEME_KEY, theme);
+  } catch {
+    // Ignored, deliberately. See readView.
+  }
+}
+
+/** Cycles system → light → dark → system, so one control covers all three. */
+export function nextTheme(theme: Theme): Theme {
+  return THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length] as Theme;
+}
+
+/**
+ * The colour actually in effect, for the `theme-color` meta tag.
+ *
+ * 🔴 iOS paints the status bar from that tag. Leaving it dark under a light theme
+ * puts a black strip above a white app, which reads as a rendering bug rather than a
+ * preference.
+ */
+export function themeColor(theme: Theme, systemPrefersDark: boolean): string {
+  const dark = theme === "dark" || (theme === "system" && systemPrefersDark);
+  return dark ? "#111111" : "#faf9f7";
+}
