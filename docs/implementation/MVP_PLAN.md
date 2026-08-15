@@ -90,17 +90,35 @@ The concurrency semantics are the foundation. Get them right before any UI, and
 before there is any client whose bugs could be mistaken for server bugs.
 
 **Done when:**
-- [ ] `GET /api/doc` returns `{ body, version, updated_at }` and sets `ETag: "<version>"`
-- [ ] `If-None-Match` with the current version returns **304** and an empty body
-- [ ] `PUT` with a matching `base_version` applies, bumps, returns `{ version }`
-- [ ] `PUT` with a stale `base_version` returns **409** carrying the current `{ body, version }` — never merges, never overwrites
-- [ ] A no-op write (identical body) bumps nothing and creates no revision
-- [ ] A missing row reads as empty body at version 0; `PUT` with `base_version: 0` initialises it
-- [ ] All SQL is in `store.ts`; no statement and no literal `1` anywhere else
-- [ ] `worker/test/api.test.ts` covers every line above against real D1
+- [x] `GET /api/doc` returns `{ body, version, updated_at }` and sets `ETag: "<version>"`
+- [x] `If-None-Match` with the current version returns **304** and an empty body
+- [x] `PUT` with a matching `base_version` applies, bumps, returns `{ version }`
+- [x] `PUT` with a stale `base_version` returns **409** carrying the current `{ body, version }` — never merges, never overwrites
+- [x] A no-op write (identical body) bumps nothing and creates no revision
+- [x] A missing row reads as empty body at version 0; `PUT` with `base_version: 0` initialises it
+- [x] All SQL is in `store.ts`; no statement and no literal `1` anywhere else
+- [x] `worker/test/api.test.ts` covers every line above against real D1
 
 **Watch for:** the 409 body is not a courtesy — the agent contract (§10) depends
 on it carrying enough to re-apply intent without a second round trip.
+
+**Decided during implementation:**
+
+- **`/api/doc` authenticates now**, rather than waiting for P2. `authenticate()`
+  already resolves bearer, and CLAUDE.md's "every route resolves a principal" is
+  not a rule a route gets to join later. P2 adds the cookie path underneath it
+  and changes nothing here.
+- **`source` is derived from the principal, not read from the request body.**
+  Spec §5 amended.
+- **Writes are a conditional `UPDATE ... WHERE version = ?`, not read-then-write.**
+  The read decides what to *report*; the UPDATE decides what *happens*, so two
+  saves landing together cannot both apply.
+- **1 MiB cap → 413.** Not in the issue. ~200× the expected document, and the
+  alternative is finding the limit at D1, against the only copy.
+- **`worker/test/setup.ts` now resets per test.** pool-workers 0.18 dropped the
+  automatic isolated-storage stack the scaffold assumed, so every test was
+  inheriting the previous one's document — in a suite about versioning. Caught by
+  seven failures that all looked like logic bugs.
 
 ---
 

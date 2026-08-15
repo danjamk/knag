@@ -219,12 +219,27 @@ Sets `ETag: "<version>"`. Honours `If-None-Match` with **304** and empty body.
 
 ### `PUT /api/doc`
 ```json
-{ "body": "...", "base_version": 42, "source": "pwa" }
+{ "body": "...", "base_version": 42 }
 ```
-- `base_version === documents.version` → apply, bump version, return `{ version }`.
-- Mismatch → **409** with the current `{ body, version }`. Caller reloads. Never
-  merge, never overwrite.
-- No-op writes (body identical) bump nothing and create no revision.
+- `base_version === documents.version` → apply, bump version, return
+  `{ version, updated_at }` and the new `ETag`.
+- Mismatch → **409** with the current `{ body, version, updated_at }`. Caller
+  reloads. Never merge, never overwrite.
+- No-op writes (body identical) bump nothing, touch `updated_at` not at all, and
+  create no revision. The response is an ordinary 200 reporting the unchanged
+  version — the caller's question is "what version am I on", and the answer does
+  not depend on whether anything moved.
+- `base_version: 0` is honoured against a missing **or empty** row (§14.5) and is
+  a conflict against anything else.
+- Rejected with **400**: a non-JSON body, a `body` that is not a string, a
+  `base_version` that is not a non-negative integer. **413** past 1 MiB — roughly
+  200× the expected document, and cheaper than discovering the limit at D1.
+
+**`source` is not a request field.** An earlier draft of this section had the
+caller declare it. It carries nothing the server does not already know — bearer
+*is* `agent`, session *is* `pwa` — while handing a caller unvalidated text
+headed for the only copy of the document. It is derived from `principal.source`
+(§4.1); a `source` key in the request body is ignored.
 
 ### `POST /api/doc/clear-completed`
 ```json
@@ -626,6 +641,13 @@ real migrations applied. Mocking a binding tests the mock.
 | `worker/test/mcp.test.ts` | Tool list, bearer 401, 409 surfaced as a structured error |
 
 `pnpm test:security` runs `auth.test.ts` alone so it can be run in isolation.
+
+**`worker/test/setup.ts` resets the bindings and re-applies the migrations before
+every test, and that is load-bearing.** vitest-pool-workers dropped the automatic
+per-test storage stack in 0.18, so without it each test inherits the previous
+one's document — which in a suite about version numbers produces failures that
+all look like logic bugs. Any new suite gets this for free; nothing gets to opt
+out of it.
 
 ### Make targets
 
