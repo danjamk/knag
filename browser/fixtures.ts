@@ -24,16 +24,30 @@ export { expect };
 export class Knag {
   constructor(readonly page: Page) {}
 
-  /** Log in through the real form, since that is also the first thing to break. */
+  /**
+   * Log in through the real form, since that is also the first thing to break.
+   *
+   * 🔴 Waits for the boot to settle before deciding. **Both** the login form and the
+   * editor start `hidden` in the markup, and the boot decides which appears — so
+   * calling `isVisible()` straight after `goto()` races it, finds neither, skips the
+   * login, and then waits five seconds for an editor that will never come.
+   *
+   * It passed locally every time and failed in CI, where the cold start is slower.
+   * A browser suite that is flaky is worse than none, because the next real failure
+   * gets re-run instead of read.
+   */
   async login(): Promise<void> {
     await this.page.goto("/");
     const form = this.page.locator("[data-login]");
+    const editor = this.page.locator("[data-editor]");
+
+    await expect(form.or(editor).first()).toBeVisible();
     if (await form.isVisible()) {
       await form.locator('input[name="passphrase"]').fill(TEST_PASSPHRASE);
       await form.locator('input[name="device_label"]').fill("playwright");
       await form.locator("button[type=submit]").click();
     }
-    await expect(this.page.locator("[data-editor]")).toBeVisible();
+    await expect(editor).toBeVisible();
   }
 
   /** Replace the document via the API, then reload so the page renders it fresh. */
