@@ -657,10 +657,94 @@ a complete phantom sweep.
 
 ---
 
+---
+
+# UX revision — after using the MVP
+
+**Added 2026-08-15**, after the UI was complete and used for real. Driven by
+feedback, not by the build order. **ADR:** [ADR-003](../adr/ADR-003-single-mode-editor.md).
+
+The headline finding: **raw vs list is the product's worst UX problem.** Not
+because either view is bad, but because the product is a legal pad and a legal
+pad has no modes. Deciding which view you are in is a question the paper never
+asked, and knag asked it every time it opened.
+
+Phases 13–15 replace the two-mode UI with one typing-first editor. Phase 16 is
+independent polish.
+
+The MVP phases above are **not** rewritten to match — they record what was built
+and why, including the reasoning this reverses. That history is the point.
+
+## Phase 13 — The single-mode editor
+
+**Spec:** §7 · **ADR:** ADR-003 · **Size:** 2 days · **Depends:** P8
+🔴 **The highest-risk UI work in the project**, and none of it is covered by the
+suite. Focus management, caret position and the iOS keyboard are where it goes
+wrong, and no test in this repo runs a browser.
+
+**Done when:**
+- [ ] Every text and checkbox row is a **live input** — no tap-to-activate step
+- [ ] `Enter` at end of row inserts an empty row below and focuses it
+- [ ] `Enter` mid-row splits the block in two
+- [ ] `Backspace` at position 0 merges into the previous row, caret at the join
+- [ ] `↑` / `↓` at a row boundary move focus between rows
+- [ ] Fenced blocks are an inline `<textarea>`, one block, natively multi-line
+- [ ] Raw view still reachable, but the editor is where every load lands
+- [ ] Split and merge are block-array operations; the round-trip property still holds
+
+**Watch for:** the foundation carries this — rows already map 1:1 to blocks (#9),
+edits already go through `setText` (#10), reorder already operates on the block
+array (#13). Split and merge are the same shape as `move`. If any of them starts
+needing to reach for the DOM as the source of truth, stop.
+
+## Phase 14 — Checkbox shorthand and autocorrect
+
+**Spec:** §7 · **Size:** 1 day · **Depends:** P13
+
+**Done when:**
+- [ ] `--` + space rewrites the line prefix to `- [ ] `
+- [ ] `Backspace` immediately after reverts the conversion
+- [ ] A single `- ` stays a literal dash — **no bullet rendering**
+- [ ] `spellcheck` / `autocorrect` / `autocapitalize` **on** for text and checkbox rows
+- [ ] All three **off** inside fences
+
+**Watch for:** the autocorrect setting is only available because of P13. One
+textarea cannot tell prose from a code fence; one element per block can.
+
+## Phase 15 — Reorder mode with delete
+
+**Spec:** §7 · **Size:** 1 day · **Depends:** P13
+
+**Done when:**
+- [ ] A reorder button swaps rows into drag mode; leaving returns to typing
+- [ ] In the mode: inputs read-only, grips large, a **delete** control per row
+- [ ] Delete removes the whole block and saves — **no confirm**
+- [ ] The always-visible grip from #13 is removed
+
+**Watch for:** delete does not confirm because the revision log is the undo. That
+is principle 4 finally paying for itself, and it only works if P6's log is intact.
+
+## Phase 16 — Light, dark, system
+
+**Spec:** §9 · **Size:** half a day · **Depends:** none
+
+**Done when:**
+- [ ] Three-way toggle, persisted per device in `localStorage`
+- [ ] `prefers-color-scheme` is the default
+- [ ] Both themes legible at 380px, and `theme_color` follows the active one
+
+---
+
 ## Out of scope
 
 Spec §12's **Out** list is load-bearing and is not re-opened here. §17 records
 what a larger future would break; it is not MVP work.
+
+## Open, decided by use rather than guessed
+
+- **Truncate vs wrap on long rows.** Rows truncate with an ellipsis today (spec
+  §7). With a live input in every row the question changes shape, so it is left
+  open deliberately rather than guessed at twice.
 
 ## Deferred, tracked, not forgotten
 

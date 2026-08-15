@@ -327,27 +327,78 @@ Parse `body` into blocks (§14.1). Render each block by kind:
 **Checked items stay in place.** No auto-sink.
 
 ### Row anatomy, left to right
-1. **Grip handle** (`⠿`) — the *only* drag initiator. Whole-row drag conflicts
-   with tap-to-edit and produces accidental reorders.
-2. **Checkbox** — only if the block is a checkbox. Toggling rewrites
+1. **Checkbox** — only if the block is a checkbox. Toggling rewrites
    `[ ]`↔`[x]` in place and saves.
-3. **Text** — tap to edit. Becomes a single-line `<input>`, commits on blur or
-   Enter, Escape reverts.
-4. **Copy button** — `navigator.clipboard.writeText(lineText)`. Always visible
+2. **Text** — a **live input**, always editable. Not tap-to-activate.
+3. **Copy button** — `navigator.clipboard.writeText(lineText)`. Always visible
    (no hover on touch). Strips the `- [ ] ` prefix when copying.
 
-At 380px this is four targets in one row. Grip and copy get ~28px, text flexes,
-truncate with ellipsis rather than wrap.
+At 380px this is three targets in one row. Copy gets ~28px and the text flexes.
 
-### Why single-line inputs
+The **grip is not here** — reordering lives behind an explicit mode (below),
+because a drag handle competing for the same touch as an always-live text field
+is worse than one competing with a tap target. See
+[ADR-003](adr/ADR-003-single-mode-editor.md).
 
-A general multi-line row editor means handling backspace-merges-previous-row,
-arrow-up-at-boundary, cross-row selection, and paste-splitting. That is a day of
-fiddly work and the source of every cursor bug. Single-line inputs have none of
-it, and everything multi-line lives in raw view where a `<textarea>` already
-does it correctly.
+### One mode: typing
 
-### Reorder
+**The editor is where you land, always.** Every text and checkbox row is a live
+input, so checkboxes stay visible and tappable while you type. Row boundaries
+behave like line boundaries:
+
+| Key | Behavior |
+|---|---|
+| `Enter` at end of row | new empty row below, focused |
+| `Enter` mid-row | split the block in two |
+| `Backspace` at position 0 | merge into the previous row, caret at the join |
+| `↑` / `↓` at the boundary | move focus between rows |
+
+**Fenced blocks are an inline `<textarea>`** — one block, natively multi-line,
+and the reason raw view is no longer required for anything.
+
+An earlier draft of this section argued the opposite, on the grounds that a
+multi-line row editor is "a day of fiddly work and the source of every cursor
+bug." That is still true. It is accepted because the alternative — asking which
+view you are in, every time the app opens — was measured against real use and
+lost. The product is a legal pad, and a legal pad has no modes.
+[ADR-003](adr/ADR-003-single-mode-editor.md) records the reversal.
+
+### Checkbox shorthand
+
+`--` followed by a space rewrites the line prefix to `- [ ] `. `Backspace`
+immediately afterwards reverts it — the standard autoformat contract, and the
+reason converting on space is safe rather than merely fast.
+
+**A single `- ` stays a literal dash.** Rendering it as a bullet would be the
+first place in knag where the display differs from the bytes, and principle 3
+has held absolutely. The gain is cosmetic; the precedent is not.
+
+### Spellcheck and autocorrect
+
+**On** for text and checkbox rows, **off** inside fences.
+
+Autocorrect is the user typing, mediated by their keyboard — principle 3 forbids
+*knag* normalizing the document, not the OS keyboard doing what the user expects.
+The real risk was only ever autocapitalize mangling `const` inside a code fence,
+and one element per block is what makes that distinction possible. This setting
+is available *because* of the single-mode redesign, not in spite of it.
+
+### Reorder — an explicit mode
+
+A **reorder button** swaps rows into drag mode: inputs go read-only, grips appear
+at a size worth aiming at, and each row gains a **delete** control on the right.
+Leaving the mode returns to typing.
+
+A mode rather than an always-on grip because a drag handle competing for the same
+touch as an always-live text field is worse than one competing with a tap target
+(ADR-003). It is also the common pattern — Reminders, Mail, and every list app
+that supports both editing and rearranging.
+
+**Delete lives here**, not in the editor: with live inputs, `Backspace` already
+handles joining lines, while nothing else offers a clean gesture for removing a
+whole fence or a blank. **It does not confirm** — the revision log is the undo,
+which is what principle 4 built it for.
+
 SortableJS bound to the row container, `handle: '.grip'`. On drop, reorder the
 **block** array, serialize, save. Fenced blocks move as one unit.
 
@@ -374,13 +425,20 @@ Single button, footer. Confirm only if clearing more than ~10 blocks.
 
 ---
 
-## 8. Client — raw view
+## 8. Client — raw view, the escape hatch
 
 Full-bleed monospace `<textarea>`. The entire document, unmodified. For sweeps,
-paste, bulk reordering, and anything the list view can't express.
+bulk paste, multi-row selection, and anything the row model can't express.
 
-Toggle in the corner. Preference persisted per device in `localStorage` — UI
-state, not document state.
+**Not a peer of the editor.** An earlier draft made the two co-equal with a
+toggle between them, and that mode question turned out to be the product's worst
+UX problem — see [ADR-003](adr/ADR-003-single-mode-editor.md). The editor is
+where you land, always; raw is somewhere you go and come back from.
+
+It is kept rather than deleted because it is already built and tested, and it is
+the honest fallback the day the row model meets something awkward. **If it starts
+being used daily rather than rarely, the row model is the wrong shape** — that is
+ADR-003's revisit trigger, not a reason to patch.
 
 **Raw view must round-trip byte-for-byte.** No trimming, no whitespace
 normalization, no line-ending rewriting. Code pasted in comes out identical.
@@ -402,9 +460,23 @@ Add to Home Screen on iPhone/iPad, Add to Dock on macOS Safari. No Electron —
 it doesn't run on iPad regardless (iOS mandates WebKit), and the only thing it
 would buy on the Mac is a global capture hotkey. Deferred.
 
-Service worker: cache the shell only. **Do not cache document responses.** A
-stale cached body is worse than an offline error. Offline editing is explicitly
-out of scope.
+Service worker: **network-first for the shell**, and never a document response. A
+stale cached body is worse than an offline error, because it looks like the truth
+and the next save would carry a `base_version` from a document that has moved on.
+Offline editing is explicitly out of scope, so the cache exists to make the app
+open when the network is gone — not to serve last week's code. An earlier draft
+was cache-first against a hand-bumped constant; nothing made the constant change,
+and every deploy served the previous bundle until a manual reload.
+
+### Theme
+
+**Light, dark, or system**, persisted per device in `localStorage` alongside the
+raw-view preference — UI state, not document state.
+
+`prefers-color-scheme` is the default. The MVP hard-coded dark, which is the
+right default and the wrong only option: knag gets opened outdoors and in
+meetings, and a fixed dark surface is unreadable in the first and conspicuous in
+the second.
 
 ---
 
@@ -464,9 +536,10 @@ and is not worth it.
 ## 12. Scope
 
 **In:** one live document · optimistic concurrency · polled sync · passphrase
-auth · list view with checkboxes · raw view · per-row copy · linkify · fenced
-block grouping · drag reorder · clear completed · coalesced revision log ·
-history diff · 4 MCP tools · PWA manifest
+auth · one typing-first editor with live checkbox rows · `--` shorthand · raw
+view as an escape hatch · per-row copy · linkify · fenced block grouping ·
+reorder mode with delete · clear completed · coalesced revision log · history
+diff · 4 MCP tools · PWA manifest · light/dark/system theme
 
 **Out:** search · tags · multiple documents · attachments · offline editing ·
 WebSockets · Electron · native apps · email auth · multi-user · sharing ·
