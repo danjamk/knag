@@ -202,14 +202,18 @@ describe("no-op writes", () => {
   });
 
   it("creates no revision", async () => {
+    // Queried directly rather than through store.ts on purpose: a test that asks the
+    // module under test whether it behaved cannot catch the module lying.
+    //
+    // This asserted `count === 0` when #2 wrote it, which was vacuous — nothing wrote
+    // revisions yet. #7 made it real and made it fail, which is what it was for.
+    const count = async () =>
+      (await env.DB.prepare("SELECT count(*) AS n FROM revisions").first<{ n: number }>())?.n;
+    const before = await count();
+
     await put({ body: "unchanged", base_version: SEEDED_VERSION + 1 });
 
-    // Queried directly rather than through store.ts on purpose: a test that asks the
-    // module under test whether it behaved cannot catch the module lying. Revision
-    // writing itself lands with issue #7; this asserts the invariant now so it is a
-    // regression test the day it does.
-    const row = await env.DB.prepare("SELECT count(*) AS n FROM revisions").first<{ n: number }>();
-    expect(row?.n).toBe(0);
+    expect(await count()).toBe(before);
   });
 });
 

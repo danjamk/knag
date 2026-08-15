@@ -97,6 +97,7 @@ export async function writeDocument(
     )
       .bind(DOC_ID, input.body, updatedAt, input.source)
       .run();
+    await recordRevision(env, { body: input.body, version: 1, source: input.source }, now);
     return { status: "applied", version: 1, updated_at: updatedAt };
   }
 
@@ -114,7 +115,80 @@ export async function writeDocument(
     return { status: "conflict", current: await readDocument(env) };
   }
 
-  return { status: "applied", version: current.version + 1, updated_at: updatedAt };
+  const version = current.version + 1;
+
+  // 🔴 After the CAS, never batched with it. D1's batch is a transaction but not a
+  // conditional one — the revision write would apply even when the UPDATE matched
+  // zero rows, recording a state that never existed. Sequencing costs a torn write
+  // if D1 fails between the two, and that failure surfaces as a 500 rather than a
+  // silent gap: the document is saved, one intermediate snapshot is missing, and
+  // coalescing already discards intermediates by design.
+  await recordRevision(env, { body: input.body, version, source: input.source }, now);
+
+  return { status: "applied", version, updated_at: updatedAt };
+}
+
+/**
+ * How close two saves must be for the second to fold into the first (spec §3).
+ *
+ * Ten minutes bounds the log at roughly six revisions an hour of continuous editing,
+ * which is what makes full snapshots affordable for a document of a few KB.
+ */
+export const COALESCE_WINDOW_MS = 10 * 60 * 1000;
+
+type RevisionRow = { id: number; created_at: string };
+
+/**
+ * The newest revision, if it is still open to being coalesced into.
+ *
+ * 🔴 `is_sealed = 0` is in the WHERE clause, not checked by the caller. A sealed
+ * revision marks a state that must survive — clear-completed seals before it sweeps
+ * (spec §14.2) — and a lookup that returned one and trusted the caller to notice
+ * would let the next save inside the window silently overwrite the pre-clear
+ * document.
+ */
+async function newestUnsealedRevision(env: Env): Promise<RevisionRow | null> {
+  return await env.DB.prepare(
+    "SELECT id, created_at FROM revisions WHERE is_sealed = 0 ORDER BY id DESC LIMIT 1",
+  ).first<RevisionRow>();
+}
+
+/**
+ * Record a document state in the log, coalescing per spec §3.
+ *
+ * Full snapshots, never diffs. The document is a few KB and a diff is cheap to
+ * compute at read time, whereas a chain of diffs is only as good as its weakest link
+ * — one bad entry and everything after it is unrecoverable.
+ *
+ * The snapshot is of the state *after* the write: `version` is the version this body
+ * became. So the log answers "what did the document look like at version N", and the
+ * live row in `documents` is simply the newest such state.
+ */
+async function recordRevision(
+  env: Env,
+  input: { body: string; version: number; source: DocumentSource; eventType?: string },
+  now: Date,
+): Promise<void> {
+  const newest = await newestUnsealedRevision(env);
+  const withinWindow =
+    newest !== null && now.getTime() - new Date(newest.created_at).getTime() < COALESCE_WINDOW_MS;
+
+  if (newest && withinWindow) {
+    // Updated in place, `created_at` untouched — the window is measured from when the
+    // burst started, not from the last keystroke. Otherwise continuous typing would
+    // hold one revision open forever and the log would never gain an entry.
+    await env.DB.prepare("UPDATE revisions SET body = ?, version = ?, source = ? WHERE id = ?")
+      .bind(input.body, input.version, input.source, newest.id)
+      .run();
+    return;
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO revisions (body, version, created_at, is_sealed, source, event_type)
+     VALUES (?, ?, ?, 0, ?, ?)`,
+  )
+    .bind(input.body, input.version, now.toISOString(), input.source, input.eventType ?? null)
+    .run();
 }
 
 /** Drop sessions that have already expired. Called on login; no cron trigger. */
