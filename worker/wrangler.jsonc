@@ -7,7 +7,7 @@
   "compatibility_date": "2026-07-01",
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Two Cloudflare accounts. See docs/adr/0002-two-accounts-and-migrations.md.
+  // Two Cloudflare accounts. See docs/adr/ADR-002-two-accounts-and-migrations.md.
   //
   // 🔴 Which account you reach is decided by WHICH CREDENTIAL IS ACTIVE, not by
   // anything in this file:
@@ -131,6 +131,6 @@
   }
 
   // Secrets (`wrangler secret put --env <env>`), never in this file — it is committed:
-  //   KNAG_PASSPHRASE     — PWA login (spec §4, ADR-0001). Different per environment.
+  //   KNAG_PASSPHRASE     — PWA login (spec §4, ADR-001). Different per environment.
   //   KNAG_BEARER_TOKEN   — agent / MCP / any non-browser client. Different per environment.
 }

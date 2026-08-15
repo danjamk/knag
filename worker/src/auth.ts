@@ -9,7 +9,7 @@ import type { Env } from "./env.js";
  *
  * Today `id` is always OWNER — that is the point, not an oversight. A shared
  * passphrase does not survive a second human and would not pass App Store review
- * (ADR-0001, spec §17). Keeping every caller on `principal.id` means replacing the
+ * (ADR-001, spec §17). Keeping every caller on `principal.id` means replacing the
  * credential scheme later is a change to this file, not to the whole tree.
  *
  * Bearer is first-class on every `/api/*` route, not an agent afterthought: a native

@@ -60,7 +60,7 @@ destructive takes two releases: expand (add, write both, read new), then contrac
 Violating this does not produce a failed deploy. It produces a live Worker
 writing to a column that no longer exists, against the only copy of the document.
 `make backup` first, always. Full reasoning:
-[ADR-0002](docs/adr/0002-two-accounts-and-migrations.md) §3.
+[ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md) §3.
 
 **Prod is CI's job.** The prod Cloudflare token is not on this machine by design;
 `ENV=dev` is the default for every target. Production ships from Actions →

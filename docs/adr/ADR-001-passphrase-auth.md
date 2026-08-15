@@ -1,4 +1,4 @@
-# ADR-0001: Passphrase auth, not Cloudflare Access
+# ADR-001: Passphrase auth, not Cloudflare Access
 
 **Status:** Accepted
 **Date:** 2026-08-14

@@ -1,4 +1,4 @@
-# ADR-0002: Two Cloudflare accounts, and the migration window
+# ADR-002: Two Cloudflare accounts, and the migration window
 
 **Status:** Accepted
 **Date:** 2026-08-14
@@ -29,13 +29,49 @@ between them.
 | **dev** | `CLOUDFLARE_API_TOKEN` in this clone's `.env.local` | you, locally — every `make deploy` |
 | **prod** | a GitHub Environment secret on `production` | only `.github/workflows/deploy-prod.yml` |
 
-**The prod token is never on this machine.** That placement is the entire
-mechanism. `worker/wrangler.jsonc`'s `env.prod` block grants nothing — it names
-resources. A laptop holding the dev token that runs `--env prod` fails closed,
-because the dev token cannot see prod's D1.
+**The prod token is never on this machine.** `worker/wrangler.jsonc`'s `env.prod`
+block grants nothing — it names resources. A laptop holding the dev token that
+runs `--env prod` fails closed, because the dev token cannot see prod's D1.
 
 **The top level of `wrangler.jsonc` is dev.** Every command that forgets a flag
 does the safe thing; production requires saying `--env prod` out loud.
+
+#### 1a. Credential placement is necessary but not sufficient — assert the account
+
+An earlier draft of this ADR called the placement of the token "the entire
+mechanism." That was wrong, and the gap is worth stating plainly because it is
+invisible until it bites.
+
+`CLOUDFLARE_API_TOKEN` is not wrangler's only credential source. It also honours
+a **machine-global OAuth login** from `wrangler login`, stored outside the repo:
+
+```
+~/Library/Preferences/.wrangler/config/default.toml
+```
+
+**Nothing in this project controls that file.** With no `.env.local` present,
+wrangler falls back to it silently. So a developer who ran `wrangler login`
+against some account months ago has a machine that will deploy there — and
+`ENV=dev` offers no protection, because the default selects a *config block*, not
+an *account*. This was live in this repo on 2026-08-14: an ambient OAuth session
+with `workers:write`, and no `.env.local` at all.
+
+The fix is an assertion, not a policy. `.env` carries the account id each
+environment is allowed to touch, and `scripts/preflight.sh` reads
+`wrangler whoami` and fails closed on a mismatch:
+
+```
+CF_ACCOUNT_ID_DEV=…
+CF_ACCOUNT_ID_PROD=…
+```
+
+`make deploy`, `make migrate` and `make backup` all depend on `preflight`. An
+unset id **refuses rather than guesses** — the failure mode this closes is
+"deployed to the right-looking place," and defaulting would reopen it.
+
+The general lesson, which belongs upstream in the standards: *a credential model
+is only as good as its assertion. If the answer to "which account will this
+reach" requires reasoning about fallback precedence, it will be wrong eventually.*
 
 ### 2. What knag deliberately does *not* copy from pagevault
 
