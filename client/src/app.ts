@@ -17,7 +17,14 @@
  * parser, not two. See spec §2.
  */
 
-import { type Block, isCompleted, parse, serialize, toggle } from "../../worker/src/blocks.js";
+import {
+  type Block,
+  isCompleted,
+  parse,
+  serialize,
+  setText,
+  toggle,
+} from "../../worker/src/blocks.js";
 import { mayApplyRemote, pollInterval } from "./sync.js";
 import { type ViewMode, readView, rows, writeView } from "./view.js";
 
@@ -163,8 +170,94 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   const text = document.createElement("span");
   text.className = "text";
   text.textContent = row.text;
+  if (row.editable) text.tabIndex = 0;
   li.append(text);
   return li;
+}
+
+/**
+ * Replace a row's text with a single-line input.
+ *
+ * 🔴 Single-line, and that is the design, not a limitation. A general multi-line row
+ * editor means handling backspace-merges-previous-row, arrow-up-at-boundary,
+ * cross-row selection and paste-splitting — a day of fiddly work and the source of
+ * every cursor bug in this class of app. Everything multi-line lives in raw view,
+ * where a textarea already does it correctly (spec §7).
+ */
+function beginEdit(span: HTMLElement): void {
+  const li = span.closest("li");
+  const index = Number(li?.dataset.index);
+  const block = parse(body)[index];
+  if (!li || !Number.isInteger(index) || !block || block.kind === "fence") return;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "text";
+  input.value = span.textContent ?? "";
+  // Same reasons as the raw textarea: no autocorrect rewriting the document, and
+  // 16px so iOS does not zoom the viewport on focus and never zoom back.
+  input.spellcheck = false;
+  input.autocapitalize = "off";
+  input.setAttribute("autocorrect", "off");
+
+  let settled = false;
+
+  const finish = (commit: boolean): void => {
+    if (settled) return;
+    settled = true;
+    focused = false;
+
+    if (!commit) {
+      // Escape reverts by repainting from `body`, which was never touched.
+      paintRows();
+      return;
+    }
+
+    // Reparse rather than reusing the block captured above: a remote update could
+    // have landed while the field was open, and editing a stale block would write
+    // back a line from a document that no longer exists.
+    const current = parse(body);
+    const target = current[index];
+    if (!target || target.kind === "fence") {
+      paintRows();
+      return;
+    }
+
+    const next = serialize(
+      current.map((b: Block, i: number) => (i === index ? { ...b, raw: setText(b, input.value) } : b)),
+    );
+    if (next === body) {
+      paintRows();
+      return;
+    }
+
+    body = next;
+    paintRows();
+    dirty = true;
+    lastActivityAt = Date.now();
+    clearTimeout(saveTimer);
+    void save();
+    schedulePoll();
+  };
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener("blur", () => finish(true));
+
+  span.replaceWith(input);
+  // Focus counts for the dirty guard: a poll landing mid-edit would repaint the row
+  // list and destroy the field under the cursor (spec §6).
+  focused = true;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
 }
 
 // ── Polling (spec §6, §14.4) ─────────────────────────────────────────────────
@@ -431,6 +524,16 @@ clearButton?.addEventListener("click", async () => {
     setStatus(count === 0 ? "Nothing to clear" : `Cleared ${count}`);
   } catch {
     setStatus("Not cleared — nothing was changed");
+  }
+});
+
+// Delegated, so it survives every repaint. Only the text span opens an editor —
+// tapping the row elsewhere must stay inert, because the grip and copy controls land
+// in the same row in #11 and #13.
+rowsEl?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLElement && target.classList.contains("text") && target.tabIndex === 0) {
+    beginEdit(target);
   }
 });
 

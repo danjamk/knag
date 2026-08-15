@@ -42,6 +42,14 @@ export type Block = {
   marker?: string;
   /** Checkbox blocks only. `[x]` and `[X]` are both checked. */
   checked?: boolean;
+  /**
+   * Checkbox blocks only — the literal bracket character, `" "`, `"x"` or `"X"`.
+   *
+   * Kept alongside `checked` so an edit that is not a toggle can put the line back
+   * exactly as it was found. `checked` alone would silently normalize `[X]` to `[x]`
+   * every time someone fixed a typo in the text beside it.
+   */
+  box?: string;
   /** Checkbox blocks only — everything after the bracket, trailing space included. */
   text?: string;
   /** Checkbox blocks only — `"\r"` on a CRLF document, else `""`. See `withoutCR`. */
@@ -155,6 +163,7 @@ export function parse(body: string): Block[] {
         indent: indent ?? "",
         marker: marker ?? "-",
         checked: box !== " ",
+        box: box ?? " ",
         text: text ?? "",
         eol,
       });
@@ -206,6 +215,37 @@ export function toggle(block: Block): Block {
     checked,
     raw: `${block.indent}${block.marker} [${box}] ${block.text}${block.eol ?? ""}`,
   };
+}
+
+/**
+ * The source line for a block whose text has been edited.
+ *
+ * Returns a raw line rather than a `Block`, deliberately: the caller serializes and
+ * reparses, and **the reparse is what decides the new kind**. Typing `- [ ] ` in
+ * front of a plain line turns it into a checkbox; emptying a line turns it blank.
+ * Returning a `Block` would mean guessing that here and being wrong somewhere.
+ *
+ * 🔴 For a checkbox, only the text after the bracket changes. Indent, `-` vs `*`, and
+ * the literal `[x]` / `[X]` casing all come from the parsed block, so fixing a typo
+ * never quietly rewrites the rest of the line (spec §14.2).
+ *
+ * Fences are rejected. They span lines and a single-line editor would flatten them;
+ * raw view is where multi-line edits belong (spec §7).
+ */
+export function setText(block: Block, text: string): string {
+  if (block.kind === "fence") {
+    throw new Error("setText() cannot edit a fence — use raw view");
+  }
+
+  // Whatever line ending the block already had, regardless of which kind it is.
+  const eol = block.raw.endsWith("\r") ? "\r" : "";
+  const content = text.endsWith("\r") ? text.slice(0, -1) : text;
+
+  if (block.kind === "checkbox") {
+    return `${block.indent}${block.marker} [${block.box}] ${content}${eol}`;
+  }
+
+  return `${content}${eol}`;
 }
 
 /**

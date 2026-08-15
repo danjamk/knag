@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { CHECKBOX, type Block, parse, serialize, toggle } from "../src/blocks.js";
+import { CHECKBOX, type Block, parse, serialize, setText, toggle } from "../src/blocks.js";
 
 /**
  * The block parser's test suite.
@@ -346,5 +346,65 @@ describe("toggle (spec §14.2)", () => {
 
   it("throws rather than guessing when handed a non-checkbox", () => {
     expect(() => toggle(parse("plain text")[0] as Block)).toThrow();
+  });
+});
+
+// ── setText ──────────────────────────────────────────────────────────────────
+
+describe("setText (spec §7, §14.2)", () => {
+  const edited = (line: string, text: string): string => setText(parse(line)[0] as Block, text);
+
+  it("replaces a plain line wholesale", () => {
+    expect(edited("hello", "goodbye")).toBe("goodbye");
+  });
+
+  it("changes only the text after the bracket on a checkbox", () => {
+    expect(edited("- [ ] buy milk", "buy bread")).toBe("- [ ] buy bread");
+  });
+
+  it("preserves indent, marker and the literal box character", () => {
+    // 🔴 `[X]` survives an edit to the text beside it. Rebuilding from `checked`
+    // alone would normalise it to `[x]` every time someone fixed a typo — a silent
+    // rewrite of a line the user did not touch.
+    expect(edited("\t  * [X] done", "still done")).toBe("\t  * [X] still done");
+    expect(edited("  - [x] a", "b")).toBe("  - [x] b");
+    expect(edited("  - [ ] a", "b")).toBe("  - [ ] b");
+  });
+
+  it("preserves a CRLF line ending on either kind", () => {
+    expect(edited("- [ ] a\r\nnext", "b")).toBe("- [ ] b\r");
+    expect(edited("plain\r\nnext", "edited")).toBe("edited\r");
+  });
+
+  it("lets an edit change what a line is, via the reparse", () => {
+    // Typing checkbox syntax into a plain row creates a checkbox; emptying a row
+    // makes it blank. `setText` returns a line, not a kind — the reparse decides.
+    expect(parse(edited("plain", "- [ ] now a task"))[0]?.kind).toBe("checkbox");
+    expect(parse(edited("plain", ""))[0]?.kind).toBe("blank");
+    expect(parse(edited("- [ ] was a task", "- [ ] "))[0]?.text).toBe("- [ ] ");
+  });
+
+  it("refuses to edit a fence rather than flattening it", () => {
+    expect(() => edited("```\ncode\n```", "one line")).toThrow();
+  });
+
+  it("leaves every other block untouched, byte for byte", () => {
+    const body = "- [ ] a   \n\n```\n- [ ] not a task\n```\n\t* [X] c\t";
+    const blocks = parse(body);
+    const target = blocks[3] as Block;
+
+    const next = blocks.map((b) => (b === target ? { ...b, raw: setText(b, "renamed") } : b));
+
+    expect(serialize(next)).toBe("- [ ] a   \n\n```\n- [ ] not a task\n```\n\t* [X] renamed");
+  });
+
+  it("round-trips when the text is unchanged", () => {
+    fc.assert(
+      fc.property(checkboxLine, (line) => {
+        const block = parse(line)[0] as Block;
+        expect(setText(block, block.text ?? "")).toBe(line);
+      }),
+      { numRuns: 1000 },
+    );
   });
 });

@@ -20,6 +20,8 @@ export type Row = {
   text: string;
   /** Checkbox rows only. */
   checked?: boolean;
+  /** Whether tapping the text opens an inline editor. False for fences and blanks. */
+  editable: boolean;
 };
 
 /**
@@ -40,9 +42,19 @@ export function rows(blocks: Block[]): Row[] {
     index,
     kind: block.kind,
     // Checkbox rows show the task text; everything else shows its source verbatim.
-    text: block.kind === "checkbox" ? (block.text ?? "") : block.raw,
+    // The trailing `\r` of a CRLF document is stripped for display only — it is
+    // invisible in an input but would be edited by accident, and `setText` puts the
+    // block's own line ending back on commit.
+    text: stripCR(block.kind === "checkbox" ? (block.text ?? "") : block.raw),
     ...(block.kind === "checkbox" ? { checked: block.checked === true } : {}),
+    // Fences span lines, so a single-line editor would flatten them; blanks have
+    // nothing to edit. Raw view is where both belong (spec §7).
+    editable: block.kind === "checkbox" || block.kind === "text",
   }));
+}
+
+function stripCR(text: string): string {
+  return text.endsWith("\r") ? text.slice(0, -1) : text;
 }
 
 // ── View preference ──────────────────────────────────────────────────────────
