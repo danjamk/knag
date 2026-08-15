@@ -14,6 +14,14 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Changed
+
+- **The 7-day iOS cookie check is deferred**, not dropped ([#4](https://github.com/danjamk/knag/issues/4)).
+  Holding a phone untouched for a week blocks the more valuable activity — using
+  knag. Nothing since the auth work has touched auth, and the failure mode
+  self-reports: ITP fires only after seven days of inactivity, so if it ever bites
+  you simply get logged out. Run it on a second iOS device when convenient.
+
 ### Fixed
 
 - **`make health ENV=dev` now checks dev.** A single `HOST` in `.env` satisfied both
