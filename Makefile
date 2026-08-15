@@ -21,7 +21,10 @@ ENV ?= dev
 WRANGLER   := pnpm exec wrangler --config worker/wrangler.jsonc
 ENV_FLAG   := $(if $(filter-out dev,$(ENV)),--env $(ENV),)
 D1_NAME    := $(if $(filter-out dev,$(ENV)),knag,knag-dev)
-HOST       ?= $(if $(filter-out dev,$(ENV)),knag.danjamkuhn.com,)
+# 🔴 `:=`, not `?=`. With `?=` a single `HOST` in .env satisfied both environments
+# and `make health ENV=dev` checked the prod domain — which does not resolve, so the
+# one command that verifies a deployment had never verified dev.
+HOST       := $(if $(filter-out dev,$(ENV)),$(PROD_HOST),$(DEV_HOST))
 
 # The account each environment is allowed to touch, from .env. Empty means the
 # preflight refuses rather than guesses — see scripts/preflight.sh.
