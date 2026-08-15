@@ -274,13 +274,41 @@ test.
 the list view may be built before its round-trip test passes.
 
 **Done when:**
-- [ ] `parse()` returns blocks with `kind`, `raw`, `startLine`, `endLine`, and the checkbox fields
-- [ ] A fence opens on ` ``` ` or `~~~` and closes at the matching fence **or at EOF**, marked `unterminated: true`
-- [ ] `serialize(parse(x)) === x` — **property-based over generated input**, not a handful of examples
-- [ ] Round-trip holds for trailing newlines, CRLF, unclosed fences, and mixed indentation
-- [ ] Checkbox grammar exactly `/^(\s*)([-*])\s\[([ xX])\]\s(.*)$/` — `-[ ]` is not a checkbox
-- [ ] Indentation, `*` vs `-`, `[x]` vs `[X]`, and trailing whitespace all preserved through a toggle
-- [ ] Toggling rebuilds only the one line, never a document-wide regex
+- [x] `parse()` returns blocks with `kind`, `raw`, `startLine`, `endLine`, and the checkbox fields
+- [x] A fence opens on ` ``` ` or `~~~` and closes at the matching fence **or at EOF**, marked `unterminated: true`
+- [x] `serialize(parse(x)) === x` — **property-based over generated input**, not a handful of examples
+- [x] Round-trip holds for trailing newlines, CRLF, unclosed fences, and mixed indentation
+- [x] Checkbox grammar exactly `/^(\s*)([-*])\s\[([ xX])\]\s(.*)$/` — `-[ ]` is not a checkbox
+- [x] Indentation, `*` vs `-`, `[x]` vs `[X]`, and trailing whitespace all preserved through a toggle
+- [x] Toggling rebuilds only the one line, never a document-wide regex
+
+**Decided during implementation:**
+
+- **The test was written before the parser.** This is the likeliest path to a
+  corrupted document in the project, and a test written afterward tends to agree
+  with whatever the implementation happens to do. It caught a real bug on the
+  first run.
+- 🔴 **`.` does not match `\r` in JavaScript**, so a raw CRLF line fails both
+  grammars outright — every checkbox parses as `text`, every fence dissolves.
+  **The round-trip property cannot see this**: `raw` is a verbatim slice whatever
+  `kind` says, so bytes stay perfect while classification is entirely wrong, and
+  clear-completed would silently remove nothing on a CRLF document. Caught by the
+  block-model assertions, not the property. `withoutCR` strips it; `eol` carries
+  it; spec §14.2 records it.
+- **`fast-check` added as a dev dependency.** The issue asks for property-based
+  testing, and `fc.string()` would essentially never emit a fence or a checkbox —
+  so the generators are built from an alphabet of real line shapes. Shrinking is
+  the reason it is not a hand-rolled loop: a 200-line counterexample is useless, a
+  2-line one is a bug report. Dev-only; nothing ships to the Worker.
+- **A double toggle of `[X]` yields `[x]`, and cannot do otherwise.** Unchecking
+  writes a space over the only place that case was recorded. Asserted as an
+  example rather than papered over in the property.
+- **Blank and text blocks are one per line; only fences span lines.** Spec §14.1
+  singles out fences as the multi-line case.
+- **The cross-boundary import is verified, not assumed.** Both tsconfigs
+  typecheck `blocks.ts` and esbuild inlines it into `public/app.js` — checked with
+  a temporary import, which was then reverted. #9 inherits a proven path rather
+  than discovering a broken one.
 
 ---
 

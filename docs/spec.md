@@ -555,6 +555,18 @@ Consequences, all deliberate:
 `knag_clear` removes blocks where `kind === 'checkbox' && checked === true`.
 Nothing else, regardless of indentation level.
 
+**🔴 Strip the trailing `\r` before applying this grammar, and before the fence
+grammar.** `.` does not match `\r` in JavaScript — `\r` is a line terminator — so
+`(.*)$` cannot reach past one and **a raw CRLF line fails both grammars
+outright**. Every checkbox in a CRLF document parses as `text`, every fence
+dissolves into unrelated lines, nothing renders as a checkbox, and
+`clear-completed` silently removes nothing.
+
+The round-trip test cannot catch this. `raw` is a verbatim slice whatever the
+block's `kind` turns out to be, so serialization stays byte-perfect while
+classification is entirely wrong. `blocks.ts` carries the stripped `\r` on the
+block as `eol` and `toggle()` puts it back.
+
 ### 14.3 Timezone
 
 D1 stores UTC. Dan is America/Chicago. Every history boundary is a local-time
