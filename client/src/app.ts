@@ -185,10 +185,19 @@ function paintRows(): void {
  * The two-step — reset to `auto`, then read `scrollHeight` — is what lets a row
  * *shrink* again. Reading `scrollHeight` against the current height only ever grows,
  * so deleting a wrapped line would leave the row permanently tall.
+ *
+ * 🔴 A **hidden** element reports `scrollHeight: 0`, and writing that back clips the
+ * row to nothing — which looks exactly like the text failing to render rather than
+ * like a sizing bug. Being *in* the document is not the same as being *rendered*,
+ * and the first version of this only guarded the former.
+ *
+ * The callers now paint into a visible container, so this guard is the second line
+ * of defence: if a future path ever paints while hidden, rows fall back to one line
+ * instead of vanishing.
  */
 function autoGrow(area: HTMLTextAreaElement): void {
   area.style.height = "auto";
-  area.style.height = `${area.scrollHeight}px`;
+  if (area.scrollHeight > 0) area.style.height = `${area.scrollHeight}px`;
 }
 
 /**
@@ -1051,8 +1060,11 @@ loginForm?.addEventListener("submit", async (event) => {
       loginForm.reset();
       const authedDoc = await load();
       if (authedDoc) {
-        render(authedDoc);
+        // 🔴 Before `render`, not after. Rows size themselves from `scrollHeight`,
+        // and a hidden element reports 0 — painting into a hidden container clips
+        // every row to nothing. See `autoGrow`.
         showEditor(true);
+        render(authedDoc);
         schedulePoll();
       }
       return;
@@ -1078,8 +1090,9 @@ view = readView(globalThis.localStorage);
 
 const doc = await load();
 if (doc) {
-  render(doc);
+  // 🔴 Before `render`, not after — see the login path above and `autoGrow`.
   showEditor(true);
+  render(doc);
   schedulePoll();
 } else {
   showEditor(false);
