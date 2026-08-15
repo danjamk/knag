@@ -1,12 +1,18 @@
-import { type Principal, authenticate, unauthorized } from "./auth.js";
+import {
+  type Principal,
+  authenticate,
+  issueSession,
+  secretEquals,
+  unauthorized,
+} from "./auth.js";
 import { type Env, buildInfo } from "./env.js";
 import { type DocumentSource, readDocument, writeDocument } from "./store.js";
 
 /**
  * knag — one plain-text document, always live.
  *
- * Scaffold state: `/health` and the document API (spec §5). Auth's session-cookie
- * half (§4) and the MCP server (§10) arrive with build-order steps 2 and 10 — see
+ * Live: `/health`, the document API (spec §5), and auth (§4) — passphrase login,
+ * session cookie, bearer. The MCP server (§10) arrives with build-order step 10; see
  * docs/spec.md §13.
  *
  * Routing note: `run_worker_first` in wrangler.jsonc lists exactly the paths that
@@ -23,6 +29,19 @@ export default {
     // catches "deployed from the wrong branch."
     if (url.pathname === "/health") {
       return Response.json(buildInfo(env));
+    }
+
+    // The one unauthenticated /api/* route, necessarily — it is how a principal comes
+    // into existence. Rate-limited by a Cloudflare WAF rule rather than in code
+    // (spec §4.2); dev sits on *.workers.dev with no such rule in front of it.
+    if (url.pathname === "/api/login") {
+      if (request.method !== "POST") {
+        return Response.json(
+          { error: "Method not allowed" },
+          { status: 405, headers: { Allow: "POST" } },
+        );
+      }
+      return login(request, env);
     }
 
     if (url.pathname === "/api/doc") {
@@ -45,6 +64,51 @@ export default {
     return Response.json({ error: "Not found" }, { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * Exchange the passphrase for a session cookie.
+ *
+ * 🔴 Every failure path returns the same opaque 401 with the same shape. A login
+ * endpoint that distinguishes "no passphrase field" from "wrong passphrase" from
+ * "server has no passphrase configured" is a login endpoint that helps enumerate
+ * its own state (spec §4.2).
+ */
+async function login(request: Request, env: Env): Promise<Response> {
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return loginFailed(request, "malformed body");
+  }
+
+  const { passphrase, device_label: deviceLabel } = (payload ?? {}) as Record<string, unknown>;
+
+  if (typeof passphrase !== "string") {
+    return loginFailed(request, "no passphrase presented");
+  }
+  if (!(await secretEquals(passphrase, env.KNAG_PASSPHRASE))) {
+    return loginFailed(request, "passphrase mismatch");
+  }
+
+  const cookie = await issueSession(
+    request,
+    env,
+    typeof deviceLabel === "string" ? deviceLabel : null,
+  );
+
+  return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+}
+
+/**
+ * One 401 for every way a login can fail. The reason is logged, never returned —
+ * observability is enabled on this Worker, so the operator can see what the caller
+ * cannot.
+ */
+function loginFailed(request: Request, reason: string): Response {
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  console.warn(`login failed from ${ip}: ${reason}`);
+  return unauthorized();
+}
 
 /**
  * Bytes. Not in the issue, and deliberate: the document is expected to be a few KB,

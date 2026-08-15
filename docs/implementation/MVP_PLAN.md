@@ -128,18 +128,38 @@ on it carrying enough to re-apply intent without a second round trip.
 **Size:** 1–2 days · **Depends:** P1 · **Local only**
 
 **Done when:**
-- [ ] `POST /api/login` takes a passphrase and an optional `device_label`
-- [ ] On match: 32 random bytes minted, SHA-256 stored in `sessions`, raw value set as a **server-set** cookie — `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age=31536000`
-- [ ] `authenticate()` returns `Principal | null`; every route keys off `principal.id`
-- [ ] Bearer works on **every** `/api/*` route, not just the agent ones
-- [ ] Passphrase and bearer both compared with `timingSafeEqual` over digests — no `===` anywhere
-- [ ] Expired sessions swept on login
-- [ ] Failed login returns an opaque 401 and logs the source IP
-- [ ] `worker/test/auth.test.ts` covers all of it and runs alone under `pnpm test:security`
+- [x] `POST /api/login` takes a passphrase and an optional `device_label`
+- [x] On match: 32 random bytes minted, SHA-256 stored in `sessions`, raw value set as a **server-set** cookie — `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age=31536000`
+- [x] `authenticate()` returns `Principal | null`; every route keys off `principal.id`
+- [x] Bearer works on **every** `/api/*` route, not just the agent ones
+- [x] Passphrase and bearer both compared with `timingSafeEqual` over digests — no `===` anywhere
+- [x] Expired sessions swept on login
+- [x] Failed login returns an opaque 401 and logs the source IP
+- [x] `worker/test/auth.test.ts` covers all of it and runs alone under `pnpm test:security`
 
 **Watch for:** the cookie must be **server-set**. A client-set cookie is capped
 at 7 days of inactivity by Safari ITP, which fails the very thing P3 exists to
 test.
+
+**Decided during implementation:**
+
+- **`Secure` is omitted over plain `http:` on loopback only.** Safari will not
+  store a `Secure` cookie on `http://localhost` and `wrangler dev` serves exactly
+  that, so without the exception the PWA cannot be developed locally on the
+  browser it targets. Unreachable in any deployed environment. Spec §5 records it.
+- **Expiry is enforced in the `WHERE` clause of the session lookup**, not by the
+  caller. The sweep only runs on login, so an expired row can sit in the table for
+  a year — a lookup that returned it and trusted a caller to compare dates would
+  be a session that never actually ends.
+- **Bearer is checked before the cookie.** A browser carrying both should not have
+  its cookie silently beat a header the caller deliberately set.
+- **No logout.** Not in the issue, and ADR-001 already accepts that revocation
+  means rotating the passphrase. A `clearSessionCookie` helper was written and
+  then deleted rather than shipped unused.
+- **One task cannot be pinned by a test:** "no `===` anywhere" is invisible to the
+  suite, because swapping `secretEquals` for `===` is functionally identical and
+  every test still passes. Enforced by grep in review instead — currently 13 `===`
+  in `auth.ts`/`index.ts`, all on paths, methods and types, none on a credential.
 
 ---
 
