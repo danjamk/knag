@@ -113,6 +113,10 @@ append/patch/delete semantics.
   block grammar, build order
 - [docs/adr/ADR-001-passphrase-auth.md](docs/adr/ADR-001-passphrase-auth.md) — why this
   rolls its own sessions instead of using Cloudflare Access
+- [docs/adr/ADR-002-two-accounts-and-migrations.md](docs/adr/ADR-002-two-accounts-and-migrations.md)
+  — two Cloudflare accounts, and why migrations are additive-only
+- [docs/adr/ADR-003-single-mode-editor.md](docs/adr/ADR-003-single-mode-editor.md) — why
+  there is one editing mode, reversing the spec's original two-view design
 
 ## License
 
