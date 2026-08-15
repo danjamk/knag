@@ -913,7 +913,13 @@ function setReordering(on: boolean): void {
   reordering = on;
   rowsEl?.classList.toggle("reorder", on);
   reorderButton?.classList.toggle("on", on);
-  if (reorderButton) reorderButton.textContent = on ? "done" : "reorder";
+  // 🔴 Both states are icons. The first version wrote the word "reorder" on the way
+  // out, so the button silently changed shape the first time it was used and never
+  // changed back — the markup said `⇅` and only the initial render agreed with it.
+  if (reorderButton) {
+    reorderButton.textContent = on ? "✓" : "⇅";
+    reorderButton.title = on ? "done rearranging" : "rearrange, copy, delete";
+  }
   sortable?.option("disabled", !on);
 
   // Leaving the mode flushes anything the drags queued, so the document is settled

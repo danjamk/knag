@@ -139,13 +139,15 @@
          Grip and copy are fixed at 28px and the text flexes between them, so the
          layout degrades by truncating prose rather than by shrinking a tap target
          below what a thumb can hit. */
+      /* A little breathing room on the left. The checkbox sat hard against the edge
+         and the list read as cramped — a legal pad has a margin. */
       [data-rows] li {
         display: flex;
         /* 🔴 Not `center`. A wrapped row is several lines tall, and centring puts its
            checkbox halfway down the block instead of beside the line it belongs to. */
         align-items: flex-start;
         gap: 0.5rem;
-        padding: 0.3rem 0.5rem;
+        padding: 0.3rem 0.6rem 0.3rem 0.85rem;
         min-height: 2rem;
       }
       /* Nudge the fixed-height controls onto the first line's baseline. */
@@ -194,7 +196,7 @@
       .remove:active { background: var(--danger-bg); }
       [data-reorder].on { background: var(--mode-bg); color: var(--mode-fg); }
 
-      li.blank { min-height: 1.25rem; padding: 0 0.5rem; }
+      li.blank { min-height: 1.25rem; padding: 0 0.6rem 0 0.85rem; }
       li.fence { flex-wrap: wrap; align-items: flex-start; }
       li.fence .grip { order: 1; }
       li.fence .copy { order: 1; margin-left: auto; }
