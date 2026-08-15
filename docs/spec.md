@@ -330,10 +330,27 @@ Parse `body` into blocks (§14.1). Render each block by kind:
 1. **Checkbox** — only if the block is a checkbox. Toggling rewrites
    `[ ]`↔`[x]` in place and saves.
 2. **Text** — a **live input**, always editable. Not tap-to-activate.
-3. **Copy button** — `navigator.clipboard.writeText(lineText)`. Always visible
-   (no hover on touch). Strips the `- [ ] ` prefix when copying.
+3. **Copy button** — reorder mode only. Strips the `- [ ] ` prefix, and copies a
+   fenced block whole. Those two are what it adds over the OS: long-press,
+   Select All, Copy already works in any text field, so a permanent control on
+   every row bought density and nothing else.
 
-At 380px this is three targets in one row. Copy gets ~28px and the text flexes.
+At 380px this is two targets in one row: the checkbox and the text, which takes
+everything else. Copy moved into reorder mode (below) — it is a whole-row
+operation, and a control on every line forever is what made the list feel
+dense in use.
+
+**Long rows wrap; they do not truncate.** An earlier draft truncated with an
+ellipsis, on the reasoning that a wrapping row stops the list being scannable
+and the full text is one tap away. Measured against real use, that trade is
+wrong: a note reading `buy milk and also remember to…` with no way to read it
+is worse than a taller row.
+
+The row editor is therefore an auto-growing `<textarea rows="1">`, not an
+`<input>` — an input is single-line by construction and cannot wrap at any
+price. One row still means one block: `Enter` is intercepted and splits, and
+only a *fence* textarea takes a literal newline. The textarea is there purely so
+the text can wrap.
 
 The **grip is not here** — reordering lives behind an explicit mode (below),
 because a drag handle competing for the same touch as an always-live text field
