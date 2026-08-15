@@ -57,14 +57,50 @@
       }
       [data-body]:focus { outline: none; }
 
+      /* List view. One row per block; blanks are thin spacers rather than absent,
+         so a row's position keeps matching its block index. */
+      [data-rows] {
+        flex: 1;
+        overflow-y: auto;
+        list-style: none;
+        margin: 0;
+        padding: 0.5rem 0;
+      }
+      [data-rows] li {
+        display: flex;
+        align-items: baseline;
+        gap: 0.6rem;
+        padding: 0.35rem 1rem;
+        min-height: 1.5rem;
+      }
+      li.blank { min-height: 0.75rem; padding: 0; }
+      li.fence { display: block; }
+      li.fence pre {
+        margin: 0;
+        padding: 0.6rem 0.8rem;
+        border-radius: 6px;
+        background: #191919;
+        overflow-x: auto;
+        font: inherit;
+      }
+      li.checkbox input { flex: none; width: 1.1rem; height: 1.1rem; accent-color: #6b8f6b; }
+      li.checkbox.checked .text { text-decoration: line-through; color: #666; }
+      .text { white-space: pre-wrap; word-break: break-word; }
+
       footer {
         display: flex;
+        align-items: center;
         justify-content: space-between;
         gap: 1rem;
         padding: 0.5rem 1rem;
         border-top: 1px solid var(--line);
         color: var(--dim);
         font-size: 0.75rem;
+      }
+      [data-toggle-view] {
+        padding: 0.2rem 0.6rem;
+        font-size: 0.75rem;
+        border-radius: 4px;
       }
 
       [data-login] {
@@ -132,8 +168,14 @@
         autocomplete="off"
         aria-label="document"
       ></textarea>
+      <!-- The list view. One <li> per block, always — see client/src/view.ts for why
+           filtering blanks out would make a row's position stop meaning its block
+           index. -->
+      <ul data-rows hidden></ul>
+
       <footer>
         <span data-save-status>—</span>
+        <button type="button" data-toggle-view>raw</button>
         <span data-build>—</span>
       </footer>
     </div>
