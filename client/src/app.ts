@@ -26,6 +26,7 @@ import {
   toggle,
 } from "../../worker/src/blocks.js";
 import { safeNext } from "./nav.js";
+import { offerExpiresAt, restoredBody } from "./restore.js";
 import { dispositionFor, pollInterval } from "./sync.js";
 import Sortable from "sortablejs";
 import {
@@ -65,6 +66,7 @@ const clearCountEl = document.querySelector<HTMLElement>("[data-clear-count]");
 const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
 const clearButton = document.querySelector<HTMLButtonElement>("[data-clear]");
 const wipeAllButton = document.querySelector<HTMLButtonElement>("[data-wipe-all]");
+const restoreButton = document.querySelector<HTMLButtonElement>("[data-restore]");
 const reorderButton = document.querySelector<HTMLButtonElement>("[data-reorder]");
 
 /** Above this many, a sweep gets a confirm. Below it, undo-by-history is enough. */
@@ -834,9 +836,78 @@ rowsEl?.addEventListener("change", (event) => {
  * asks, and never computes the post-clear body itself. Two implementations of "what
  * counts as completed" is the same mistake as two parsers.
  */
+/**
+ * What a wipe left behind, so it can be undone (#59).
+ *
+ * 🔴 Held on this device, not on the server, and that is the decision rather than the
+ * shortcut. The regret is on the device where the wipe happened — an undo offered on
+ * the laptop for something wiped on the phone is an invitation to undo work someone
+ * else already moved on from. It also needs no schema change and no new route, because
+ * the client already holds both sides: the body it had, and the body it re-reads after.
+ *
+ * Expires at the next local midnight, which is the brand's "rest of the day" and the
+ * device's own day. `/api/history` reasons about days in `KNAG_TZ` because it reports
+ * on the past; this is about the person holding the phone right now.
+ */
+type WipeMemory = { preWipe: string; postWipe: string; count: number; expiresAt: number };
+
+const WIPE_MEMORY_KEY = "knag:last-wipe";
+
+function rememberWipe(memory: WipeMemory): void {
+  try {
+    globalThis.localStorage?.setItem(WIPE_MEMORY_KEY, JSON.stringify(memory));
+  } catch {
+    // Private mode, or a full quota. The wipe still happened and is still in history;
+    // only the one-tap undo is lost, which is not worth failing the wipe over.
+  }
+  paintRestore();
+}
+
+function forgetWipe(): void {
+  try {
+    globalThis.localStorage?.removeItem(WIPE_MEMORY_KEY);
+  } catch {
+    // Nothing to do — `readWipe` treats anything unparseable as absent.
+  }
+  paintRestore();
+}
+
+function readWipe(): WipeMemory | null {
+  let raw: string | null = null;
+  try {
+    raw = globalThis.localStorage?.getItem(WIPE_MEMORY_KEY) ?? null;
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+
+  try {
+    const memory = JSON.parse(raw) as WipeMemory;
+    if (typeof memory?.preWipe !== "string" || typeof memory.expiresAt !== "number") return null;
+    if (Date.now() >= memory.expiresAt) return null;
+    return memory;
+  } catch {
+    return null;
+  }
+}
+
+/** The offer, or nothing. Deadpan, and it names the number so it is not a mystery. */
+function paintRestore(): void {
+  const memory = readWipe();
+  if (!restoreButton) return;
+
+  restoreButton.toggleAttribute("hidden", memory === null);
+  if (memory) restoreButton.textContent = `wiped ${memory.count} · bring back`;
+}
+
 async function requestWipe(scope: "completed" | "all"): Promise<void> {
   saveNow();
   setStatus(scope === "all" ? "Wiping…" : "Clearing…");
+
+  // Captured before the request, because it is the only copy of the pre-wipe page this
+  // device will have — the server keeps its own sealed snapshot, but reaching it would
+  // need a route that does not exist.
+  const preWipe = body;
 
   try {
     const res = await fetch("/api/doc/clear-completed", {
@@ -869,6 +940,17 @@ async function requestWipe(scope: "completed" | "all"): Promise<void> {
       setStatus(scope === "all" ? "Nothing to wipe" : "Nothing to clear");
     } else {
       setStatus(scope === "all" ? `Wiped ${count}` : `Cleared ${count}`);
+      // The post-wipe body comes from the re-read, not from a local guess: the server
+      // decided what "completed" meant, and the undo has to reverse what it actually
+      // did rather than what this device thought it would do.
+      if (doc) {
+        rememberWipe({
+          preWipe,
+          postWipe: doc.body,
+          count,
+          expiresAt: offerExpiresAt(new Date()),
+        });
+      }
     }
   } catch {
     setStatus(scope === "all" ? "Not wiped — nothing was changed" : "Not cleared — nothing was changed");
@@ -907,6 +989,61 @@ wipeAllButton?.addEventListener("click", async () => {
   if (!confirm(`Wipe all ${rows} lines? Everything goes, finished or not.`)) return;
 
   await requestWipe("all");
+});
+
+/**
+ * Bring the wiped lines back (#59).
+ *
+ * 🔴 An ordinary versioned write. The restored body is computed against the page **as
+ * it is now** and sent with a `base_version` like any other save, so a 409 reloads and
+ * the undo is simply offered again rather than retried blind. Undo is not a special
+ * path, and it does not get to skip the concurrency rules that protect the document.
+ */
+restoreButton?.addEventListener("click", async () => {
+  const memory = readWipe();
+  if (!memory) return;
+
+  // Flush anything unsaved first, so `body` and `baseVersion` describe the same page
+  // the server holds — otherwise the restore races the user's own last keystroke.
+  saveNow();
+  setStatus("Bringing back…");
+
+  const restored = restoredBody({
+    preWipe: memory.preWipe,
+    postWipe: memory.postWipe,
+    current: body,
+  });
+
+  try {
+    const res = await fetch("/api/doc", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: restored, base_version: baseVersion }),
+    });
+
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+
+    if (res.status === 409) {
+      // Re-read and leave the offer standing. The wiped lines are still absent from
+      // whatever arrived, so the next tap recomputes against it and works.
+      render((await res.json()) as Doc);
+      setStatus("Reloaded — it had changed elsewhere");
+      return;
+    }
+
+    if (!res.ok) throw new Error(String(res.status));
+
+    const doc = await load();
+    if (doc) render(doc);
+
+    forgetWipe();
+    setStatus(`Brought back ${memory.count}`);
+  } catch {
+    setStatus("Not restored — nothing was changed");
+  }
 });
 
 // Delegated, so it survives every repaint.
@@ -1215,6 +1352,10 @@ if (doc) {
     showEditor(true);
     render(doc);
     schedulePoll();
+    // The offer survives a reload, which is most of what "rest of the day" means in
+    // practice — a phone discards the page constantly and would otherwise forget the
+    // wipe within seconds of you switching apps.
+    paintRestore();
   }
 } else {
   showEditor(false);

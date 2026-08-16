@@ -16,6 +16,26 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- **A wipe can be taken back for the rest of the day**
+  ([#59](https://github.com/danjamk/knag/issues/59)). After a wipe the footer offers
+  `wiped 6 · bring back`, and one tap puts the lines where they were. This is the feature
+  that makes the wipe free: throwing things away only feels good because nothing is lost,
+  and until now that was true in the database and invisible on screen.
+
+  **It re-inserts into the page as it is now — it never writes the old page back over
+  it.** Writing the snapshot back is the obvious implementation and it discards
+  everything typed since the wipe, which would make the safety net a worse data-loss path
+  than the one it prevents. Anything added after the wipe survives, edits to surviving
+  lines survive, and restoring twice changes nothing.
+
+  Works for both scopes, including a wipe-all, where the unfinished lines come back too.
+  The offer lives on the device where the wipe happened, survives a reload, and expires
+  at that device's next midnight — not twenty-four hours later, so a wipe at 23:58 is not
+  still being offered at lunchtime.
+
+  Restore is an ordinary versioned write: same conflict handling as any other save, and a
+  409 reloads and leaves the offer standing rather than retrying blind.
+
 - **Wipe the whole page, not just the finished items**
   ([#58](https://github.com/danjamk/knag/issues/58)). The second scope of the product's
   central gesture, and what a short-lived page actually needs — on a grocery list you do

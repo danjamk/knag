@@ -107,12 +107,35 @@ describe("PWA shell (spec §9)", () => {
     }
   });
 
-  it("keeps the footer to three controls", () => {
+  it("keeps the footer to three permanent controls", () => {
     // 🔴 The footer is the only chrome in the app and sits right above the keyboard.
     // Every control here is one the reader steps over to reach the document. Rare
     // things belong in settings; this is the line that stops them creeping back.
+    //
+    // Counted by what is *always there*, not by `<button>` count. The rule was always
+    // about permanent chrome — `data-clear` has been conditional since it shipped — and
+    // a bare count would have blocked the post-wipe undo (#59), which appears for a few
+    // hours after an action and then is gone. The stricter half is below: anything
+    // extra has to ship `hidden`, so nothing permanent can arrive by calling itself
+    // transient.
     const footer = /<footer>([\s\S]*?)<\/footer>/.exec(shell())?.[1] ?? "";
-    expect(footer.match(/<button/g)).toHaveLength(3);
+    const buttons = footer.match(/<button[^>]*>/g) ?? [];
+    const permanent = buttons.filter((button) => !button.includes("hidden"));
+
+    expect(permanent).toHaveLength(2);
+    expect(buttons).toHaveLength(4);
+  });
+
+  it("🔴 ships every conditional footer control hidden", () => {
+    // The other half of the rule above. A control that renders on first paint and
+    // hides itself in script has already cost the reader a flash of chrome they did
+    // not ask for, on the surface where chrome is most expensive.
+    const footer = /<footer>([\s\S]*?)<\/footer>/.exec(shell())?.[1] ?? "";
+
+    for (const attribute of ["data-clear", "data-restore"]) {
+      const tag = new RegExp(`<button[^>]*${attribute}[^>]*>`).exec(footer)?.[0] ?? "";
+      expect(tag, `${attribute} must ship hidden`).toContain("hidden");
+    }
   });
 
   it("puts build info in settings, one tap away rather than buried", () => {
