@@ -66,6 +66,48 @@ export class Knag {
     await expect(this.page.locator("[data-editor]")).toBeVisible();
   }
 
+  /**
+   * Change the page from outside this browser tab, **without reloading it**.
+   *
+   * What `seed` cannot do: `seed` reloads, which is how you set up a fixture and also
+   * how you paper over a sync bug. This simulates the other device, and leaves the page
+   * to notice on its own — which is the thing under test.
+   */
+  async writeExternally(body: string): Promise<void> {
+    const headers = { Authorization: `Bearer ${TEST_BEARER}`, "Content-Type": "application/json" };
+    const current = await this.page.request.get("/api/doc", { headers });
+    const { version } = (await current.json()) as { version: number };
+
+    const wrote = await this.page.request.put("/api/doc", {
+      headers,
+      data: { body, base_version: version },
+    });
+    expect(wrote.ok()).toBe(true);
+  }
+
+  /**
+   * The caret offset inside whatever row is focused, or -1 if none is.
+   *
+   * The callback is typed structurally rather than as an `HTMLTextAreaElement` on
+   * purpose: `browser/tsconfig.json` has no DOM lib, because `client/src` is the only
+   * place in the tree where DOM types exist. Asking for the one property this needs
+   * keeps that true.
+   */
+  async caretOffset(): Promise<number> {
+    const focused = this.page.locator("[data-rows] .text:focus, [data-rows] .fence:focus");
+    if ((await focused.count()) === 0) return -1;
+
+    return focused.evaluate((el: { selectionStart: number | null }) => el.selectionStart ?? -1);
+  }
+
+  /** The `data-index` of the row holding focus, or -1. */
+  async focusedRowIndex(): Promise<number> {
+    const row = this.page.locator("[data-rows] li:focus-within");
+    if ((await row.count()) === 0) return -1;
+
+    return Number(await row.getAttribute("data-index"));
+  }
+
   /** What the server actually holds — the only source of truth worth asserting on. */
   async document(): Promise<string> {
     const res = await this.page.request.get("/api/doc", {
