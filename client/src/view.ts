@@ -199,26 +199,41 @@ export function writeView(storage: KeyValueStore | undefined, view: ViewMode): v
   }
 }
 
-// ── Theme (spec §9) ──────────────────────────────────────────────────────────
+// ── Board (spec §9) ──────────────────────────────────────────────────────────
 
 /**
- * `system` follows `prefers-color-scheme`; the other two override it.
+ * The two surfaces, plus following the OS.
  *
- * Three options rather than a light/dark switch: the MVP hard-coded dark, which is
- * the right *default* and the wrong *only* option — knag gets opened outdoors and in
+ * 🔴 **`slate` and `whiteboard`, not `dark` and `light`.** They are not themes — they
+ * are the two boards the product already had, finally told what they are: chalk on a
+ * blackboard, and marker on dry-erase. A board does not ask you what kind of board it
+ * is, which is also why there is no third one.
+ *
+ * Three options rather than a two-way switch: the MVP hard-coded dark, which is the
+ * right *default* and the wrong *only* option — knag gets opened outdoors and in
  * meetings, unreadable in the first and conspicuous in the second.
  */
-export type Theme = "system" | "light" | "dark";
+export type Theme = "system" | "whiteboard" | "slate";
 
 export const THEME_KEY = "knag.theme";
 
-const THEMES: Theme[] = ["system", "light", "dark"];
+const THEMES: Theme[] = ["system", "whiteboard", "slate"];
+
+/**
+ * What the key used to hold, before the boards were named.
+ *
+ * 🔴 Without this, everyone who had ever chosen a board gets silently reset to
+ * `system` on the release that renames them — and on a device whose OS is set the
+ * other way, that reads as the app changing colour by itself.
+ */
+const RENAMED: Record<string, Theme> = { light: "whiteboard", dark: "slate" };
 
 /** Same catch as `readView` — Safari *throws* when storage is blocked. */
 export function readTheme(storage: KeyValueStore | undefined): Theme {
   try {
-    const saved = storage?.getItem(THEME_KEY);
-    return THEMES.includes(saved as Theme) ? (saved as Theme) : "system";
+    const saved = storage?.getItem(THEME_KEY) ?? "";
+    if (THEMES.includes(saved as Theme)) return saved as Theme;
+    return RENAMED[saved] ?? "system";
   } catch {
     return "system";
   }
@@ -232,23 +247,26 @@ export function writeTheme(storage: KeyValueStore | undefined, theme: Theme): vo
   }
 }
 
-/** Cycles system → light → dark → system, so one control covers all three. */
+/** Cycles system → whiteboard → slate → system, so one control covers all three. */
 export function nextTheme(theme: Theme): Theme {
   return THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length] as Theme;
 }
 
 /**
- * The colour actually in effect, for the `theme-color` meta tag.
+ * The board actually in effect, for the `theme-color` meta tag.
  *
- * 🔴 iOS paints the status bar from that tag. Leaving it dark under a light theme
- * puts a black strip above a white app, which reads as a rendering bug rather than a
+ * 🔴 iOS paints the status bar from that tag. Leaving it slate under whiteboard puts
+ * a black strip above a pale app, which reads as a rendering bug rather than a
  * preference.
+ *
+ * The two values are `--board` on each side, and they are the one place a token is
+ * duplicated outside the stylesheet — a `<meta>` tag cannot read a custom property.
+ * Pinned by a test that reads the hexes back out of the shell.
  */
+export const BOARD_SLATE = "#11150F";
+export const BOARD_WHITEBOARD = "#EDF1F3";
+
 export function themeColor(theme: Theme, systemPrefersDark: boolean): string {
-  const dark = theme === "dark" || (theme === "system" && systemPrefersDark);
-  // Slate — `#11150F`, the board. Green-black rather than the old neutral `#111111`,
-  // which was close enough to be invisible on the status bar and wrong everywhere the
-  // two sat side by side. The light value is still the superseded pad; the board
-  // tokens land with the rest of the design system (#70).
-  return dark ? "#11150F" : "#faf9f7";
+  const slate = theme === "slate" || (theme === "system" && systemPrefersDark);
+  return slate ? BOARD_SLATE : BOARD_WHITEBOARD;
 }

@@ -25,11 +25,17 @@
 
 // Only has to change if the *set* of cached paths changes. Correctness no longer
 // depends on it, which is the point of the rewrite above.
-const CACHE = "knag-shell-v3";
+const CACHE = "knag-shell-v4";
 
 // 🔴 The PWA icons only. The MCP connector icons live in `public/icons/` too and are
 // deliberately absent: they are fetched by Claude's connector UI, never by this
 // browser, so precaching them would block install on two files nobody here reads.
+//
+// 🔴 The fonts are here because they have to be. `font-display: swap` means a face
+// that cannot be fetched renders in the fallback stack instead — so without these, a
+// cold offline start comes up in system-ui and ui-monospace, silently, and the app
+// stops looking like itself in exactly the situation the service worker exists for.
+// Three faces, ~49 kB together, fetched once per shell version.
 const SHELL = [
   "/",
   "/index.html",
@@ -39,6 +45,9 @@ const SHELL = [
   "/icons/knag-icon-192.png",
   "/icons/knag-icon-512.png",
   "/icons/knag-icon-512-maskable.png",
+  "/fonts/familjen-grotesk-latin-var.woff2",
+  "/fonts/dm-mono-latin-400.woff2",
+  "/fonts/dm-mono-latin-300.woff2",
 ];
 
 self.addEventListener("install", (event) => {

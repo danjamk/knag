@@ -136,7 +136,7 @@ test.describe("a local edit racing a remote one", () => {
     await row.press("End");
     await row.pressSequentially(" typed");
 
-    await expect(knag.page.locator("[data-save-status]")).toHaveText(/Reloaded/, {
+    await expect(knag.page.locator("[data-save-status]")).toHaveText(/reloaded/, {
       timeout: SYNC_TIMEOUT,
     });
     await expect(knag.editor(0)).toHaveValue("remote change");

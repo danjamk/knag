@@ -90,18 +90,25 @@ test.describe("wrapping", () => {
 });
 
 test.describe("the toolbar", () => {
-  test("🔴 the reorder control stays an icon across a round trip", async ({ knag }) => {
-    // It used to write the word "reorder" on the way out, so the button changed
-    // shape the first time it was used and never changed back.
+  test("🔴 the arrange control keeps one drawing across a round trip", async ({ knag }) => {
+    // It used to write the word "reorder" on the way out, and later swapped the glyph
+    // for a tick — so the button changed shape the first time it was used. Now only
+    // its *state* changes, which is also what carries the pressed tint: the mode has
+    // to be legible from the bar, because in it the page looks like a page you cannot
+    // type in, which is exactly what it is.
     const button = knag.page.locator("[data-reorder]");
-    await expect(button).toHaveText("⇅");
+    const drawing = await button.locator("svg").innerHTML();
+    await expect(button).toHaveAttribute("aria-pressed", "false");
 
     await button.click();
-    await expect(button).toHaveText("✓");
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(await button.locator("svg").innerHTML()).toBe(drawing);
 
     await button.click();
-    await expect(button).toHaveText("⇅");
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(await button.locator("svg").innerHTML()).toBe(drawing);
   });
+
 
   test("keeps the footer to three visible controls", async ({ knag }) => {
     await knag.seed("- [x] done\nplain");
@@ -136,17 +143,18 @@ test.describe("the toolbar", () => {
 });
 
 test.describe("settings", () => {
-  test("opens, and switches theme live", async ({ knag }) => {
+  test("opens, and switches board live", async ({ knag }) => {
     await knag.page.locator("[data-settings-open]").click();
     const dialog = knag.page.locator("[data-settings]");
     await expect(dialog).toBeVisible();
 
-    await dialog.locator('[data-theme-set="light"]').click();
-    await expect(knag.page.locator("html")).toHaveAttribute("data-theme", "light");
+    await dialog.locator('[data-theme-set="whiteboard"]').click();
+    await expect(knag.page.locator("html")).toHaveAttribute("data-theme", "whiteboard");
 
-    await dialog.locator('[data-theme-set="dark"]').click();
-    await expect(knag.page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await dialog.locator('[data-theme-set="slate"]').click();
+    await expect(knag.page.locator("html")).toHaveAttribute("data-theme", "slate");
   });
+
 
   test("carries the build info that used to sit in the footer", async ({ knag }) => {
     await knag.page.locator("[data-settings-open]").click();

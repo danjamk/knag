@@ -127,8 +127,14 @@ export class Knag {
 
   /** Wait for the save to land, so document() is not read mid-flight. */
   async saved(): Promise<void> {
-    await expect(this.page.locator("[data-save-status]")).toHaveText(/Saved|Cleared/, {
+    // Lowercase since the machine voice landed: `saved`, never `Saved ✓`.
+    await expect(this.page.locator("[data-save-status]")).toHaveText(/saved|wiped/, {
       timeout: 5_000,
     });
+  }
+
+  /** The post-wipe recovery line, as one string: `wiped 3 · bring back`. */
+  recovery() {
+    return this.page.locator("[data-recovery]");
   }
 }
