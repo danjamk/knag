@@ -23,7 +23,7 @@ Two things a newcomer gets wrong:
 ## Layout
 
 ```
-worker/src/         Worker: routes, auth, store, blocks, MCP
+worker/src/         Worker: routes, auth, store, blocks, MCP, OAuth
 worker/migrations/  D1 schema. Additive only — the document lives here.
 worker/test/        vitest against real D1, not mocks
 client/src/         PWA source. Own tsconfig — it is the only place DOM exists.
@@ -60,6 +60,17 @@ agent afterthought — cookie-only must not creep into a route.
 it is what keeps `/mcp` free of ambient authority, which is the premise of
 logging a foreign `Origin` rather than blocking it (spec §10). Do not "fix" it
 by letting the cookie through.
+
+Since [ADR-005](docs/adr/ADR-005-mcp-oauth.md) there are **two** bearer
+credentials and the rule is unchanged by both. `KNAG_BEARER_TOKEN` is compared
+locally and reaches Claude Code; an OAuth access token can only be validated by
+the provider, which is why `handleMcp` takes a resolved `Principal` rather than
+deriving one. Both arrive as `Authorization: Bearer`; neither is a cookie.
+
+The cookie appears at **`/oauth/authorize`** and nowhere else — a browser, once,
+to establish consent. That endpoint is the mirror image of `/mcp`: it accepts the
+session and **refuses the bearer**, because a grant minted from a header is a
+grant nobody agreed to.
 
 **Secrets never enter `worker/wrangler.jsonc`.** It is committed.
 `wrangler secret put`.

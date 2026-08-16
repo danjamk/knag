@@ -30,17 +30,17 @@ describe("unknown routes", () => {
 describe("discovery probes", () => {
   // 🔴 What this pins is the Worker half only. Miniflare does not serve the `assets`
   // binding, so every path already reaches the Worker here and this passes with or
-  // without the `run_worker_first` entry that is the actual fix. The half that can
-  // regress — static assets answering the probe with the PWA shell and a 200 — is
+  // without the `run_worker_first` entry that put it in front of them. The half that
+  // can regress — static assets answering a probe with the PWA shell and a 200 — is
   // only observable against a real deployment, and lives in scripts/verify.sh.
   //
   // Kept anyway, because it names the contract: a probe for metadata knag does not
-  // serve gets an honest absence, never a document.
+  // serve gets an honest absence, never a document. The paths knag *does* serve are
+  // covered in oauth.test.ts.
   it.each([
-    "/.well-known/oauth-protected-resource",
-    "/.well-known/oauth-authorization-server",
-    // RFC 8414 path-suffixed form. Some connectors probe this before the bare one.
-    "/.well-known/oauth-authorization-server/mcp",
+    "/.well-known/openid-configuration",
+    "/.well-known/webfinger",
+    "/.well-known/security.txt",
   ])("refuses %s rather than answering with the shell", async (path) => {
     const res = await SELF.fetch(`https://knag.test${path}`);
 

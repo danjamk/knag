@@ -14,6 +14,35 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **knag connects from claude.ai, Claude Desktop and mobile**
+  ([#64](https://github.com/danjamk/knag/issues/64),
+  [ADR-005](docs/adr/ADR-005-mcp-oauth.md)). Add the `/mcp` URL as a custom connector
+  and approve it in the browser — there is nothing to paste. Previously those surfaces
+  failed at client registration, because they drive an OAuth 2.1 handshake and offer no
+  field for a raw header, which left the connector working only from a terminal. For a
+  product whose whole point is the phone and the iPad, that was the wrong surface to
+  reach.
+
+  **The static bearer still works and is checked first.** It is what Claude Code uses,
+  and it is the fallback when a connector's OAuth dance fails — two independent ways in,
+  neither depending on the other.
+
+  **Consent reuses the login knag already has.** The approval screen is gated by the
+  session cookie, and a visitor without one is sent to the ordinary login and returned
+  afterwards, so the passphrase is never typed into anything but the real login form.
+  That is also why the new endpoint needs no rate limit of its own: it accepts no
+  credential, so the only thing worth guessing is still behind `/api/login`.
+
+  `/mcp` continues to refuse the session cookie. An OAuth access token is a bearer
+  token; the cookie authenticates the consent step in a browser and never a tool call,
+  so the no-ambient-authority property that the `Origin` decision rests on is unchanged.
+
+  The audience each token is pinned to is derived from the request origin rather than
+  configured, so a `*.workers.dev` host and a custom domain each advertise themselves
+  correctly and there is no value to add to both wrangler env blocks and forget in one.
+
 ### Changed
 
 - **`/mcp` reaches Claude Code only, and the docs now say so**

@@ -1,4 +1,6 @@
+import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import {
+  OWNER,
   type Principal,
   authenticate,
   issueSession,
@@ -9,6 +11,7 @@ import { type Env, buildInfo } from "./env.js";
 import { isCompleted, parse, serialize } from "./blocks.js";
 import { loadHistory, reportingZone, resolveRange } from "./history.js";
 import { handleMcp } from "./mcp.js";
+import { handleAuthorize } from "./oauth.js";
 import { type DocumentSource, clearCompleted, readDocument, writeDocument } from "./store.js";
 
 /**
@@ -29,9 +32,15 @@ import { type DocumentSource, clearCompleted, readDocument, writeDocument } from
  * diagnose than the absence it is reporting (ADR-005 §4). knag serves no discovery
  * metadata yet; when it does, the handler goes above the 404, not around it.
  */
-export default {
+const router = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    // The OAuth consent screen (ADR-005). Routed here by the provider rather than
+    // served by it, because proving the visitor is the operator is knag's job.
+    if (url.pathname === "/oauth/authorize") {
+      return handleAuthorize(request, env);
+    }
 
     // Unauthenticated by design, and reports nothing about the document. `make health`
     // asserts this matches the checkout it is run from, which is the only thing that
@@ -66,12 +75,10 @@ export default {
       return clear(request, env, principal);
     }
 
-    // The agent half of the product (spec §10). Bearer only — see the note in mcp.ts;
-    // accepting the session cookie here would undermine the reason `Origin` is logged
-    // rather than blocked.
-    if (url.pathname === "/mcp") {
-      return handleMcp(request, env);
-    }
+    // No `/mcp` branch here, deliberately. The OAuthProvider claims that path as its
+    // `apiRoute`, so a request either carries a token it minted — in which case it goes
+    // straight to `handleMcp` — or gets the provider's 401 with the metadata pointer a
+    // connector needs to start the handshake. Neither reaches this router.
 
     if (url.pathname === "/api/history") {
       const principal = await authenticate(request, env);
@@ -104,6 +111,61 @@ export default {
     }
 
     return Response.json({ error: "Not found" }, { status: 404 });
+  },
+} satisfies ExportedHandler<Env>;
+
+/**
+ * OAuth 2.1 for the hosted Claude surfaces — claude.ai, Desktop, mobile (ADR-005, #64).
+ *
+ * The provider serves `/oauth/token`, `/oauth/register` and the `.well-known` metadata,
+ * routes `/oauth/authorize` to the router above, and everything else to it as well.
+ *
+ * 🔴 Constructed **per request**, not at module scope, so `resource` can be the origin
+ * the caller actually reached. That is what pins access-token audiences to this server
+ * (RFC 8707) — and doing it this way means the value cannot drift between the two
+ * wrangler env blocks, because there is no value in them to drift. A `*.workers.dev`
+ * deployment and a custom domain each advertise themselves correctly with no config.
+ */
+function oauthProvider(origin: string): OAuthProvider<Env> {
+  return new OAuthProvider<Env>({
+    apiRoute: "/mcp",
+    // The provider has already validated the access token by the time this runs, and it
+    // is the only thing that could — so the principal is constructed here rather than
+    // re-derived. `source: "bearer"` is the literal truth: an OAuth access token arrives
+    // as `Authorization: Bearer`, and it lands in the revision log as `agent`, which is
+    // what it is.
+    apiHandler: {
+      fetch: (request: Request, env: Env) =>
+        handleMcp(request, env, { id: OWNER, source: "bearer" }),
+    },
+    defaultHandler: router,
+    authorizeEndpoint: "/oauth/authorize",
+    tokenEndpoint: "/oauth/token",
+    clientRegistrationEndpoint: "/oauth/register",
+    resourceMetadata: { resource: `${origin}/mcp` },
+    onError: ({ code, description, status }) =>
+      void console.warn(`oauth ${status} ${code}: ${description}`),
+  });
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+
+    // 🔴 Preserve the static-bearer path, ahead of OAuth. `KNAG_BEARER_TOKEN` is not a
+    // token this provider issued, so the provider would 401 it — taking out Claude Code,
+    // the one surface that has ever worked, in the commit that adds the others. ADR-005
+    // §1: two independent ways in, neither depending on the other.
+    //
+    // Falling through on a *failed* bearer rather than rejecting is deliberate: an
+    // OAuth access token also arrives as `Authorization: Bearer`, and the provider is
+    // the only thing that can tell whether it minted it.
+    if (url.pathname === "/mcp") {
+      const principal = await authenticate(request, env);
+      if (principal?.source === "bearer") return handleMcp(request, env, principal);
+    }
+
+    return oauthProvider(url.origin).fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;
 

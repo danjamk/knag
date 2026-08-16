@@ -103,27 +103,33 @@ even though it is valid everywhere else. That is what keeps `/mcp` free of
 ambient authority, which is in turn why a foreign `Origin` is logged rather than
 blocked — see [docs/spec.md](docs/spec.md) §10.
 
-⚠️ **Reachable from Claude Code only, for now.** claude.ai, Claude Desktop and
-mobile negotiate OAuth 2.1 and offer nowhere to put a header, so adding knag as a
-connector there fails at client registration.
-[ADR-005](docs/adr/ADR-005-mcp-oauth.md) has the decision;
-[#64](https://github.com/danjamk/knag/issues/64) is the work. Until then:
+There are two ways to hold a bearer, and which one you want depends only on the
+client ([ADR-005](docs/adr/ADR-005-mcp-oauth.md)).
+
+**From claude.ai, Claude Desktop or mobile** — add the URL as a custom connector
+and approve it in the browser. Nothing to paste:
+
+```
+https://knag.danjamkuhn.com/mcp
+```
+
+The connector registers itself, sends you to knag's consent screen, and the
+screen sends you to the ordinary login if you are not already signed in — so the
+passphrase is only ever typed into the real login form.
+
+**From Claude Code**, which can carry a header and does not need the handshake:
 
 ```bash
-claude mcp add --transport http knag https://knag.danjamkuhn.com/mcp \
+claude mcp add --transport http --scope user knag https://knag.danjamkuhn.com/mcp \
   --header "Authorization: Bearer ${KNAG_BEARER_TOKEN}"
 ```
 
+Use `--scope user` rather than the default, so the connector is available in
+every project. Never `--scope project`: that writes the token into `.mcp.json`
+in the repo.
+
 There is no history screen in the app, so `knag_history` is currently how
 history gets read.
-
-```json
-{
-  "name": "knag",
-  "url": "https://knag.danjamkuhn.com/mcp",
-  "headers": { "Authorization": "Bearer ${KNAG_BEARER_TOKEN}" }
-}
-```
 
 ## Docs
 
