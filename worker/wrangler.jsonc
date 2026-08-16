@@ -56,10 +56,18 @@
   // The PWA shell — real files, not template literals inside a TS module.
   // `run_worker_first` keeps the API and MCP routes on the Worker; everything else
   // is served straight from assets, which costs no Worker invocation.
+  //
+  // 🔴 `/.well-known/*` is here to be REFUSED, not served. `not_found_handling:
+  // "single-page-application"` answers every unmatched path with index.html and a
+  // 200, so without this entry a client probing for OAuth metadata gets the PWA
+  // shell and reads it as "this server's metadata is corrupt" rather than "this
+  // server has no OAuth". The Worker 404s these paths honestly instead (index.ts).
+  // Any discovery path knag later chooses to *answer* is already routed by this
+  // wildcard — see docs/adr/ADR-005-mcp-oauth.md §4.
   "assets": {
     "directory": "../public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/mcp", "/health"],
+    "run_worker_first": ["/api/*", "/mcp", "/health", "/.well-known/*"],
     "not_found_handling": "single-page-application"
   },
 
@@ -111,10 +119,12 @@
         }
       ],
 
+      // 🔴 Must match the dev block's list exactly. A path routed in only one
+      // environment works locally and serves the PWA shell in production.
       "assets": {
         "directory": "../public",
         "binding": "ASSETS",
-        "run_worker_first": ["/api/*", "/mcp", "/health"],
+        "run_worker_first": ["/api/*", "/mcp", "/health", "/.well-known/*"],
         "not_found_handling": "single-page-application"
       },
 

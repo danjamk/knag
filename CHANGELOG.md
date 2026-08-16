@@ -44,6 +44,25 @@ summarises the phase rather than pretending it was written as it happened.
   by a browser suite that changes the document from outside the page and waits for it to
   notice — reverting the fix turns four of those tests red.
 
+- **Discovery probes get an honest 404 instead of the app**
+  ([#64](https://github.com/danjamk/knag/issues/64),
+  [ADR-005](docs/adr/ADR-005-mcp-oauth.md) §4). `/.well-known/*` was unrouted, and
+  unrouted paths are answered by the PWA shell with a `200` — so a client looking for
+  OAuth metadata received an HTML document where it expected JSON, and reported knag's
+  metadata as *corrupt* rather than *absent*. knag serves no such metadata yet; it now
+  says so in the one way a machine can read.
+
+  Nothing a person can see changes. It matters because it is the first thing anyone
+  debugging the connector will hit, and it was pointing at the wrong problem.
+
+- **`make verify` was passing on checks it never ran.** The helper that reads an HTTP
+  status used `curl -f`, which exits nonzero on any 4xx — and the `|| echo "000"`
+  guarding it appended to the code curl had already printed. Every non-2xx check
+  compared against `"401000"` and could not match.
+
+  The two checks affected were **`/api/doc` and `/mcp` reject anonymous** — the pair
+  that assert authentication is switched on at all. They now run, and they pass.
+
 ## [0.2.0] — 2026-08-15
 
 The agent half. The page becomes something Claude can read and rewrite.
