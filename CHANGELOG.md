@@ -27,6 +27,23 @@ summarises the phase rather than pretending it was written as it happened.
   Documentation only; no behavior changed. Spec §10 carried the wrong reasoning and now
   carries the correction, and the README says plainly which surfaces work today.
 
+### Fixed
+
+- **The page no longer goes stale when you return to a device**
+  ([#62](https://github.com/danjamk/knag/issues/62)). A remote update was withheld while
+  the editor was *focused* as well as while it was dirty — and because a browser
+  restores focus to the last-focused element when you return to a window, that meant the
+  update was withheld precisely when you picked a device back up. It sat in a queue with
+  no expiry and no visible signal until you happened to click outside the rows.
+
+  The caret is still protected, by putting it back after the repaint rather than by
+  refusing to repaint. Only unsaved keystrokes hold an update now, and a held update
+  says so instead of waiting in silence.
+
+  Found in real use, on an iPad and a laptop, after 344 passing tests. It is now covered
+  by a browser suite that changes the document from outside the page and waits for it to
+  notice — reverting the fix turns four of those tests red.
+
 ## [0.2.0] — 2026-08-15
 
 The agent half. The page becomes something Claude can read and rewrite.

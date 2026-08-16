@@ -348,8 +348,29 @@ Polling. No WebSockets.
 
 ### Two rules that prevent the only real bugs
 
-**Never apply a remote update while the editor is dirty or focused.** Queue it,
-apply on blur. A cursor that jumps mid-keystroke is how an app gets abandoned.
+**Never apply a remote update while the editor is dirty.** Queue it, apply once
+the pending save resolves. A cursor that jumps mid-keystroke is how an app gets
+abandoned.
+
+**Narrowed 2026-08-16 (#62).** This originally read "dirty *or* focused", and the
+focused half caused the bug it was written to prevent. A browser restores focus
+to the last-focused element when you return to a window, so `focused` was true
+again before the first poll after picking a device back up — the update went into
+a queue with no expiry and no visible signal, and the page went stale *precisely
+when you came back to it*, staying stale until you happened to click elsewhere.
+Reported from real use after 344 green tests.
+
+The reasoning was right and the remedy was wrong. Assigning a textarea's value
+does reset the selection, so the caret has to be protected — by **putting it
+back**, which `focusRow` already does after every structural edit, not by
+withholding someone's own data. Focus is a rendering concern; only unsaved
+keystrokes are a correctness one.
+
+`dispositionFor` in `client/src/sync.ts` returns one of three things — `apply`,
+`restore-caret`, `hold` — and `hold` happens for exactly one reason.
+
+**A held update is announced, never silent.** `pendingRemote` having no signal is
+what turned a caret-protection rule into a page that lied about being live.
 
 **Always send `base_version`.** The failure mode this prevents: an iPad left
 open for three days, typed into, saving a stale body over a week of work. This

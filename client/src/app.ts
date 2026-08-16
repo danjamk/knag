@@ -25,7 +25,7 @@ import {
   setText,
   toggle,
 } from "../../worker/src/blocks.js";
-import { mayApplyRemote, pollInterval } from "./sync.js";
+import { dispositionFor, pollInterval } from "./sync.js";
 import Sortable from "sortablejs";
 import {
   type EditResult,
@@ -447,18 +447,81 @@ async function poll(): Promise<void> {
     const doc = (await res.json()) as Doc;
     if (doc.version === baseVersion) return;
 
-    if (mayApplyRemote({ dirty, focused })) {
-      render(doc);
-      setStatus("Updated from another device");
-    } else {
-      // Queued. Applied on blur, or subsumed by the 409 the pending local save is
-      // about to get — either way the device converges without the caret moving.
-      pendingRemote = doc;
-    }
+    applyRemote(doc);
   } catch {
     // A failed poll is not worth surfacing; the next one is seconds away and the
     // save path reports its own failures.
   }
+}
+
+/** Where the caret is, in terms that survive a repaint. */
+type Caret = { index: number; offset: number };
+
+/**
+ * The focused row and caret offset, or null if the caret is not in a row.
+ *
+ * Read from `document.activeElement` rather than from the `focused` flag, because the
+ * flag can outlive the element it describes — and a null here is what corrects it.
+ */
+function captureCaret(): Caret | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) {
+    return null;
+  }
+
+  const row = active.closest("li[data-index]");
+  if (!row) return null;
+
+  const index = Number(row.getAttribute("data-index"));
+  if (!Number.isInteger(index)) return null;
+
+  return { index, offset: active.selectionStart ?? 0 };
+}
+
+/**
+ * Take a freshly fetched document, respecting whatever the user is in the middle of.
+ *
+ * 🔴 Focus alone no longer withholds the update (#62). It used to, and because a browser
+ * restores focus to the last-focused element when you return to a window, that meant the
+ * page went stale precisely when you came back to a device — silently, until you clicked
+ * somewhere outside the rows.
+ *
+ * The caret is still protected, just by putting it back rather than by refusing.
+ */
+function applyRemote(doc: Doc): void {
+  const disposition = dispositionFor({ dirty, focused });
+
+  if (disposition === "hold") {
+    // Applied on blur, or subsumed by the 409 the pending local save is about to get —
+    // either way the device converges. Announced rather than queued in silence: an
+    // update held with no signal is what made #62 look like a broken sync instead of a
+    // deliberate wait.
+    const first = pendingRemote === null;
+    pendingRemote = doc;
+    if (first) setStatus("Update waiting — saving yours first");
+    return;
+  }
+
+  if (disposition === "apply") {
+    render(doc);
+    setStatus("Updated from another device");
+    return;
+  }
+
+  // Focused but clean. Repaint under the caret and put it back where it was.
+  const caret = captureCaret();
+  render(doc);
+
+  if (caret && editorIn(caret.index)) {
+    focusRow(caret.index, caret.offset);
+  } else {
+    // The row the caret was in did not survive the repaint, so focus is now wherever
+    // the browser put it. Correct the flag: a stale `true` here would block every
+    // future update, which is the bug this function exists to fix.
+    focused = false;
+  }
+
+  setStatus("Updated from another device");
 }
 
 function stopPolling(): void {
