@@ -309,6 +309,32 @@ document and is sealed, so every removed line is derivable from it and the body 
 wrote — for both scopes. That is what [#59](https://github.com/danjamk/knag/issues/59)
 restores from; reading `cleared_items` instead would silently drop the unfinished lines.
 
+#### Undoing a wipe
+
+The client keeps the pre- and post-wipe bodies and offers `wiped N · bring back` until
+that device's next local midnight. **The undo is client-side and needs no route and no
+schema change** — the app already holds both sides, and the server's sealed snapshot is
+the durable copy behind it.
+
+🔴 **Restore re-inserts into the page as it is now; it never writes the snapshot back.**
+Writing it back discards every edit made since the wipe, which is a worse data-loss path
+than the one the undo exists to prevent. Each removed block goes back after the surviving
+block it used to follow, so it lands correctly even though every index has shifted; a
+block whose anchor is gone is appended rather than dropped, because the wrong position
+costs far less than the wrong content. Restoring is idempotent by **count**, not by
+presence — a page may legitimately hold the same line twice.
+
+The restore itself is an ordinary `PUT` with a `base_version`. Undo does not get a
+special path and does not skip the concurrency rules; a 409 reloads and leaves the offer
+standing.
+
+The offer is deliberately **per-device**. The regret belongs to the device the wipe
+happened on, and an undo offered on the laptop for something wiped on the phone invites
+undoing work someone already moved on from. Its lifetime uses the *device's* local
+midnight rather than `KNAG_TZ`: §14.3's zone exists to file past edits onto the right
+day, and this asks whether the person holding the phone still thinks of the wipe as
+something they just did.
+
 ### `GET /api/history?since=&until=`
 Returns revisions in range plus derived, per adjacent pair:
 - `appeared`: lines in *n+1* not in *n*

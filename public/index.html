@@ -199,6 +199,12 @@
          because it sits among theme and view switches that cost nothing to press. */
       button.danger { color: var(--danger); border-color: var(--danger); }
       button.danger:active { background: var(--danger-bg); }
+
+      /* Reads as part of the status line rather than as a fourth control — it is
+         transient, and the footer's three-button rule is about permanent chrome. */
+      .restore { border: 0; background: none; color: var(--link); padding: 0 0.4rem;
+                 font: inherit; cursor: pointer; }
+      .restore:active { opacity: 0.6; }
       [data-reorder].on { background: var(--mode-bg); color: var(--mode-fg); }
 
       li.blank { min-height: 1.25rem; padding: 0 0.6rem 0 0.85rem; }
@@ -452,6 +458,11 @@
            settings, not on this bar. -->
       <footer>
         <span data-save-status>—</span>
+        <!-- 🔴 Chrome, never a line in the document. Writing "wiped 6 · bring back"
+             into the page would put the app's words in the user's file and break byte
+             preservation, which is principle 3 of the product. It lives beside the
+             save status because that is where the eye already goes after an action. -->
+        <button type="button" data-restore hidden class="restore"></button>
         <button type="button" data-clear hidden title="clear completed">
           ⌫ <span data-clear-count>0</span>
         </button>

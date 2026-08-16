@@ -103,11 +103,23 @@ test.describe("the toolbar", () => {
     await expect(button).toHaveText("⇅");
   });
 
-  test("keeps the footer to three controls", async ({ knag }) => {
+  test("keeps the footer to three visible controls", async ({ knag }) => {
     await knag.seed("- [x] done\nplain");
-    // Clear-done appears only when there is something to sweep, so this is the
-    // maximum: clear, reorder, settings.
-    await expect(knag.page.locator("footer button")).toHaveCount(3);
+
+    // 🔴 **Visible**, not present. The footer's markup carries conditional controls
+    // that ship `hidden` — clear-done, and the post-wipe undo (#59) — and counting
+    // elements would either block them or force this number up every time one is
+    // added. What the rule actually protects is how much chrome sits above the
+    // keyboard, and that is what is asserted.
+    //
+    // The markup-level half of the rule lives in `worker/test/shell.test.ts`, which
+    // pins that only two controls are permanent and that every other one ships hidden.
+    // Both halves are needed: this one cannot see the markup, that one cannot see the
+    // screen.
+    //
+    // Three is the maximum, reached here because there is something to sweep:
+    // clear, reorder, settings.
+    await expect(knag.page.locator("footer button:visible")).toHaveCount(3);
   });
 
   test("shows no controls on a row until reorder mode", async ({ knag }) => {
