@@ -35,7 +35,9 @@ jobs:
           # SHA has to be real.
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      # v6, not v4 — see the note in ci.yml. v4 declares `using: node20`, which the
+      # runner force-runs on Node 24 and will eventually refuse to run at all.
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v5
         with:
@@ -60,7 +62,11 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      - uses: actions/upload-artifact@v4
+      # 🔴 This one is not a warning waiting to happen — it is the restore point for a
+      # prod database, and it runs on every deploy. A node20 action that stops being
+      # runnable takes the backup step with it, and the failure lands *between* the
+      # backup and the migration, which is the worst place in this file to lose a step.
+      - uses: actions/upload-artifact@v7
         with:
           name: prod-d1-backup
           path: backups/knag-prod.sql

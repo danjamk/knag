@@ -23,7 +23,12 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - uses: pnpm/action-setup@v4
+      # 🔴 v6, not v4. v4 declares `using: node20`, which the runner now force-runs on
+      # Node 24 and warns about; the deprecation ends with it failing rather than
+      # warning. v5 was the Node 24 update and v6 added pnpm 11 support — neither
+      # changes anything this uses, and the pnpm version still comes from
+      # `packageManager` in package.json.
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v5
         with:
@@ -51,7 +56,12 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - uses: pnpm/action-setup@v4
+      # 🔴 v6, not v4. v4 declares `using: node20`, which the runner now force-runs on
+      # Node 24 and warns about; the deprecation ends with it failing rather than
+      # warning. v5 was the Node 24 update and v6 added pnpm 11 support — neither
+      # changes anything this uses, and the pnpm version still comes from
+      # `packageManager` in package.json.
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v5
         with:
@@ -66,7 +76,11 @@ jobs:
 
       - run: pnpm test:browser
 
-      - uses: actions/upload-artifact@v4
+      # 🔴 Also node20 on v4, and it never appeared in a deprecation warning because it
+      # only runs `if: failure()` — the runner annotates the actions a job actually
+      # used, so a passing run cannot see it. It would have started failing on the
+      # first red build, which is the one run where losing the trace costs most.
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-trace
