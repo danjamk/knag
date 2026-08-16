@@ -5,7 +5,7 @@ import {
   POLL_ACTIVE_MS,
   POLL_IDLE_MS,
   POLL_STALE_MS,
-  mayApplyRemote,
+  dispositionFor,
   pollInterval,
 } from "../src/sync.js";
 
@@ -93,28 +93,51 @@ describe("poll interval (spec §14.4)", () => {
   });
 });
 
-describe("the dirty guard (spec §6)", () => {
-  it("applies a remote update only when the editor is neither dirty nor focused", () => {
-    expect(mayApplyRemote({ dirty: false, focused: false })).toBe(true);
+describe("the dirty guard (spec §6, narrowed by #62)", () => {
+  it("applies freely when nothing is in progress", () => {
+    expect(dispositionFor({ dirty: false, focused: false })).toBe("apply");
   });
 
-  const refused: Array<[string, { dirty: boolean; focused: boolean }]> = [
+  it("🔴 applies while merely focused, restoring the caret", () => {
+    // The regression this test exists for, found in real use. This used to refuse.
+    //
+    // The reasoning was right — assigning a textarea's value resets the selection, so
+    // a poll landing between two keystrokes throws the caret to the end. The remedy
+    // was wrong: refusing meant the update sat in a queue with no expiry and no
+    // signal, and because a browser restores focus to the last-focused element when
+    // you return to a window, `focused` was true again before the first poll after
+    // picking the device back up.
+    //
+    // So the page went stale exactly when you came back to it and stayed stale until
+    // you happened to click elsewhere. Focus is a reason to put the caret back, not a
+    // reason to withhold someone's own data.
+    expect(dispositionFor({ dirty: false, focused: true })).toBe("restore-caret");
+  });
+
+  const held: Array<[string, { dirty: boolean; focused: boolean }]> = [
     ["dirty", { dirty: true, focused: false }],
-    ["focused", { dirty: false, focused: true }],
-    ["both", { dirty: true, focused: true }],
+    ["dirty and focused", { dirty: true, focused: true }],
   ];
 
-  for (const [name, state] of refused) {
-    it(`refuses while ${name}`, () => {
-      expect(mayApplyRemote(state)).toBe(false);
+  for (const [name, state] of held) {
+    it(`holds while ${name}`, () => {
+      // Not negotiable: applying a remote body over unsaved keystrokes discards them.
+      // The pending save's 409 is what resolves this, carrying the current body.
+      expect(dispositionFor(state)).toBe("hold");
     });
   }
 
-  it("refuses while merely focused, not only while dirty", () => {
-    // 🔴 The case that is easy to get wrong and impossible to notice in review.
-    // Assigning textarea.value resets the selection, so a poll landing between two
-    // keystrokes throws the caret to the end of the document even when nothing has
-    // been typed yet in this focus. Guarding on `dirty` alone lets that through.
-    expect(mayApplyRemote({ dirty: false, focused: true })).toBe(false);
+  it("lets dirty win over focused", () => {
+    // Both true is the common case mid-typing, and it must hold rather than repaint.
+    expect(dispositionFor({ dirty: true, focused: true })).toBe("hold");
+  });
+
+  it("never holds an update for a reason other than unsaved keystrokes", () => {
+    // The property behind #62: `dirty` is the only thing that may delay someone
+    // seeing their own document. Anything else is a display concern, and display
+    // concerns get solved by repainting carefully rather than by not repainting.
+    for (const focused of [true, false]) {
+      expect(dispositionFor({ dirty: false, focused })).not.toBe("hold");
+    }
   });
 });

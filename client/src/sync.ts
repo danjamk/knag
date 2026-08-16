@@ -64,18 +64,40 @@ export type EditorState = {
   focused: boolean;
 };
 
+/** What to do with a freshly fetched document. */
+export type RemoteDisposition =
+  /** Repaint. Nothing on screen is worth protecting. */
+  | "apply"
+  /** Repaint, then put the caret back where it was. */
+  | "restore-caret"
+  /** Queue it. There are unsaved keystrokes and the save has to resolve first. */
+  | "hold";
+
 /**
- * May a freshly fetched document replace what is on screen?
+ * What to do with a freshly fetched document (spec §6).
  *
- * 🔴 **No, while the editor is dirty or focused.** This is one of the two rules
- * spec §6 says prevent the only real bugs, and the reason it covers *focused* and
- * not just *dirty* is the cursor: replacing a textarea's value resets the selection,
- * so a poll landing between two keystrokes throws the caret to the end of the
- * document. A cursor that jumps mid-keystroke is how an app gets abandoned.
+ * 🔴 **Only unsaved keystrokes hold an update back.** This used to refuse while dirty
+ * *or* focused, and the focused half caused the bug it was meant to prevent (#62).
  *
- * Refusing here does not discard the update — the caller queues it and applies it on
- * blur.
+ * The reasoning behind it was right: assigning a textarea's value resets the selection,
+ * so a poll landing between two keystrokes throws the caret to the end of the document,
+ * and a cursor that jumps mid-keystroke is how an app gets abandoned.
+ *
+ * The mistake was the remedy. Refusing meant the update sat in a queue with no expiry
+ * and no visible signal — and because **a browser restores focus to the last-focused
+ * element when you return to a window**, `focused` was true again before the first poll
+ * after you picked the device back up. So the page went stale exactly when you came
+ * back to it, which is the moment sync exists to get right, and stayed stale until you
+ * happened to click somewhere else.
+ *
+ * Focus alone is not a reason to withhold someone's own data. It is a reason to put the
+ * caret back afterwards, which `app.ts` already does after every structural edit.
+ *
+ * Dirty still holds, and that one is not negotiable: applying a remote body over
+ * unsaved keystrokes discards them, and the pending save's 409 is what resolves it.
  */
-export function mayApplyRemote(state: EditorState): boolean {
-  return !state.dirty && !state.focused;
+export function dispositionFor(state: EditorState): RemoteDisposition {
+  if (state.dirty) return "hold";
+  if (state.focused) return "restore-caret";
+  return "apply";
 }
