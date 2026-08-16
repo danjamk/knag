@@ -564,11 +564,21 @@ the second.
 
 Built against
 [claude-shared/docs/standards/mcp.md](../../claude-shared/docs/standards/mcp.md)
-— read it before step 10, not after. knag sits at the simple end of that
-standard: bearer auth rather than OAuth 2.1 (single operator, no third-party
-client, no consent screen), and no Resources. The rules that still apply in full
+— read it before step 10, not after. No Resources. The rules that apply in full
 are §2 request isolation, §3 tool design, §4 annotations, §5 server instructions,
-§6 structured output, and §9 security.
+§6 structured output, §8 auth, and §9 security.
+
+> 🔴 **This section said bearer auth was enough, and it was wrong.** The claim was
+> that knag "sits at the simple end of that standard: bearer rather than OAuth 2.1
+> (single operator, no third-party client, no consent screen)."
+>
+> claude.ai, Claude Desktop and mobile drive an **OAuth 2.1 handshake** and offer
+> no field for a raw header. A static bearer reaches Claude Code and nothing else.
+> The bearer-vs-OAuth choice is not about *who connects*, it is about *which client
+> you need to reach* — and knag is a phone, iPad and laptop product.
+>
+> [ADR-005](adr/ADR-005-mcp-oauth.md) and [#64](https://github.com/danjamk/knag/issues/64).
+> Until that ships, `/mcp` is reachable from Claude Code only.
 
 Mounted at `/mcp`, **bearer-authenticated and bearer-only** — see below.
 
@@ -866,7 +876,16 @@ knag-specific points:
   verification do the work. (mcp.md §8.)
 - Bearer auth via `Authorization` header; return **401** with
   `WWW-Authenticate: Bearer` on failure so the client surfaces a clear error
-  rather than a silent empty tool list.
+  rather than a silent empty tool list. Once [ADR-005](adr/ADR-005-mcp-oauth.md)
+  lands the same 401 also carries `resource_metadata`, pointing at the RFC 9728
+  document a connector needs to start the OAuth flow.
+- **Unmatched paths must not fall through to the PWA shell.**
+  `not_found_handling: "single-page-application"` currently serves `index.html`
+  with a **200** for `/.well-known/oauth-protected-resource` and everything else
+  unrouted. A connector probing for OAuth metadata therefore receives HTML and a
+  success status, which reads as corrupt metadata rather than as absent metadata —
+  a strictly worse failure to diagnose. Each such path needs a `run_worker_first`
+  entry in **both** wrangler env blocks.
 - Tool errors return structured MCP errors, not HTTP 500s. A 409 from the write
   path must reach the agent as a usable message — including the current version
   and body — so it can re-read and re-apply rather than retrying blind.
@@ -878,6 +897,15 @@ knag-specific points:
   "url": "https://knag.danjamkuhn.com/mcp",
   "headers": { "Authorization": "Bearer ${KNAG_BEARER_TOKEN}" }
 }
+```
+
+🔴 **That shape is a Claude Code config, not a connector.** claude.ai and Desktop
+add a connector by URL and negotiate auth themselves; there is nowhere to put a
+header. From Claude Code the equivalent is:
+
+```bash
+claude mcp add --transport http knag https://knag.danjamkuhn.com/mcp \
+  --header "Authorization: Bearer ${KNAG_BEARER_TOKEN}"
 ```
 
 - Health check is the shared `GET /health` (§5), not a separate `/mcp/health`.

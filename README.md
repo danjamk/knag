@@ -103,6 +103,17 @@ even though it is valid everywhere else. That is what keeps `/mcp` free of
 ambient authority, which is in turn why a foreign `Origin` is logged rather than
 blocked — see [docs/spec.md](docs/spec.md) §10.
 
+⚠️ **Reachable from Claude Code only, for now.** claude.ai, Claude Desktop and
+mobile negotiate OAuth 2.1 and offer nowhere to put a header, so adding knag as a
+connector there fails at client registration.
+[ADR-005](docs/adr/ADR-005-mcp-oauth.md) has the decision;
+[#64](https://github.com/danjamk/knag/issues/64) is the work. Until then:
+
+```bash
+claude mcp add --transport http knag https://knag.danjamkuhn.com/mcp \
+  --header "Authorization: Bearer ${KNAG_BEARER_TOKEN}"
+```
+
 There is no history screen in the app, so `knag_history` is currently how
 history gets read.
 
