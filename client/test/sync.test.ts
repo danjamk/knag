@@ -5,8 +5,12 @@ import {
   POLL_ACTIVE_MS,
   POLL_IDLE_MS,
   POLL_STALE_MS,
+  connectivityAfter,
+  connectivityStatus,
   dispositionFor,
+  initialConnectivity,
   pollInterval,
+  rowIsEditable,
 } from "../src/sync.js";
 
 /**
@@ -139,5 +143,67 @@ describe("the dirty guard (spec §6, narrowed by #62)", () => {
     for (const focused of [true, false]) {
       expect(dispositionFor({ dirty: false, focused })).not.toBe("hold");
     }
+  });
+});
+
+// ── Connectivity (#57) ───────────────────────────────────────────────────────
+
+describe("what counts as offline", () => {
+  it("🔴 treats any HTTP response as proof the network is fine", () => {
+    // A 401, a 409 and a 500 all travelled. Calling them disconnection would show
+    // `offline` to someone whose session merely expired, and then refuse to let them
+    // edit, on a perfectly good connection.
+    expect(connectivityAfter({ responded: true })).toBe("online");
+  });
+
+  it("treats a thrown request as offline", () => {
+    expect(connectivityAfter({ responded: false })).toBe("offline");
+  });
+
+  it("believes navigator.onLine only when it says false", () => {
+    // `true` is also what a captive portal and a dead uplink report, which are exactly
+    // the cases this feature exists for — so it buys nothing and is not trusted beyond
+    // an initial guess that the first real request will correct.
+    expect(initialConnectivity(false)).toBe("offline");
+    expect(initialConnectivity(true)).toBe("online");
+  });
+});
+
+describe("which rows accept input while offline", () => {
+  it("keeps every row editable while online", () => {
+    expect(rowIsEditable(3, { connectivity: "online", typingInto: null })).toBe(true);
+  });
+
+  it("🔴 lets the row already being typed into finish", () => {
+    // Freezing mid-keystroke eats the rest of the sentence someone was writing — lost
+    // text they already typed, which is the failure this feature exists to prevent
+    // arriving as the cure.
+    expect(rowIsEditable(2, { connectivity: "offline", typingInto: 2 })).toBe(true);
+  });
+
+  it("refuses every other row", () => {
+    expect(rowIsEditable(1, { connectivity: "offline", typingInto: 2 })).toBe(false);
+  });
+
+  it("refuses all of them when nothing was being typed into", () => {
+    expect(rowIsEditable(0, { connectivity: "offline", typingInto: null })).toBe(false);
+  });
+});
+
+describe("what the footer says", () => {
+  it("says nothing while online, leaving the save status alone", () => {
+    expect(connectivityStatus({ connectivity: "online", unsavedRows: 1 })).toBeNull();
+  });
+
+  it("says offline, deadpan and lowercase", () => {
+    expect(connectivityStatus({ connectivity: "offline", unsavedRows: 0 })).toBe("offline");
+  });
+
+  it("🔴 names unsaved work rather than hiding it behind one word", () => {
+    // If there is a row that never landed, that is the more important of the two facts,
+    // and burying it is how someone closes a tab on work they thought was saved.
+    expect(connectivityStatus({ connectivity: "offline", unsavedRows: 1 })).toBe(
+      "offline · 1 unsaved",
+    );
   });
 });

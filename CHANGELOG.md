@@ -16,6 +16,23 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- **knag says when it is offline instead of pretending**
+  ([#57](https://github.com/danjamk/knag/issues/57)). A dropped connection used to fail
+  silently — the poll errored into nothing, saves errored into nothing, and the page went
+  on looking live while discarding every change. The footer now reads `offline`, rows go
+  read-only, and everything resumes on reconnect with no reload.
+
+  **The row you were typing into keeps working.** Freezing mid-keystroke would eat the
+  rest of the sentence you were part-way through, which is lost text you already typed —
+  the failure this exists to prevent, arriving as the cure. That leaves one unsaved row,
+  the footer says so (`offline · 1 unsaved`), and it saves itself on reconnect as an
+  ordinary versioned write. Offline *editing* is still out: nothing is queued and nothing
+  is replayed.
+
+  **Connectivity is decided by whether requests work, not by `navigator.onLine`** — which
+  reports online on a captive portal and a dead uplink, exactly when you need to be told.
+  A 401 or a 409 counts as connected, because those answers travelled.
+
 - **A wipe can be taken back for the rest of the day**
   ([#59](https://github.com/danjamk/knag/issues/59)). After a wipe the footer offers
   `wiped 6 · bring back`, and one tap puts the lines where they were. This is the feature

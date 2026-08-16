@@ -101,3 +101,88 @@ export function dispositionFor(state: EditorState): RemoteDisposition {
   if (state.focused) return "restore-caret";
   return "apply";
 }
+
+// ── Connectivity (#57, spec §9) ───────────────────────────────────────────────
+
+/**
+ * How often to check whether the network came back.
+ *
+ * Deliberately faster than any poll tier: the cost of a wasted probe while offline is
+ * one failed request, and the cost of being slow is a person staring at `offline` on a
+ * connection that already recovered.
+ */
+export const RECONNECT_PROBE_MS = 3_000;
+
+export type Connectivity = "online" | "offline";
+
+/**
+ * Whether a request failure means the network is gone.
+ *
+ * 🔴 **An HTTP response, of any status, means the network is fine.** A 401, a 409 and a
+ * 500 all travelled — they are answers, and treating them as disconnection would show
+ * `offline` to someone whose session merely expired, then refuse to let them edit, on a
+ * working connection. Only a thrown `fetch` — DNS failure, refused connection, dropped
+ * uplink — is evidence of absence.
+ */
+export function connectivityAfter(outcome: { responded: boolean }): Connectivity {
+  return outcome.responded ? "online" : "offline";
+}
+
+/**
+ * The starting assumption, before anything has been attempted.
+ *
+ * 🔴 `navigator.onLine` is trusted in exactly one direction. `false` is reliable — the
+ * OS knows there is no interface. `true` means "an interface exists", which is also what
+ * a captive portal and a dead uplink report, and those are precisely the cases this
+ * feature exists for. So a `false` short-circuits to offline and a `true` is ignored
+ * until a real request either succeeds or throws.
+ */
+export function initialConnectivity(onLine: boolean): Connectivity {
+  return onLine ? "online" : "offline";
+}
+
+export type EditableState = {
+  connectivity: Connectivity;
+  /** The row index holding focus when the drop was noticed, or null. */
+  typingInto: number | null;
+};
+
+/**
+ * Whether a given row accepts input right now (#57).
+ *
+ * 🔴 **Offline freezes every row except the one already being typed into.**
+ *
+ * The alternative — freezing everything the instant the uplink drops — eats the rest of
+ * the sentence someone is mid-way through writing. That is lost text they already typed,
+ * which is the failure this whole feature exists to prevent, arriving as the cure.
+ *
+ * Letting that one row finish leaves exactly one unsaved row in existence, and that is
+ * not a new risk: knag already holds unsaved keystrokes for the length of the save
+ * debounce, and the dirty guard exists to protect them. Offline makes that window longer
+ * and, crucially, **visible**.
+ *
+ * It also keeps spec §12 intact. On reconnect the pending save is an ordinary versioned
+ * write; if the page moved it conflicts and reloads, exactly as any other save would.
+ * One in-flight edit resolving through compare-and-swap is not an offline queue, and
+ * nothing is ever replayed against a document that has moved on.
+ */
+export function rowIsEditable(row: number, state: EditableState): boolean {
+  if (state.connectivity === "online") return true;
+  return state.typingInto === row;
+}
+
+/**
+ * The footer, in the machine voice.
+ *
+ * 🔴 Offline does not simply replace the save status. If there is unsaved work, that is
+ * the more important of the two facts and hiding it behind a single word is how someone
+ * closes a tab on a row that never landed. The count only appears when it is
+ * load-bearing.
+ */
+export function connectivityStatus(state: {
+  connectivity: Connectivity;
+  unsavedRows: number;
+}): string | null {
+  if (state.connectivity === "online") return null;
+  return state.unsavedRows > 0 ? `offline · ${state.unsavedRows} unsaved` : "offline";
+}
