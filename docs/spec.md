@@ -535,6 +535,19 @@ open when the network is gone — not to serve last week's code. An earlier draf
 was cache-first against a hand-bumped constant; nothing made the constant change,
 and every deploy served the previous bundle until a manual reload.
 
+### Offline state
+
+Offline **editing** is out (§12) and stays out — a queue of local edits against a
+document that moved on is the one data-loss path this whole design avoids.
+
+Offline **state** is in, and the distinction matters. Today the app fails
+silently when the network goes: the poll errors into nothing and a save errors
+into nothing, so the page looks live and is not. That is the worst of the three
+possible behaviours. The page should say `offline` in the machine voice, hold
+rows read-only, and resume on reconnect without a reload.
+
+Refusing to edit is a stated decision, not a limitation being hidden.
+
 ### Theme
 
 **Light, dark, or system**, persisted per device in `localStorage` alongside the
@@ -613,6 +626,14 @@ WebSockets · Electron · native apps · email auth · multi-user · sharing ·
 brain reads or writes · rollover · day boundaries · rich formatting
 
 If a weekend turns into two, something from the second list came back.
+
+Two entries have since been argued properly rather than merely listed:
+
+- **rich formatting** — [ADR-004](adr/ADR-004-display-matches-the-bytes.md). The
+  rule is that the display never diverges from the bytes; no rendered bold,
+  italic or headings. Indentation was never covered by this and already works.
+- **offline editing** — still out, but the *state* is in (§9). Failing silently
+  while offline is a bug; refusing to edit and saying so is the decision.
 
 ---
 
@@ -1008,6 +1029,7 @@ sourced as a self-hosted thing.
 | Future | Breaks | Insurance taken today |
 |---|---|---|
 | Multi-user | Schema (`CHECK (id = 1)`), every query | All SQL in `store.ts`, `DOC_ID` constant. Adding `owner_id` is one file plus a migration. |
+| A few pages | Same `CHECK (id = 1)`, and every route assuming a singleton | Same chokepoint. `page_id INTEGER NOT NULL DEFAULT 1` is additive and the backfill is one `UPDATE`. |
 | Any real auth | Passphrase is a shared secret — no revocation, no accounts | `authenticate() → Principal`; handlers key off `principal.id` |
 | Native / App Store | Cookies don't fit a Keychain-token client | Bearer is first-class on every `/api/*` route |
 | Public / self-hosted | Config assumes one owner | Vars in `wrangler.jsonc`, secrets via `wrangler secret put`, MIT already |
@@ -1019,3 +1041,28 @@ cheap *because* of the chokepoints above.
 **The one to watch.** Auth is the only decision here that gets expensive with
 age. A shared passphrase does not survive multiple users and would not pass App
 Store review. The trigger to revisit is a second human, not a feature count.
+
+### Multi-tenant, re-examined 2026-08-15
+
+Hosting knag for other people — a small free group first, possibly a
+subscription later — was raised as a real direction rather than a hypothetical.
+It is **not being engineered for**, and the finding is that it does not need to
+be:
+
+| Decision | Influenced by multi-tenant? |
+|---|---|
+| Schema | **No.** Everything stored today is implicitly one owner's one page. Both keys are additive columns with a trivial backfill. |
+| A few pages | **No.** Same answer, and it can ship long before tenancy does. |
+| MCP tool signatures | **No.** An optional `page` parameter added later is backward-compatible; adding one now would be a parameter with one legal value. |
+| Brand, offline, wipe | **No.** |
+| **Auth** | **Yes, and only this.** |
+
+A shared passphrase means everyone shares one page, which fails on the *first*
+friendly tester rather than at scale. So the trigger stated above is exact, and
+the first move when it fires is **a spike on the auth model, not a schema
+change** — the answer is unlikely to be hand-rolled accounts.
+
+The cost that is easy to miss is not in the code: holding other people's data
+turns `make backup` from a personal habit into an obligation, multiplies the
+polling budget of §14.4 by the tenant count, and gives the login rate-limit rule
+a different threat model.
