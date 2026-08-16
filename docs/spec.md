@@ -619,13 +619,55 @@ and every deploy served the previous bundle until a manual reload.
 Offline **editing** is out (§12) and stays out — a queue of local edits against a
 document that moved on is the one data-loss path this whole design avoids.
 
-Offline **state** is in, and the distinction matters. Today the app fails
-silently when the network goes: the poll errors into nothing and a save errors
-into nothing, so the page looks live and is not. That is the worst of the three
-possible behaviours. The page should say `offline` in the machine voice, hold
-rows read-only, and resume on reconnect without a reload.
+Offline **state** is in, and the distinction matters. The app used to fail
+silently when the network went: the poll errored into nothing and a save errored
+into nothing, so the page looked live and was not — the worst of the three
+possible behaviours. It now says `offline` in the machine voice, holds rows
+read-only, and resumes on reconnect without a reload.
 
 Refusing to edit is a stated decision, not a limitation being hidden.
+
+#### 🔴 Connectivity is decided by requests, not by `navigator.onLine`
+
+`onLine` is trusted in exactly one direction. `false` is reliable — the OS knows
+there is no interface — so it is acted on immediately. `true` only means an
+interface exists, which is *also* what a captive portal and a dead uplink report,
+and those are precisely the situations this feature exists for. So `true` is
+ignored until a real request settles it.
+
+**An HTTP response of any status means the network is fine.** A 401, a 409 and a
+500 all travelled; treating them as disconnection would freeze the page for
+someone whose session merely expired, on a working connection. Only a thrown
+`fetch` is evidence of absence.
+
+Reconnection is checked against **`/health`**, not `/api/doc` — it is
+unauthenticated, so a flaky connection cannot bounce someone to the login screen
+while they wait.
+
+#### The row being typed into keeps working
+
+Every row goes read-only except the one that had focus when the drop was noticed.
+
+Freezing mid-keystroke eats the rest of the sentence someone is part-way through
+writing. That is lost text they already typed, which is the failure this feature
+exists to prevent, arriving as the cure.
+
+Letting that row finish leaves exactly one unsaved row, and that is not a new
+risk: knag already holds unsaved keystrokes for the length of the save debounce,
+and the dirty guard exists to protect them. Offline makes the window longer and,
+crucially, **visible** — the footer reads `offline · 1 unsaved` when there is
+pending work, because hiding that behind a single word is how someone closes a
+tab on a row that never landed.
+
+On reconnect the pending save goes as an **ordinary versioned write**. If the
+document moved it conflicts and reloads, exactly like any other save. One
+in-flight edit resolving through compare-and-swap is not an offline queue, and
+nothing is ever replayed against a document that has moved on — §12 is intact.
+
+Rows use `readOnly`, never `disabled`: a disabled textarea cannot be focused or
+selected, so going offline would make the document unreadable as well as
+uneditable, and a line could not even be copied out to somewhere that works.
+Checkboxes are `disabled`, which is the only thing they honour.
 
 ### Theme
 

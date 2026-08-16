@@ -27,7 +27,17 @@ import {
 } from "../../worker/src/blocks.js";
 import { safeNext } from "./nav.js";
 import { offerExpiresAt, restoredBody } from "./restore.js";
-import { dispositionFor, pollInterval } from "./sync.js";
+import {
+  type Connectivity,
+  type EditableState,
+  RECONNECT_PROBE_MS,
+  connectivityAfter,
+  connectivityStatus,
+  dispositionFor,
+  initialConnectivity,
+  pollInterval,
+  rowIsEditable,
+} from "./sync.js";
 import Sortable from "sortablejs";
 import {
   type EditResult,
@@ -118,8 +128,94 @@ let lastActivityAt = Date.now();
  */
 let pendingRemote: Doc | null = null;
 
+// ── Connectivity (#57, spec §9) ───────────────────────────────────────────────
+
+let connectivity: Connectivity = initialConnectivity(navigator.onLine);
+
+/**
+ * The row that had focus when the network went away, so it can finish the sentence it
+ * was mid-way through. Cleared on reconnect, and on blur.
+ */
+let typingInto: number | null = null;
+
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+
+function editableState(): EditableState {
+  return { connectivity, typingInto };
+}
+
+/**
+ * The last status the app wanted to show, so it can be put back on reconnect rather
+ * than leaving `offline` on screen after the connection returns.
+ */
+let lastStatus = "—";
+
 function setStatus(text: string): void {
-  if (statusEl) statusEl.textContent = text;
+  lastStatus = text;
+  if (connectivity === "online" && statusEl) statusEl.textContent = text;
+}
+
+function paintConnectivity(): void {
+  if (!statusEl) return;
+  const offline = connectivityStatus({ connectivity, unsavedRows: dirty ? 1 : 0 });
+  statusEl.textContent = offline ?? lastStatus;
+}
+
+/**
+ * Record what a request told us about the network, and react when it changes.
+ *
+ * 🔴 Called with `responded: true` for **any** HTTP status. A 401 or a 409 travelled;
+ * treating them as disconnection would refuse edits to someone on a working connection
+ * whose session merely expired.
+ */
+function noteConnectivity(responded: boolean): void {
+  const next = connectivityAfter({ responded });
+  if (next === connectivity) return;
+
+  connectivity = next;
+
+  if (next === "offline") {
+    // Whatever row is being typed into keeps working; everything else freezes. Read
+    // from the DOM rather than tracked separately, so it is the truth at the moment
+    // the drop was noticed rather than a stale guess.
+    typingInto = focusedRowIndex();
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => void probeConnection(), RECONNECT_PROBE_MS);
+  } else {
+    typingInto = null;
+    clearTimeout(reconnectTimer);
+    // Back to a live page with no reload: repaint so rows become editable again, and
+    // pick the poll back up from wherever the tier logic says.
+    void pollNow();
+    schedulePoll();
+    if (dirty) void save();
+  }
+
+  paintRows();
+  paintConnectivity();
+}
+
+/**
+ * Ask whether the network is back.
+ *
+ * `/health` rather than `/api/doc`: it is unauthenticated, so a flaky connection cannot
+ * bounce someone to the login screen, and it says nothing about the document.
+ */
+async function probeConnection(): Promise<void> {
+  try {
+    await fetch("/health", { cache: "no-store" });
+    noteConnectivity(true);
+  } catch {
+    reconnectTimer = setTimeout(() => void probeConnection(), RECONNECT_PROBE_MS);
+  }
+}
+
+/** The `data-index` of the row holding focus, or null. */
+function focusedRowIndex(): number | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return null;
+  const li = active.closest<HTMLElement>("li[data-index]");
+  return li ? Number(li.dataset.index) : null;
 }
 
 function showEditor(authed: boolean): void {
@@ -131,7 +227,17 @@ function showEditor(authed: boolean): void {
 
 /** Returns null when unauthenticated, so the caller shows the login screen. */
 async function load(): Promise<Doc | null> {
-  const res = await fetch("/api/doc", { headers: { Accept: "application/json" } });
+  let res: Response;
+  try {
+    res = await fetch("/api/doc", { headers: { Accept: "application/json" } });
+  } catch (error) {
+    // A thrown fetch is the network, not the server. Recorded before rethrowing so the
+    // caller's own error path still runs.
+    noteConnectivity(false);
+    throw error;
+  }
+  noteConnectivity(true);
+
   if (res.status === 401) return null;
   if (!res.ok) throw new Error(`load failed: ${res.status}`);
   return (await res.json()) as Doc;
@@ -290,6 +396,7 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
     area.spellcheck = false;
     area.autocapitalize = "off";
     area.setAttribute("autocorrect", "off");
+    area.readOnly = !rowIsEditable(row.index, editableState());
     li.append(area);
     if (reordering) li.append(copyElement(row.text), removeElement(row.index));
     return li;
@@ -300,6 +407,9 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
     const box = document.createElement("input");
     box.type = "checkbox";
     box.checked = row.checked === true;
+    // Ticking a box is an edit like any other, so it is refused offline too — and
+    // `disabled` rather than `readOnly`, which a checkbox does not honour.
+    box.disabled = !rowIsEditable(row.index, editableState());
     // Checked items stay where they are. No auto-sink (spec §7).
     li.append(box);
   }
@@ -321,6 +431,10 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   input.spellcheck = true;
   input.autocapitalize = "sentences";
   input.setAttribute("autocorrect", "on");
+  // 🔴 `readOnly`, not `disabled`. A disabled textarea cannot be focused, scrolled or
+  // selected — so going offline would make the document unreadable as well as
+  // uneditable, and you could not even copy a line out of it to somewhere that works.
+  input.readOnly = !rowIsEditable(row.index, editableState());
   li.append(input);
 
   // 🔴 A link affordance rather than an inline anchor. An <input> cannot contain
@@ -439,6 +553,9 @@ async function poll(): Promise<void> {
     const res = await fetch("/api/doc", {
       headers: { Accept: "application/json", "If-None-Match": `"${baseVersion}"` },
     });
+    // 🔴 The poll is the app's heartbeat and usually the first thing to notice a drop,
+    // because it runs whether or not anyone is typing.
+    noteConnectivity(true);
 
     if (res.status === 304) return;
     if (res.status === 401) {
@@ -453,8 +570,10 @@ async function poll(): Promise<void> {
 
     applyRemote(doc);
   } catch {
-    // A failed poll is not worth surfacing; the next one is seconds away and the
-    // save path reports its own failures.
+    // A failed poll no longer disappears. It is the app's heartbeat, so its failure is
+    // the earliest honest evidence that the network has gone — and the page looking
+    // live while it is not was the whole bug (#57, spec §9).
+    noteConnectivity(false);
   }
 }
 
@@ -588,11 +707,18 @@ async function save(): Promise<void> {
   setStatus("Saving…");
 
   try {
-    const res = await fetch("/api/doc", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: sent, base_version: baseVersion }),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/doc", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: sent, base_version: baseVersion }),
+      });
+    } catch (error) {
+      noteConnectivity(false);
+      throw error;
+    }
+    noteConnectivity(true);
 
     if (res.status === 401) {
       showEditor(false);
@@ -616,7 +742,12 @@ async function save(): Promise<void> {
       setStatus("Saved");
     }
   } catch {
+    // 🔴 `dirty` deliberately stays true. The edit is still in the page and still
+    // unsaved, and it is what the footer counts — an edit that vanished from the
+    // status while sitting unsaved on screen is the failure spec §9 is about. On
+    // reconnect `noteConnectivity` retries it as an ordinary versioned write.
     setStatus("Not saved — retrying on the next edit");
+    paintConnectivity();
   }
 }
 
@@ -1272,6 +1403,13 @@ document.addEventListener("visibilitychange", () => {
 });
 
 window.addEventListener("focus", () => void pollNow());
+
+// 🔴 An accelerator, never the authority. `offline` is reliable — the OS knows there is
+// no interface — so it is acted on immediately rather than waiting up to a poll tier.
+// `online` only means an interface appeared, which is also what a captive portal
+// reports, so it triggers a probe and lets a real request decide.
+window.addEventListener("offline", () => noteConnectivity(false));
+window.addEventListener("online", () => void probeConnection());
 
 /** The consent hand-off, if this page was reached from one. See `safeNext`. */
 const readNext = (): string | null => safeNext(location.search);
