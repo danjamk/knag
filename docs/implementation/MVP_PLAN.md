@@ -276,7 +276,8 @@ the transfer use case.
   wall. There is no brand asset for knag yet and the manifest was pointing at two
   404s — iOS silently substitutes a screenshot of the page, which reads as a bug
   on the home screen. Replace when real artwork exists; nothing depends on how it
-  looks.
+  looks. *(Retired in #72 — the mark is the block cursor, and the assets are in
+  `public/icons/`. The script is gone.)*
 - **On 409 the server's copy wins and the local edit is lost.** Deliberate and
   temporary: it is survivable only because this is one user on an 800ms debounce.
   P5 adds the dirty guard. What is *never* done is retrying with the stale body —

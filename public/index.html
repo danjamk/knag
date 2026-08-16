@@ -3,11 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#111111" />
+    <meta name="theme-color" content="#11150F" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="knag" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- 🔴 The *non*-maskable mark. iOS applies its own rounded mask to whatever it
+         gets, so handing it the maskable art — which is already padded into the middle
+         80% for Android's circle — double-pads it, and the block cursor arrives on the
+         home screen looking small and off-centre next to every other icon. -->
+    <link rel="apple-touch-icon" href="/icons/knag-icon-192.png" />
+    <link rel="icon" type="image/svg+xml" href="/icons/knag-icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/knag-icon-192.png" />
     <title>knag</title>
     <link rel="manifest" href="/manifest.json" />
     <style>

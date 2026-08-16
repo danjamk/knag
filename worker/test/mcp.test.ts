@@ -212,6 +212,45 @@ describe("initialize", () => {
     expect(instructions).toContain("exclamation marks");
     expect(instructions).toContain("Successfully cleared 6 completed items!");
   });
+
+  it("🔴 advertises the mark at an absolute URL on this origin", async () => {
+    // `IconSchema.src` is "URL or data URI" and says nothing about what a relative path
+    // resolves against. The client fetching it is Claude, not a browser sitting on this
+    // origin, so `/icons/…` would be a bet on someone else's base URL — and a connector
+    // icon that 404s is indistinguishable from having shipped none.
+    const response = await rpc("initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "test", version: "1.0.0" },
+    });
+    const icons =
+      (response.result as { serverInfo: { icons?: Array<Record<string, unknown>> } }).serverInfo
+        .icons ?? [];
+
+    expect(icons).toHaveLength(2);
+    for (const icon of icons) {
+      expect(String(icon.src).startsWith(new URL(MCP).origin), String(icon.src)).toBe(true);
+      expect(icon.mimeType).toBe("image/png");
+    }
+  });
+
+  it("🔴 names the ground each icon is drawn for, not the ink", async () => {
+    // `theme: "dark"` means "designed to sit on a dark background" — so it is the slate
+    // board. Backwards, and a dark connector list gets an amber block on a near-white
+    // tile, which is exactly the placeholder-looking result the icon exists to avoid.
+    const response = await rpc("initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "test", version: "1.0.0" },
+    });
+    const icons =
+      (response.result as { serverInfo: { icons?: Array<Record<string, unknown>> } }).serverInfo
+        .icons ?? [];
+
+    const byTheme = Object.fromEntries(icons.map((icon) => [icon.theme, String(icon.src)]));
+    expect(byTheme.dark).toContain("slate");
+    expect(byTheme.light).toContain("whiteboard");
+  });
 });
 
 describe("tools/list", () => {

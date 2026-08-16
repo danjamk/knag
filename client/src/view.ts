@@ -246,5 +246,9 @@ export function nextTheme(theme: Theme): Theme {
  */
 export function themeColor(theme: Theme, systemPrefersDark: boolean): string {
   const dark = theme === "dark" || (theme === "system" && systemPrefersDark);
-  return dark ? "#111111" : "#faf9f7";
+  // Slate — `#11150F`, the board. Green-black rather than the old neutral `#111111`,
+  // which was close enough to be invisible on the status bar and wrong everywhere the
+  // two sat side by side. The light value is still the superseded pad; the board
+  // tokens land with the rest of the design system (#70).
+  return dark ? "#11150F" : "#faf9f7";
 }

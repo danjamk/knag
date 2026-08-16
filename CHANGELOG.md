@@ -14,6 +14,37 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-16
+
+knag has a mark: the block cursor. An amber block sitting after the wordmark — `knag▮`.
+
+### Added
+
+- **The real app icon, and a real connector icon**
+  ([#72](https://github.com/danjamk/knag/issues/72)). The home screen and Claude's
+  connector list both showed placeholder art until now: `scripts/make-icons.py` drew a peg
+  on a wall, and the MCP server shipped deliberately without an icon at all rather than
+  with a wrong one.
+
+  The mark is the block cursor, which is the argument the product makes — a blinking
+  cursor is by definition a thing that will not leave you alone. It is two rectangles, so
+  it holds at 512px and at 16px.
+
+  **The maskable icon is now its own file.** The old manifest declared the same 512 for
+  both `any` and `maskable`, which meant Android's circular crop took the corners off the
+  mark. The `apple-touch-icon` points at the *non*-maskable one: iOS applies its own mask,
+  so handing it the pre-padded art would double-pad it.
+
+  **The connector icons come in both boards** — slate for a dark UI, whiteboard for a
+  light one — at absolute URLs derived from the request origin, so dev and prod each
+  advertise their own copy rather than one pointing at the other.
+
+### Changed
+
+- The status-bar colour is Slate (`#11150F`), the board, rather than a neutral `#111111`.
+- `scripts/make-icons.py` is deleted. It was explicitly a placeholder and it has been
+  replaced.
+
 ## [0.3.0] — 2026-08-16
 
 The agent half reaches the phone, the wipe becomes a loop you can undo, and the app stops
@@ -320,7 +351,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/danjamk/knag/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danjamk/knag/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danjamk/knag/compare/v0.1.11...v0.2.0
 [0.1.11]: https://github.com/danjamk/knag/releases/tag/v0.1.11
