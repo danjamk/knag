@@ -64,6 +64,7 @@ const settingsOpen = document.querySelector<HTMLButtonElement>("[data-settings-o
 const clearCountEl = document.querySelector<HTMLElement>("[data-clear-count]");
 const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
 const clearButton = document.querySelector<HTMLButtonElement>("[data-clear]");
+const wipeAllButton = document.querySelector<HTMLButtonElement>("[data-wipe-all]");
 const reorderButton = document.querySelector<HTMLButtonElement>("[data-reorder]");
 
 /** Above this many, a sweep gets a confirm. Below it, undo-by-history is enough. */
@@ -833,24 +834,15 @@ rowsEl?.addEventListener("change", (event) => {
  * asks, and never computes the post-clear body itself. Two implementations of "what
  * counts as completed" is the same mistake as two parsers.
  */
-clearButton?.addEventListener("click", async () => {
-  const completed = parse(body).filter(isCompleted).length;
-  if (completed === 0) return;
-
-  // Confirm only above the threshold. Prompting on every sweep trains the reflex that
-  // makes the prompt useless on the one that matters (spec §7).
-  if (completed > CONFIRM_CLEAR_ABOVE && !confirm(`Clear ${completed} completed items?`)) {
-    return;
-  }
-
+async function requestWipe(scope: "completed" | "all"): Promise<void> {
   saveNow();
-  setStatus("Clearing…");
+  setStatus(scope === "all" ? "Wiping…" : "Clearing…");
 
   try {
     const res = await fetch("/api/doc/clear-completed", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ base_version: baseVersion }),
+      body: JSON.stringify({ base_version: baseVersion, scope }),
     });
 
     if (res.status === 401) {
@@ -866,16 +858,55 @@ clearButton?.addEventListener("click", async () => {
 
     if (!res.ok) throw new Error(String(res.status));
 
-    const { cleared_count: count } = (await res.json()) as { cleared_count: number };
+    const { wiped_count: count } = (await res.json()) as { wiped_count: number };
 
     // Re-read rather than trusting a locally computed result. The server decided what
-    // "completed" meant and rewrote the document; this asks what it actually is.
+    // was removed and rewrote the document; this asks what it actually is.
     const doc = await load();
     if (doc) render(doc);
-    setStatus(count === 0 ? "Nothing to clear" : `Cleared ${count}`);
+
+    if (count === 0) {
+      setStatus(scope === "all" ? "Nothing to wipe" : "Nothing to clear");
+    } else {
+      setStatus(scope === "all" ? `Wiped ${count}` : `Cleared ${count}`);
+    }
   } catch {
-    setStatus("Not cleared — nothing was changed");
+    setStatus(scope === "all" ? "Not wiped — nothing was changed" : "Not cleared — nothing was changed");
   }
+}
+
+clearButton?.addEventListener("click", async () => {
+  const completed = parse(body).filter(isCompleted).length;
+  if (completed === 0) return;
+
+  // Confirm only above the threshold. Prompting on every sweep trains the reflex that
+  // makes the prompt useless on the one that matters (spec §7).
+  if (completed > CONFIRM_CLEAR_ABOVE && !confirm(`Clear ${completed} completed items?`)) {
+    return;
+  }
+
+  await requestWipe("completed");
+});
+
+/**
+ * Wipe the whole page (#58).
+ *
+ * 🔴 Always confirms, unlike the sweep. Spec §7's argument for a threshold is that
+ * prompting on every routine action trains the reflex that makes the prompt useless —
+ * but this one is not routine and it takes work that was never finished, which is the
+ * case the reflex would cost most. It also names the number, because "wipe the page"
+ * and "throw away eleven things" land differently.
+ */
+wipeAllButton?.addEventListener("click", async () => {
+  const rows = parse(body).length;
+  if (body === "") {
+    setStatus("Nothing to wipe");
+    return;
+  }
+
+  if (!confirm(`Wipe all ${rows} lines? Everything goes, finished or not.`)) return;
+
+  await requestWipe("all");
 });
 
 // Delegated, so it survives every repaint.

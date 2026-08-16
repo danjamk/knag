@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearCompleted, revisionsInRange, writeDocument } from "../src/store.js";
+import { revisionsInRange, wipe, writeDocument } from "../src/store.js";
 
 /**
  * `GET /api/history` end to end (spec §5, §14.3).
@@ -248,13 +248,15 @@ describe("cleared items", () => {
       { body: "- [x] laundry\n- [ ] taxes", baseVersion: SEEDED_VERSION, source: "pwa" },
       new Date("2026-03-08T13:00:00.000Z"),
     );
-    await clearCompleted(
+    await wipe(
       env,
       {
         baseVersion: 2,
         body: "- [ ] taxes",
         clearedLines: ["- [x] laundry"],
         source: "pwa",
+        scope: "completed",
+        wipedCount: 1,
       },
       new Date("2026-03-08T22:00:00.000Z"), // 17:00 local
     );

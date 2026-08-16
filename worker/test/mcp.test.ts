@@ -412,6 +412,50 @@ describe("knag_wipe", () => {
     expect(result.content[0]?.text).toContain("version_conflict");
     expect((await readDocument(env)).body).toBe(PAGE);
   });
+
+  it("empties the page on scope all", async () => {
+    const result = await call("knag_wipe", { base_version: 2, scope: "all" });
+
+    expect(result.structuredContent).toMatchObject({ wiped_count: 4, cleared_count: 2 });
+    expect((await readDocument(env)).body).toBe("");
+  });
+
+  it("🔴 does not claim unfinished lines as things that got done", async () => {
+    // The page has four lines and two checked. An agent reporting "wiped 4" as an
+    // achievement would be overstating what the user finished, and `cleared_items` —
+    // which /api/history treats as authoritative — must not absorb the other two.
+    const result = await call("knag_wipe", { base_version: 2, scope: "all" });
+
+    const { results } = await env.DB.prepare("SELECT line_text FROM cleared_items").all<{
+      line_text: string;
+    }>();
+    expect(results).toHaveLength(2);
+    expect(result.content[0]?.text).toContain("2 of them done");
+  });
+
+  it("defaults to completed when no scope is given", async () => {
+    await call("knag_wipe", { base_version: 2 });
+
+    expect((await readDocument(env)).body).toBe("keep me\n- [ ] not done");
+  });
+
+  it("reports zero on an already-empty page rather than wiping nothing loudly", async () => {
+    await call("knag_wipe", { base_version: 2, scope: "all" });
+    const again = await call("knag_wipe", { base_version: 3, scope: "all" });
+
+    expect(again.isError).toBeFalsy();
+    expect(again.structuredContent).toMatchObject({ wiped_count: 0 });
+  });
+
+  it("tells the agent that scope all takes unfinished work", async () => {
+    // The tool description is the only place an agent learns this is not the safe
+    // default. A wipe-all that reads as equivalent to wipe-completed is how an agent
+    // throws away a week of someone's list while following instructions.
+    const tool = await toolNamed("knag_wipe");
+
+    expect(tool.description).toContain("never finished");
+    expect(tool.inputSchema?.properties).toHaveProperty("scope");
+  });
 });
 
 describe("knag_history", () => {

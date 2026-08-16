@@ -194,6 +194,11 @@
       }
       .remove { cursor: pointer; color: var(--danger); }
       .remove:active { background: var(--danger-bg); }
+
+      /* The one destructive control in settings. Coloured rather than merely labelled,
+         because it sits among theme and view switches that cost nothing to press. */
+      button.danger { color: var(--danger); border-color: var(--danger); }
+      button.danger:active { background: var(--danger-bg); }
       [data-reorder].on { background: var(--mode-bg); color: var(--mode-fg); }
 
       li.blank { min-height: 1.25rem; padding: 0 0.6rem 0 0.85rem; }
@@ -480,6 +485,21 @@
           <p class="note">
             Raw is the escape hatch — bulk paste, sweeps, anything the rows cannot
             express. The editor is where you land.
+          </p>
+        </section>
+
+        <!-- 🔴 Here, not on the footer. The bar is capped at three controls and the
+             rule is that rare things live in settings — wiping the whole page is rare,
+             sweeping the done items is not. Placement is provisional and the design
+             pass owns where it finally lands (#71); the behaviour below is not. -->
+        <section>
+          <h3>Wipe</h3>
+          <div class="choices">
+            <button type="button" data-wipe-all class="danger">Wipe the page</button>
+          </div>
+          <p class="note">
+            Removes everything, finished or not. Kept in history — ask the agent for
+            it back.
           </p>
         </section>
 

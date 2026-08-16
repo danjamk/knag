@@ -12,7 +12,13 @@ import { isCompleted, parse, serialize } from "./blocks.js";
 import { loadHistory, reportingZone, resolveRange } from "./history.js";
 import { handleMcp } from "./mcp.js";
 import { handleAuthorize } from "./oauth.js";
-import { type DocumentSource, clearCompleted, readDocument, writeDocument } from "./store.js";
+import {
+  type DocumentSource,
+  type WipeScope,
+  readDocument,
+  wipe,
+  writeDocument,
+} from "./store.js";
 
 /**
  * knag — one plain-text document, always live.
@@ -240,7 +246,7 @@ function loginFailed(request: Request, reason: string): Response {
 }
 
 /**
- * Sweep the checked items (spec §5, §14.2).
+ * Wipe the page — the checked items, or all of it (spec §5, §14.2, #58).
  *
  * The parse lives here rather than in `store.ts` — the store owns SQL and the order
  * of operations, this owns what "completed" means. That is `kind === 'checkbox' &&
@@ -250,6 +256,12 @@ function loginFailed(request: Request, reason: string): Response {
  * Serialization is `blocks.map(b => b.raw).join('\n')` over the survivors, so every
  * line that stays is written back from its untouched source — indentation, markers,
  * trailing whitespace and CRLF included.
+ *
+ * 🔴 The route keeps the name `clear-completed` even though it now does more. Renaming
+ * it would break every deployed PWA on a page whose whole premise is that you can leave
+ * a device open for days, for no gain a `scope` field does not already give. Spec §10
+ * already settled this shape for `cleared_items`: a new surface gets the new word, the
+ * old ones get it when they are being changed for a real reason.
  */
 async function clear(request: Request, env: Env, principal: Principal): Promise<Response> {
   let payload: unknown;
@@ -259,35 +271,52 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
-  const { base_version: baseVersion } = (payload ?? {}) as Record<string, unknown>;
+  const { base_version: baseVersion, scope } = (payload ?? {}) as Record<string, unknown>;
   if (typeof baseVersion !== "number" || !Number.isInteger(baseVersion) || baseVersion < 0) {
     return Response.json({ error: "base_version must be a non-negative integer" }, { status: 400 });
   }
+
+  // Absent means `completed`, so a PWA built before #58 keeps working unchanged. An
+  // unrecognised value is rejected rather than defaulted — a typo'd scope silently
+  // wiping only the checked items would look like it worked.
+  if (scope !== undefined && scope !== "completed" && scope !== "all") {
+    return Response.json({ error: 'scope must be "completed" or "all"' }, { status: 400 });
+  }
+  const wipeScope: WipeScope = scope === "all" ? "all" : "completed";
 
   const current = await readDocument(env);
   const blocks = parse(current.body);
   const completed = blocks.filter(isCompleted);
 
+  // An empty page has nothing to wipe under either scope. `parse("")` yields a single
+  // blank block, so this is checked on the body rather than the block count — otherwise
+  // wiping an already-empty page would report having removed one thing.
+  const wipedCount = wipeScope === "all" ? (current.body === "" ? 0 : blocks.length) : completed.length;
+
   // Nothing to do. Reported as success with a count of zero rather than as an error:
-  // the caller asked for the checked items to be gone, and they are.
-  if (completed.length === 0) {
+  // the caller asked for those lines to be gone, and they are.
+  if (wipedCount === 0) {
     return Response.json(
-      { version: current.version, cleared_count: 0 },
+      { version: current.version, cleared_count: 0, wiped_count: 0 },
       { headers: { ETag: etagFor(current.version) } },
     );
   }
 
-  const result = await clearCompleted(
-    env,
-    {
-      baseVersion,
-      body: serialize(blocks.filter((block) => !isCompleted(block))),
-      // The full source line, not the task text — the done-record should read the
-      // way the document read.
-      clearedLines: completed.map((block) => block.raw),
-      source: sourceFor(principal),
-    },
-  );
+  const result = await wipe(env, {
+    baseVersion,
+    body: wipeScope === "all" ? "" : serialize(blocks.filter((block) => !isCompleted(block))),
+    // 🔴 The finished lines only, under both scopes. `cleared_items` answers "what did I
+    // get done"; a wipe-all removes things that were never done, and recording those
+    // here would corrupt the one record `/api/history` treats as authoritative. The
+    // sealed snapshot is what makes the rest recoverable (#59).
+    //
+    // The full source line, not the task text — the done-record should read the way the
+    // document read.
+    clearedLines: completed.map((block) => block.raw),
+    source: sourceFor(principal),
+    scope: wipeScope,
+    wipedCount,
+  });
 
   if (result.status === "conflict") {
     return Response.json(
@@ -297,7 +326,11 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
   }
 
   return Response.json(
-    { version: result.version, cleared_count: result.cleared_count },
+    {
+      version: result.version,
+      cleared_count: result.cleared_count,
+      wiped_count: result.wiped_count,
+    },
     { headers: { ETag: etagFor(result.version) } },
   );
 }

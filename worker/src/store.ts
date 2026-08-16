@@ -192,15 +192,56 @@ async function recordRevision(
 }
 
 export type ClearResult =
-  | { status: "cleared"; version: number; cleared_count: number }
+  | {
+      status: "cleared";
+      version: number;
+      /** Rows written to `cleared_items` — the *finished* lines, and only those. */
+      cleared_count: number;
+      /** Rows removed from the page. Larger than `cleared_count` on a wipe-all. */
+      wiped_count: number;
+    }
   | { status: "conflict"; current: DocumentRow };
 
 /**
- * Sweep the checked items, keeping an explicit record of what went (spec §5).
+ * Which lines a wipe takes (spec §5, #58).
  *
- * The caller decides *what* to clear — it owns the parser — and hands over the
- * rewritten body plus the removed lines. This function owns only the order, which is
- * the part that has to be right.
+ * `completed` sweeps the checked items. `all` empties the page — what a grocery list
+ * actually needs, where you do not tick the last three things, you are simply done.
+ */
+export type WipeScope = "completed" | "all";
+
+/**
+ * The `revisions.event_type` each scope records.
+ *
+ * 🔴 Two values, not one, and the distinction is load-bearing rather than cosmetic. A
+ * wipe-all removes lines that were never finished, and those are deliberately **not**
+ * written to `cleared_items` — see below. Without a distinct event, history would show
+ * an entry claiming two items were cleared and then, on the next ordinary save, four
+ * more lines disappearing with nothing to explain them.
+ *
+ * The column is free text with no CHECK, so this needs no migration.
+ */
+const EVENT_TYPE: Record<WipeScope, string> = {
+  completed: "clear_completed",
+  all: "wipe_all",
+};
+
+/**
+ * Wipe the page, keeping an explicit record of what went (spec §5).
+ *
+ * The caller decides *what* goes — it owns the parser — and hands over the rewritten
+ * body plus the lines to record. This function owns only the order, which is the part
+ * that has to be right.
+ *
+ * 🔴 **`clearedLines` is the done-record, not the undo buffer.** It holds the lines
+ * that were *finished*, which for a wipe-all is only the checked ones. `cleared_items`
+ * is what `/api/history` reports as authoritative for "what did I get done", precisely
+ * because a line-set diff cannot be trusted for that question — writing unfinished
+ * lines into it would poison the one record that has to stay clean.
+ *
+ * Recovery does not need it. Statement 2 below snapshots the whole pre-wipe document
+ * and seals it, so every removed line is derivable from that snapshot and the body this
+ * writes, for both scopes ([#59](https://github.com/danjamk/knag/issues/59)).
  *
  * 🔴 **Every statement carries the same `version = ?` guard, and the CAS is last.**
  *
@@ -210,14 +251,22 @@ export type ClearResult =
  * items were finished while they sit unchecked in the document. Worse than not
  * clearing at all, and invisible until someone reads their history.
  *
- * Guarding every statement on the *pre-clear* version fixes it. Statements 1–3 do not
+ * Guarding every statement on the *pre-wipe* version fixes it. Statements 1–3 do not
  * touch `documents.version`, so all four observe the same value, and no other writer
  * can interleave inside a transaction. Either the version matches at batch start and
  * all four apply, or it does not and none do.
  */
-export async function clearCompleted(
+export async function wipe(
   env: Env,
-  input: { baseVersion: number; body: string; clearedLines: string[]; source: DocumentSource },
+  input: {
+    baseVersion: number;
+    body: string;
+    clearedLines: string[];
+    source: DocumentSource;
+    scope: WipeScope;
+    /** Rows removed from the page. Equals `clearedLines.length` for `completed`. */
+    wipedCount: number;
+  },
   now: Date = new Date(),
 ): Promise<ClearResult> {
   const current = await readDocument(env);
@@ -245,8 +294,8 @@ export async function clearCompleted(
     //    save inside the window — overwriting the very state this row exists to keep.
     env.DB.prepare(
       `INSERT INTO revisions (body, version, created_at, is_sealed, source, event_type)
-       SELECT ?, ?, ?, 1, ?, 'clear_completed' WHERE ${guard}`,
-    ).bind(current.body, version, timestamp, input.source, DOC_ID, version),
+       SELECT ?, ?, ?, 1, ?, ? WHERE ${guard}`,
+    ).bind(current.body, version, timestamp, input.source, EVENT_TYPE[input.scope], DOC_ID, version),
 
     // 3. The authoritative done-record, so "what did I finish" is a lookup rather
     //    than a diff.
@@ -281,7 +330,12 @@ export async function clearCompleted(
     return { status: "conflict", current: await readDocument(env) };
   }
 
-  return { status: "cleared", version: version + 1, cleared_count: input.clearedLines.length };
+  return {
+    status: "cleared",
+    version: version + 1,
+    cleared_count: input.clearedLines.length,
+    wiped_count: input.wipedCount,
+  };
 }
 
 /**

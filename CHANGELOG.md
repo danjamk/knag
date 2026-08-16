@@ -16,6 +16,23 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- **Wipe the whole page, not just the finished items**
+  ([#58](https://github.com/danjamk/knag/issues/58)). The second scope of the product's
+  central gesture, and what a short-lived page actually needs — on a grocery list you do
+  not tick the last three things, you are simply done. In settings rather than on the
+  toolbar, which is capped at three controls and reserved for what you reach for often.
+  Always confirms, and names the number it is about to throw away.
+
+  `knag_wipe` takes the same `scope`, and its description tells an agent plainly that
+  `all` removes work that was never finished — so it does not read as equivalent to the
+  safe default.
+
+  **A wipe-all does not inflate what you got done.** Only the checked lines are recorded
+  as finished; the rest are removed without being claimed as achievements. The two counts
+  are reported separately for that reason. Nothing is lost either way — the whole page is
+  snapshotted before the wipe, which is what
+  [#59](https://github.com/danjamk/knag/issues/59) will restore from.
+
 - **knag connects from claude.ai, Claude Desktop and mobile**
   ([#64](https://github.com/danjamk/knag/issues/64),
   [ADR-005](docs/adr/ADR-005-mcp-oauth.md)). Add the `/mcp` URL as a custom connector
