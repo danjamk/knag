@@ -78,9 +78,12 @@ const clearButton = document.querySelector<HTMLButtonElement>("[data-clear]");
 const wipeAllButton = document.querySelector<HTMLButtonElement>("[data-wipe-all]");
 const restoreButton = document.querySelector<HTMLButtonElement>("[data-restore]");
 const reorderButton = document.querySelector<HTMLButtonElement>("[data-reorder]");
+const recoveryLine = document.querySelector<HTMLElement>("[data-recovery]");
+const recoveryCountEl = document.querySelector<HTMLElement>("[data-recovery-count]");
+const envBadge = document.querySelector<HTMLElement>("[data-env]");
 
-/** Above this many, a sweep gets a confirm. Below it, undo-by-history is enough. */
-const CONFIRM_CLEAR_ABOVE = 10;
+/** Which rows a wipe takes. Mirrors `WipeScope` in the Worker's store. */
+type WipeScope = "completed" | "all";
 
 /**
  * The current document body, as bytes.
@@ -150,15 +153,32 @@ function editableState(): EditableState {
  */
 let lastStatus = "—";
 
+/**
+ * Paint the machine slot.
+ *
+ * 🔴 Lowercase, deadpan, no terminal punctuation — `saved`, not `Saved ✓`. The status
+ * line is the machine speaking, and the two-voice rule says the machine speaks in DM
+ * Mono and amber while everything the *human* wrote stays chalk. `saved` is the one
+ * resting state and sits back in `--dim`; anything else is the machine having
+ * something to say, and says it in amber.
+ *
+ * That includes `not saved`, which used to be red. There is no red: amber is the only
+ * colour in the interface and a third one means something went wrong.
+ */
+function showStatus(text: string): void {
+  if (!statusEl) return;
+  statusEl.textContent = text;
+  statusEl.toggleAttribute("data-rest", text === "saved");
+}
+
 function setStatus(text: string): void {
   lastStatus = text;
-  if (connectivity === "online" && statusEl) statusEl.textContent = text;
+  if (connectivity === "online") showStatus(text);
 }
 
 function paintConnectivity(): void {
-  if (!statusEl) return;
   const offline = connectivityStatus({ connectivity, unsavedRows: dirty ? 1 : 0 });
-  statusEl.textContent = offline ?? lastStatus;
+  showStatus(offline ?? lastStatus);
 }
 
 /**
@@ -252,7 +272,7 @@ function render(doc: Doc): void {
   dirty = false;
   pendingRemote = null;
   paint();
-  setStatus("Saved");
+  setStatus("saved");
 }
 
 // ── Rendering (spec §7) ──────────────────────────────────────────────────────
@@ -320,8 +340,17 @@ function autoGrow(area: HTMLTextAreaElement): void {
 function refreshClearButton(): void {
   const completed = parse(body).filter(isCompleted).length;
   clearButton?.toggleAttribute("hidden", completed === 0 || view !== "list");
-  // Only the count changes — rewriting the button's whole text would drop the icon.
+  // Only the count changes — rewriting the button's whole text would drop the label.
   if (clearCountEl) clearCountEl.textContent = String(completed);
+
+  // The empty page says nothing at all: no hint, no illustration, no "add your first
+  // item". A blank board is the feature, and the only thing on it is the cursor —
+  // which is drawn by CSS off this attribute, and goes the moment the row takes focus.
+  rowsEl?.toggleAttribute("data-empty", body === "" && view === "list");
+
+  // The whole-page control carries its own count and sits behind a dialog that may
+  // already be open while the page changes underneath it.
+  paintWipeAll();
 }
 
 /**
@@ -334,9 +363,64 @@ function refreshClearButton(): void {
 function gripElement(): HTMLSpanElement {
   const grip = document.createElement("span");
   grip.className = "grip";
-  grip.textContent = "⠿";
-  grip.setAttribute("aria-hidden", "true");
+  grip.append(glyph(GLYPH.grip, 20));
   return grip;
+}
+
+// ── Glyphs ───────────────────────────────────────────────────────────────────
+
+/**
+ * One family: a 16-unit grid, 1.5 stroke, square caps, no curves except the checkbox
+ * radii. Rectangles and straight lines, because the only drawn shape this brand owns
+ * is a rectangle.
+ *
+ * 🔴 **Inline SVG, not unicode.** These used to be `⠿ ⧉ × ↗` set in DM Mono — and DM
+ * Mono has a codepoint for none of them. Every one was already rendering from a
+ * platform fallback: a different face per OS, at a different optical weight, inside a
+ * system with exactly two typefaces in it. Drawing them is what makes the one-family
+ * rule true rather than merely stated.
+ *
+ * The drawings sit larger than the targets holding them — 17px inside a 28px row
+ * control, 20px for the Arrange grip. No target changed, so the four-targets-at-380px
+ * geometry is untouched; the glyph inside it stopped being timid.
+ */
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+const GLYPH = {
+  grip: '<circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="6" cy="8" r="1.1"/><circle cx="10" cy="8" r="1.1"/><circle cx="6" cy="12" r="1.1"/><circle cx="10" cy="12" r="1.1"/>',
+  copy: '<rect x="6" y="2.75" width="7.25" height="9" rx="1.5"/><rect x="2.75" y="4.75" width="7.25" height="9" rx="1.5"/>',
+  remove: '<path d="M4.2 4.2 L11.8 11.8"/><path d="M11.8 4.2 L4.2 11.8"/>',
+  /** The tick, reused from the checkbox — copy confirms in the same mark that ticks. */
+  done: '<path d="M3.6 8.4 L6.6 11.4 L12.4 4.8"/>',
+  /** Copy failed. The same cross the delete control uses, which is the honest sign. */
+  failed: '<path d="M4.2 4.2 L11.8 11.8"/><path d="M11.8 4.2 L4.2 11.8"/>',
+  /**
+   * Open a link — the one glyph the design bundle did not ship, drawn to the same
+   * rules: an arrow leaving a corner, straight lines and nothing else.
+   */
+  open: '<path d="M5 11 L11 5"/><path d="M6.75 4.6 H11.4 V9.25"/>',
+} as const;
+
+/**
+ * Build one.
+ *
+ * `innerHTML` is safe here and only here: every argument is a module constant above,
+ * never a row's text. Row text is set with `textContent` and always will be — see
+ * `linkify` in view.ts, which returns data rather than markup for the same reason.
+ */
+function glyph(paths: string, size: number): SVGSVGElement {
+  const filled = paths === GLYPH.grip;
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("fill", filled ? "currentColor" : "none");
+  svg.setAttribute("stroke", filled ? "none" : "currentColor");
+  svg.setAttribute("stroke-width", "1.5");
+  svg.setAttribute("stroke-linecap", "square");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = paths;
+  return svg;
 }
 
 /**
@@ -353,7 +437,10 @@ function removeElement(index: number): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "remove";
-  button.textContent = "\u00d7";
+  // Dim, not red. Amber is the only colour in the interface, and this control is not
+  // the machine speaking \u2014 a second destructive colour would be the third colour that
+  // means something has gone wrong.
+  button.append(glyph(GLYPH.remove, 17));
   button.title = "delete this line";
   button.dataset.remove = String(index);
   return button;
@@ -370,7 +457,7 @@ function copyElement(text: string): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "copy";
-  button.textContent = "⧉";
+  button.append(glyph(GLYPH.copy, 17));
   button.title = "copy";
   button.dataset.copy = text;
   return button;
@@ -461,7 +548,7 @@ function openElement(url: string): HTMLAnchorElement {
   const anchor = document.createElement("a");
   anchor.className = "open";
   anchor.href = url;
-  anchor.textContent = "\u2197";
+  anchor.append(glyph(GLYPH.open, 17));
   anchor.title = url;
   anchor.target = "_blank";
   // Without noopener the opened page gets a handle on this one via window.opener.
@@ -621,13 +708,13 @@ function applyRemote(doc: Doc): void {
     // deliberate wait.
     const first = pendingRemote === null;
     pendingRemote = doc;
-    if (first) setStatus("Update waiting — saving yours first");
+    if (first) setStatus("update waiting");
     return;
   }
 
   if (disposition === "apply") {
     render(doc);
-    setStatus("Updated from another device");
+    setStatus("updated elsewhere");
     return;
   }
 
@@ -644,7 +731,7 @@ function applyRemote(doc: Doc): void {
     focused = false;
   }
 
-  setStatus("Updated from another device");
+  setStatus("updated elsewhere");
 }
 
 function stopPolling(): void {
@@ -704,7 +791,7 @@ async function save(): Promise<void> {
   // its value is whatever was last painted into it; reading from the element would
   // save the wrong document the moment a checkbox is toggled.
   const sent = body;
-  setStatus("Saving…");
+  setStatus("saving");
 
   try {
     let res: Response;
@@ -727,7 +814,7 @@ async function save(): Promise<void> {
 
     if (res.status === 409) {
       render((await res.json()) as Doc);
-      setStatus("Reloaded — it had changed elsewhere");
+      setStatus("reloaded · it changed elsewhere");
       return;
     }
 
@@ -739,14 +826,14 @@ async function save(): Promise<void> {
     // Only clear the flag if nothing changed while the request was in flight.
     if (body === sent) {
       dirty = false;
-      setStatus("Saved");
+      setStatus("saved");
     }
   } catch {
     // 🔴 `dirty` deliberately stays true. The edit is still in the page and still
     // unsaved, and it is what the footer counts — an edit that vanished from the
     // status while sitting unsaved on screen is the failure spec §9 is about. On
     // reconnect `noteConnectivity` retries it as an ordinary versioned write.
-    setStatus("Not saved — retrying on the next edit");
+    setStatus("not saved");
     paintConnectivity();
   }
 }
@@ -754,7 +841,7 @@ async function save(): Promise<void> {
 function scheduleSave(): void {
   dirty = true;
   lastActivityAt = Date.now();
-  setStatus("Editing…");
+  setStatus("editing");
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => void save(), SAVE_DEBOUNCE_MS);
   // An edit moves us into the fast tier, and the running timer was scheduled under
@@ -795,7 +882,7 @@ function saveNow(): void {
 function applyPendingRemote(): void {
   if (!pendingRemote) return;
   render(pendingRemote);
-  setStatus("Updated from another device");
+  setStatus("updated elsewhere");
 }
 
 // ── The typing model (ADR-003, spec §7) ──────────────────────────────────────
@@ -1025,20 +1112,100 @@ function readWipe(): WipeMemory | null {
 /** The offer, or nothing. Deadpan, and it names the number so it is not a mystery. */
 function paintRestore(): void {
   const memory = readWipe();
-  if (!restoreButton) return;
+  if (!recoveryLine) return;
 
-  restoreButton.toggleAttribute("hidden", memory === null);
-  if (memory) restoreButton.textContent = `wiped ${memory.count} · bring back`;
+  recoveryLine.toggleAttribute("hidden", memory === null);
+  if (memory && recoveryCountEl) recoveryCountEl.textContent = `wiped ${memory.count}`;
 }
 
-async function requestWipe(scope: "completed" | "all"): Promise<void> {
+// ── The wipe animation (the only animation in the product) ───────────────────
+
+/**
+ * Read a duration token back out of the stylesheet.
+ *
+ * 🔴 The CSS is the single source of truth for these, which is what makes
+ * `prefers-reduced-motion` free: the media query in the shell already rewrites the
+ * tokens to 1ms, so this reads 1ms and the whole sequence collapses without a second
+ * `matchMedia` check here that could disagree with the stylesheet.
+ */
+function motionMs(name: string, fallback: number): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return raw.endsWith("ms") ? value : value * 1000;
+}
+
+/** The block indices a wipe of this scope is about to remove. */
+function leavingRows(scope: WipeScope): number[] {
+  const blocks = parse(body);
+  const indices: number[] = [];
+  blocks.forEach((block, index) => {
+    if (scope === "all" || isCompleted(block)) indices.push(index);
+  });
+  return indices;
+}
+
+/**
+ * Fade the leaving rows, then close the gap they left.
+ *
+ * 🔴 **Two stages, and the separation is the whole point.** The rows go transparent in
+ * place, holding their height, and only then does one collapse close the gap. Fading
+ * and collapsing at once makes the list jump under the thumb that just tapped, and the
+ * release stops feeling like a release and starts feeling like a mis-tap.
+ *
+ * Nothing here decides what gets wiped — the server owns that, and this runs against
+ * the same predicate purely for the picture. If the two ever disagree the repaint from
+ * the server's answer is what lands, so the worst case is a row that faded and came
+ * back, never a row that vanished from the page without leaving the document.
+ */
+function animateWipe(indices: number[]): Promise<void> {
+  if (!rowsEl || indices.length === 0) return Promise.resolve();
+
+  const leaving = indices
+    .map((index) => rowsEl.querySelector<HTMLElement>(`li[data-index="${index}"]`))
+    .filter((el): el is HTMLElement => el !== null);
+  if (leaving.length === 0) return Promise.resolve();
+
+  const duration = motionMs("--wipe-duration", 420);
+  const stagger = motionMs("--wipe-stagger", 26);
+  const collapse = motionMs("--wipe-collapse", 160);
+
+  leaving.forEach((el, order) => {
+    el.style.setProperty("--i", String(order));
+    el.classList.add("wiping");
+  });
+
+  return new Promise((resolve) => {
+    setTimeout(
+      () => {
+        // One height read per row, written back before the class lands, so the
+        // transition has somewhere to go from — `max-height: auto` does not animate.
+        for (const el of leaving) el.style.maxHeight = `${el.offsetHeight}px`;
+        // Force the style to settle before the collapsing value is applied, or the
+        // browser coalesces both writes and the row snaps shut with no transition.
+        void rowsEl.offsetHeight;
+        for (const el of leaving) el.classList.add("closing");
+        setTimeout(resolve, collapse);
+      },
+      duration + (leaving.length - 1) * stagger,
+    );
+  });
+}
+
+async function requestWipe(scope: WipeScope): Promise<void> {
   saveNow();
-  setStatus(scope === "all" ? "Wiping…" : "Clearing…");
+  setStatus("wiping");
 
   // Captured before the request, because it is the only copy of the pre-wipe page this
   // device will have — the server keeps its own sealed snapshot, but reaching it would
   // need a route that does not exist.
   const preWipe = body;
+
+  // Started before the request and awaited after it, so the network round trip happens
+  // *inside* the 632ms the animation takes rather than after it. The rows are already
+  // leaving by the time the server answers, which is what makes the tap feel immediate
+  // on a phone.
+  const leaving = animateWipe(leavingRows(scope));
 
   try {
     const res = await fetch("/api/doc/clear-completed", {
@@ -1054,7 +1221,7 @@ async function requestWipe(scope: "completed" | "all"): Promise<void> {
 
     if (res.status === 409) {
       render((await res.json()) as Doc);
-      setStatus("Reloaded — it had changed elsewhere");
+      setStatus("reloaded · it changed elsewhere");
       return;
     }
 
@@ -1065,12 +1232,18 @@ async function requestWipe(scope: "completed" | "all"): Promise<void> {
     // Re-read rather than trusting a locally computed result. The server decided what
     // was removed and rewrote the document; this asks what it actually is.
     const doc = await load();
+
+    // 🔴 Held until the rows have finished leaving. `render` repaints, and a repaint
+    // replaces every <li> — so painting the new document mid-animation deletes the
+    // elements that are animating and the wipe simply does not happen on a fast
+    // connection, which is every connection the author develops on.
+    await leaving;
     if (doc) render(doc);
 
     if (count === 0) {
-      setStatus(scope === "all" ? "Nothing to wipe" : "Nothing to clear");
+      setStatus("nothing to wipe");
     } else {
-      setStatus(scope === "all" ? `Wiped ${count}` : `Cleared ${count}`);
+      setStatus(`wiped ${count}`);
       // The post-wipe body comes from the re-read, not from a local guess: the server
       // decided what "completed" meant, and the undo has to reverse what it actually
       // did rather than what this device thought it would do.
@@ -1084,19 +1257,31 @@ async function requestWipe(scope: "completed" | "all"): Promise<void> {
       }
     }
   } catch {
-    setStatus(scope === "all" ? "Not wiped — nothing was changed" : "Not cleared — nothing was changed");
+    setStatus("not wiped");
+    // 🔴 Put the faded rows back. Nothing was removed, and rows left mid-animation are
+    // transparent and collapsed to zero height — so the failure would *look* exactly
+    // like the successful wipe it is telling you did not happen. A repaint rebuilds
+    // every <li> from `body`, which drops the animation classes with them.
+    paintRows();
   }
 }
 
+/**
+ * Sweep the checked rows.
+ *
+ * 🔴 **No confirm, at any count.** There used to be one above ten, on the argument
+ * that a big sweep deserves a pause. Two things retired it. The count now sits *inside*
+ * the control — you read `wipe 11` before you tap it, so the size of the action is
+ * already in front of you — and the recovery line below the rows makes taking it back
+ * one tap. A browser `confirm()` was also the loudest, least knag-shaped thing in the
+ * app: a grey OS dialog with a title bar, in a product whose entire voice is quiet.
+ *
+ * The whole-page wipe still confirms, because it takes work that was never finished.
+ * It does it by repetition rather than by dialog — see below.
+ */
 clearButton?.addEventListener("click", async () => {
   const completed = parse(body).filter(isCompleted).length;
   if (completed === 0) return;
-
-  // Confirm only above the threshold. Prompting on every sweep trains the reflex that
-  // makes the prompt useless on the one that matters (spec §7).
-  if (completed > CONFIRM_CLEAR_ABOVE && !confirm(`Clear ${completed} completed items?`)) {
-    return;
-  }
 
   await requestWipe("completed");
 });
@@ -1104,23 +1289,71 @@ clearButton?.addEventListener("click", async () => {
 /**
  * Wipe the whole page (#58).
  *
- * 🔴 Always confirms, unlike the sweep. Spec §7's argument for a threshold is that
- * prompting on every routine action trains the reflex that makes the prompt useless —
- * but this one is not routine and it takes work that was never finished, which is the
- * case the reflex would cost most. It also names the number, because "wipe the page"
- * and "throw away eleven things" land differently.
+ * 🔴 **Always confirms, and confirms by repetition.** Unlike the sweep, this one takes
+ * work that was never finished, so it does not go on one tap. But the confirmation is a
+ * second tap on the same control within a few seconds — the label changes to
+ * `again to confirm` and reverts on its own — rather than a browser dialog.
+ *
+ * A `confirm()` was what shipped first and it was wrong twice over. It is an OS-styled
+ * grey box with a title bar in a product whose whole voice is quiet, and it moves the
+ * decision to a different surface than the one you were looking at. Confirming in place
+ * keeps your eyes on the control that is about to do the thing.
+ *
+ * The revert is what makes it safe to be this quiet: an armed control that stayed armed
+ * would be a trap for the next person who opened settings for an unrelated reason.
  */
+const WIPE_ARM_MS = 4_000;
+let wipeArmTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * The label, carrying its own count, or the armed prompt.
+ *
+ * The count is on the control for the same reason it is on the footer's: `wipe the
+ * page 41` and "wipe the page" land differently, and the number is what stops a
+ * mistake. It is hidden while armed, because at that moment the only thing worth
+ * reading is what the next tap does.
+ */
+function paintWipeAll(): void {
+  const armed = wipeAllButton?.hasAttribute("data-armed") === true;
+  const label = document.querySelector<HTMLElement>("[data-wipe-all-label]");
+  const count = document.querySelector<HTMLElement>("[data-wipe-all-count]");
+
+  if (label) label.textContent = armed ? "again to confirm" : "wipe the page";
+  if (count) {
+    count.textContent = String(parse(body).length);
+    count.toggleAttribute("hidden", armed);
+  }
+}
+
+function disarmWipeAll(): void {
+  clearTimeout(wipeArmTimer);
+  wipeArmTimer = undefined;
+  wipeAllButton?.removeAttribute("data-armed");
+  paintWipeAll();
+}
+
 wipeAllButton?.addEventListener("click", async () => {
-  const rows = parse(body).length;
   if (body === "") {
-    setStatus("Nothing to wipe");
+    setStatus("nothing to wipe");
     return;
   }
 
-  if (!confirm(`Wipe all ${rows} lines? Everything goes, finished or not.`)) return;
+  if (!wipeAllButton.hasAttribute("data-armed")) {
+    wipeAllButton.setAttribute("data-armed", "");
+    paintWipeAll();
+    wipeArmTimer = setTimeout(disarmWipeAll, WIPE_ARM_MS);
+    return;
+  }
 
+  disarmWipeAll();
   await requestWipe("all");
+  paintWipeAll();
 });
+
+// Closing settings disarms it. Reopening later to a control that was still armed would
+// mean one tap wipes the page, having forgotten the tap that armed it — which is the
+// trap the timeout exists to avoid, arriving by another route.
+settingsDialog?.addEventListener("close", disarmWipeAll);
 
 /**
  * Bring the wiped lines back (#59).
@@ -1137,7 +1370,7 @@ restoreButton?.addEventListener("click", async () => {
   // Flush anything unsaved first, so `body` and `baseVersion` describe the same page
   // the server holds — otherwise the restore races the user's own last keystroke.
   saveNow();
-  setStatus("Bringing back…");
+  setStatus("bringing back");
 
   const restored = restoredBody({
     preWipe: memory.preWipe,
@@ -1161,7 +1394,7 @@ restoreButton?.addEventListener("click", async () => {
       // Re-read and leave the offer standing. The wiped lines are still absent from
       // whatever arrived, so the next tap recomputes against it and works.
       render((await res.json()) as Doc);
-      setStatus("Reloaded — it had changed elsewhere");
+      setStatus("reloaded · it changed elsewhere");
       return;
     }
 
@@ -1171,9 +1404,9 @@ restoreButton?.addEventListener("click", async () => {
     if (doc) render(doc);
 
     forgetWipe();
-    setStatus(`Brought back ${memory.count}`);
+    setStatus(`brought back ${memory.count}`);
   } catch {
-    setStatus("Not restored — nothing was changed");
+    setStatus("not restored");
   }
 });
 
@@ -1203,15 +1436,17 @@ rowsEl?.addEventListener("click", (event) => {
  * so — you find out when you paste.
  */
 async function copyToClipboard(text: string, button: HTMLElement): Promise<void> {
-  const original = button.textContent;
+  let mark: string = GLYPH.done;
   try {
     await navigator.clipboard.writeText(text);
-    button.textContent = "✓";
   } catch {
-    button.textContent = "✗";
+    mark = GLYPH.failed;
   }
+  // Swapped rather than written over: the control is an SVG now, and assigning
+  // `textContent` would delete the drawing and leave an empty 28px square behind.
+  button.replaceChildren(glyph(mark, 17));
   setTimeout(() => {
-    button.textContent = original;
+    button.replaceChildren(glyph(GLYPH.copy, 17));
   }, 1200);
 }
 
@@ -1275,13 +1510,17 @@ if (rowsEl) {
 function setReordering(on: boolean): void {
   reordering = on;
   rowsEl?.classList.toggle("reorder", on);
-  reorderButton?.classList.toggle("on", on);
-  // 🔴 Both states are icons. The first version wrote the word "reorder" on the way
-  // out, so the button silently changed shape the first time it was used and never
-  // changed back — the markup said `⇅` and only the initial render agreed with it.
+  // 🔴 The glyph never changes — only its state does. An earlier version swapped the
+  // drawing for a tick on the way in, which is how the control silently changed shape
+  // the first time it was used and never changed back.
+  //
+  // `aria-pressed` is both the accessible answer and the styling hook: the CSS gives a
+  // pressed control the 10% ink tint for as long as the mode is on, because the mode
+  // has to be legible from the bar. In Arrange the page looks like a page you cannot
+  // type in, which is exactly what it is.
   if (reorderButton) {
-    reorderButton.textContent = on ? "✓" : "⇅";
-    reorderButton.title = on ? "done rearranging" : "rearrange, copy, delete";
+    reorderButton.setAttribute("aria-pressed", String(on));
+    reorderButton.title = on ? "done arranging" : "arrange";
   }
   sortable?.option("disabled", !on);
 
@@ -1460,9 +1699,9 @@ loginForm?.addEventListener("submit", async (event) => {
 
     // One opaque 401 for every failure, so there is nothing more specific to say and
     // saying more would be inventing it.
-    if (loginError) loginError.textContent = "Wrong passphrase.";
+    if (loginError) loginError.textContent = "wrong passphrase";
   } catch {
-    if (loginError) loginError.textContent = "Could not reach knag.";
+    if (loginError) loginError.textContent = "could not reach knag";
   } finally {
     if (button) button.disabled = false;
   }
@@ -1539,11 +1778,13 @@ if (doc) {
   // Dev holds test content only and sits behind no rate-limit rule, so it stays
   // visible on the bar rather than hiding in settings — you should never have to
   // check which one you are typing into (ADR-002).
-  if (info.environment !== "prod") {
-    const badge = document.createElement("span");
-    badge.className = "env";
-    badge.textContent = info.environment;
-    document.querySelector("footer")?.prepend(badge);
+  //
+  // 🔴 It fills a slot that ships `hidden` rather than being prepended to the footer.
+  // Prepending put it ahead of the wordmark, which is the one element on the bar whose
+  // position is the brand's rather than the app's.
+  if (info.environment !== "prod" && envBadge) {
+    envBadge.textContent = info.environment;
+    envBadge.removeAttribute("hidden");
   }
 }
 

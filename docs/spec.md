@@ -566,8 +566,25 @@ move, and it is the same trust decision made once with less machinery around it.
 Bundling SortableJS is also why `pnpm build` minifies: unminified it takes the
 shell from 17kB to 97kB, and the free tier is a design input (§14.4).
 
-### Clear completed
-Single button, footer. Confirm only if clearing more than ~10 blocks.
+### Wipe
+Single control, footer, and it is a **labelled word with the count inside it** —
+`wipe 3` — never a glyph. `⌫` was the wrong promise: a backspace glyph says the
+bytes are gone, and the whole argument of the product is that they are not. At
+zero it renders nothing at all; an empty right edge of the bar is the page saying
+there is nothing to release.
+
+**No confirm, at any count** (amended in #71). There used to be one above ~10
+blocks. Two things retired it: the count now sits *inside* the control, so the
+size of the action is in front of you before you tap it, and the recovery line
+makes taking it back one tap. A browser `confirm()` also moved the decision to a
+grey OS dialog with a title bar, which is the loudest surface in an app whose
+whole voice is quiet.
+
+The **whole-page** wipe still confirms, because it takes work that was never
+finished — but by repetition rather than by dialog. It lives in Settings under
+`Page`, the label swaps to `again to confirm` on the first tap, and it disarms
+itself after a few seconds and whenever Settings closes. An armed control left
+armed is a trap for the next person who opens Settings for an unrelated reason.
 
 ---
 
@@ -596,6 +613,15 @@ normalization, no line-ending rewriting. Code pasted in comes out identical.
 Served from **Workers Static Assets** (`assets` binding in `wrangler.jsonc`),
 with `run_worker_first` for `/api/*` and `/mcp`. The shell is real files in
 `public/`, not template literals inside a TypeScript module.
+
+`public/fonts/` holds the two subset faces plus `OFL.txt`. They are **committed
+output, not a build step** — `scripts/subset-fonts.sh` exists so the committed
+files are reproducible and their provenance checkable, not so it runs on every
+deploy. Fonts change roughly never, and a build step that reaches for a Python
+toolchain to reproduce a file that did not change is a build step that will one
+day fail for no reason. Both faces are SIL OFL 1.1; the licence travels in each
+file's own name table (`--name-IDs+=13,14`, which pyftsubset drops by default)
+and in full alongside them.
 
 `public/manifest.json`:
 - `"display": "standalone"`
@@ -672,15 +698,55 @@ selected, so going offline would make the document unreadable as well as
 uneditable, and a line could not even be copied out to somewhere that works.
 Checkboxes are `disabled`, which is the only thing they honour.
 
-### Theme
+### Board
 
-**Light, dark, or system**, persisted per device in `localStorage` alongside the
-raw-view preference — UI state, not document state.
+**Slate, Whiteboard, or system**, persisted per device in `localStorage` alongside
+the raw-view preference — UI state, not document state.
+
+🔴 **They are boards, not themes** (#70). Slate is chalk on a blackboard and the
+default; Whiteboard is marker on dry-erase, cool rather than warm. The metaphor is
+the product: a board is a thing you wipe, and the difference from a real one — the
+whole point — is that a real board has no memory. **There is no third board.** A
+lined-paper skin was considered and cut: it is the least readable surface for a
+document you live in for hours, and a third option turns a preference into a
+decision.
 
 `prefers-color-scheme` is the default. The MVP hard-coded dark, which is the
 right default and the wrong only option: knag gets opened outdoors and in
 meetings, and a fixed dark surface is unreadable in the first and conspicuous in
 the second.
+
+The stored values were `light` and `dark` before the boards were named;
+`readTheme` migrates them, or everyone who had ever chosen one is silently reset
+to `system` on the release that renames them.
+
+### Type, and the two voices
+
+Two typefaces, self-hosted, subset to the Google `latin` range and served as
+woff2 from `public/fonts/` (~49 kB for three faces — §14.4's budget covers it,
+and the service worker precaches them or a cold offline start comes up in the
+fallback stack).
+
+| Voice | Face | Colour | Covers |
+|---|---|---|---|
+| Human | Familjen Grotesk | chalk / ink | everything you wrote — the page, the rows |
+| Machine | DM Mono | amber | save status, counts, the wordmark, build info, raw view |
+
+🔴 **Amber is the only colour in the interface.** Everything else is chalk, ink or
+a hairline. A third colour means something went wrong — which is why `offline`,
+`not saved` and the delete control are amber and dim rather than red.
+
+Every line of the page is one setting: 16px, whatever the line says. No second
+format for code, no styled headers. That is [ADR-004](adr/ADR-004-display-matches-the-bytes.md)
+visible on screen — nothing on the page may look like a thing the bytes do not say
+it is.
+
+**Dark-mode text treatment is required, not cosmetic.** Familjen Grotesk's weight
+axis starts at 400, so Slate cannot run a lighter row weight to counter optical
+bloom. All three corrections are therefore load-bearing: chalk softened to
+`#D8D6CD`, `letter-spacing: 0.012em`, and grayscale smoothing — all scoped to
+Slate only, and **never inside a fence or raw view**, where tracking would
+undermine the column alignment that makes monospace read as code.
 
 ---
 
@@ -829,8 +895,9 @@ and is not worth it.
 **In:** one live document · optimistic concurrency · polled sync · passphrase
 auth · one typing-first editor with live checkbox rows · `--` shorthand · raw
 view as an escape hatch · per-row copy · linkify · fenced block grouping ·
-reorder mode with delete · clear completed · coalesced revision log · history
-diff · 4 MCP tools · PWA manifest · light/dark/system theme
+reorder mode with delete · wipe, in two scopes, with a one-tap recovery line ·
+coalesced revision log · history diff · 4 MCP tools · PWA manifest · two boards
+and system · two self-hosted typefaces
 
 **Out:** search · tags · multiple documents · attachments · offline editing ·
 WebSockets · Electron · native apps · email auth · multi-user · sharing ·
@@ -992,6 +1059,13 @@ year nobody would look at.
 Workers free tier is 100k requests/day. A 4s poll on one tab left open all day
 is ~21.6k. Three devices exceeds the ceiling on polling alone. The free tier is
 a design input, not an afterthought.
+
+The **shell** is the other half of the same budget and it is bounded differently:
+requests, not bytes, are what is metered, and the service worker's precache makes
+the shell three-or-so requests per *shell version* rather than per visit. The
+typefaces (#70) cost 49 kB across three files and nothing per day — which is why
+they are precached rather than left to `font-display: swap` to fetch on demand,
+and why DM Mono 500 is not shipped when nothing asks for it.
 
 Adaptive interval:
 

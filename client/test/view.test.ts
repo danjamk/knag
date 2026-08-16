@@ -2,6 +2,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type Block, parse, serialize, setText, toggle } from "../../worker/src/blocks.js";
 import {
+  BOARD_SLATE,
+  BOARD_WHITEBOARD,
   THEME_KEY,
   VIEW_KEY,
   linkify,
@@ -428,11 +430,20 @@ describe("theme (spec §9)", () => {
   });
 
   it("round-trips each option", () => {
-    for (const theme of ["system", "light", "dark"] as const) {
+    for (const theme of ["system", "whiteboard", "slate"] as const) {
       const s = store();
       writeTheme(s, theme);
       expect(readTheme(s)).toBe(theme);
     }
+  });
+
+  it("🔴 migrates the names the boards used to have", () => {
+    // The boards were called `light` and `dark` before they were called anything. Drop
+    // this and everyone who had ever chosen one is silently reset to `system` on the
+    // release that renames them — which, on a device whose OS is set the other way,
+    // reads as the app changing colour by itself.
+    expect(readTheme(store("dark"))).toBe("slate");
+    expect(readTheme(store("light"))).toBe("whiteboard");
   });
 
   it("treats anything unrecognised as system", () => {
@@ -453,23 +464,32 @@ describe("theme (spec §9)", () => {
     } as unknown as Storage;
 
     expect(readTheme(hostile)).toBe("system");
-    expect(() => writeTheme(hostile, "dark")).not.toThrow();
+    expect(() => writeTheme(hostile, "slate")).not.toThrow();
     expect(readTheme(undefined)).toBe("system");
   });
 
   it("cycles through all three and back", () => {
-    expect(nextTheme("system")).toBe("light");
-    expect(nextTheme("light")).toBe("dark");
-    expect(nextTheme("dark")).toBe("system");
+    expect(nextTheme("system")).toBe("whiteboard");
+    expect(nextTheme("whiteboard")).toBe("slate");
+    expect(nextTheme("slate")).toBe("system");
   });
 
-  it("🔴 reports the colour actually in effect, so the iOS status bar matches", () => {
-    // Leaving the meta tag dark under a light theme puts a black strip above a white
+  it("🔴 reports the board actually in effect, so the iOS status bar matches", () => {
+    // Leaving the meta tag on slate under whiteboard puts a black strip above a pale
     // app, which reads as a rendering bug rather than a preference.
-    expect(themeColor("dark", false)).toBe("#11150F");
-    expect(themeColor("light", true)).toBe("#faf9f7");
+    expect(themeColor("slate", false)).toBe(BOARD_SLATE);
+    expect(themeColor("whiteboard", true)).toBe(BOARD_WHITEBOARD);
     // `system` defers to the OS in both directions.
-    expect(themeColor("system", true)).toBe("#11150F");
-    expect(themeColor("system", false)).toBe("#faf9f7");
+    expect(themeColor("system", true)).toBe(BOARD_SLATE);
+    expect(themeColor("system", false)).toBe(BOARD_WHITEBOARD);
+  });
+
+  it("🔴 names the same hexes the stylesheet does", () => {
+    // The one place a colour token is duplicated outside the stylesheet, because a
+    // <meta> tag cannot read a custom property. A drift here is invisible in every
+    // test that does not compare the two: the app looks right and the status bar
+    // above it does not match.
+    expect(BOARD_SLATE.toLowerCase()).toBe("#11150f");
+    expect(BOARD_WHITEBOARD.toLowerCase()).toBe("#edf1f3");
   });
 });

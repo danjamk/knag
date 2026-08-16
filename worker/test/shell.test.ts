@@ -78,6 +78,38 @@ describe("PWA shell (spec §9)", () => {
     expect(outside.match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull();
   });
 
+  it("🔴 declares the same whiteboard twice, identically", () => {
+    // The board is defined in two places — `:root[data-theme="whiteboard"]` for an
+    // explicit choice, and `:root:not([data-theme="slate"])` inside the light media
+    // query for the OS default. They have **equal specificity** (0,2,0) and the media
+    // block comes later, so on a light-preferring OS an explicit whiteboard choice
+    // resolves through the second one.
+    //
+    // That is only harmless while the two lists agree. Edit one and the app looks
+    // correct on a dark OS and wrong on a light one, from the same setting — and
+    // nothing fails, because each block is internally consistent.
+    const block = (selector: string): Map<string, string> => {
+      const source = styles().replace(/\/\*[\s\S]*?\*\//g, "");
+      const start = source.indexOf(selector);
+      expect(start, `${selector} is missing`).toBeGreaterThan(-1);
+
+      const body = source.slice(start + selector.length);
+      const declarations = body.slice(body.indexOf("{") + 1, body.indexOf("}"));
+      const tokens = new Map<string, string>();
+      for (const line of declarations.split(";")) {
+        const [name, value] = line.split(":");
+        if (name?.trim().startsWith("--")) tokens.set(name.trim(), (value ?? "").trim());
+      }
+      return tokens;
+    };
+
+    const explicit = block(':root[data-theme="whiteboard"]');
+    const osDefault = block(':root:not([data-theme="slate"])');
+
+    expect(explicit.size).toBeGreaterThan(10);
+    expect([...osDefault.entries()].sort()).toEqual([...explicit.entries()].sort());
+  });
+
   it("🔴 never styles a bare `input` or `button` globally", () => {
     // The document is *made of* inputs. A global element selector reaches every row's
     // text field and every row checkbox, at a specificity that outranks the rules
@@ -100,11 +132,28 @@ describe("PWA shell (spec §9)", () => {
     expect(styles()).toContain('li.checkbox input[type="checkbox"]');
   });
 
-  it("offers all three theme options explicitly", () => {
+  it("offers all three boards explicitly", () => {
     // A cycling icon made you tap twice to find out what the third option was.
-    for (const theme of ["system", "light", "dark"]) {
-      expect(shell()).toContain(`data-theme-set="${theme}"`);
+    //
+    // 🔴 `slate` and `whiteboard`, not `dark` and `light`. They are not themes — they
+    // are the two surfaces the product already had, and naming them is the difference
+    // between a generic preference and this product's. `readTheme` migrates the old
+    // values so nobody's choice is silently reset.
+    for (const board of ["system", "whiteboard", "slate"]) {
+      expect(shell()).toContain(`data-theme-set="${board}"`);
     }
+    expect(shell()).not.toContain('data-theme-set="dark"');
+  });
+
+  it("🔴 keeps the wipe control a word, and the count inside it", () => {
+    // `⌫` was the wrong promise: a backspace glyph says the bytes are gone, and the
+    // whole argument of the product is that they are not. The count goes *inside* the
+    // control because that is what makes it safe to tap without a confirm — you are
+    // told the size of the thing you are about to do, in the thing that does it.
+    const tag = /<button[^>]*data-clear[^>]*>([\s\S]*?)<\/button>/.exec(shell())?.[1] ?? "";
+    expect(tag).toContain("wipe");
+    expect(tag).toContain("data-clear-count");
+    expect(tag).not.toContain("⌫");
   });
 
   it("keeps the footer to three permanent controls", () => {
@@ -114,28 +163,44 @@ describe("PWA shell (spec §9)", () => {
     //
     // Counted by what is *always there*, not by `<button>` count. The rule was always
     // about permanent chrome — `data-clear` has been conditional since it shipped — and
-    // a bare count would have blocked the post-wipe undo (#59), which appears for a few
-    // hours after an action and then is gone. The stricter half is below: anything
-    // extra has to ship `hidden`, so nothing permanent can arrive by calling itself
-    // transient.
+    // a bare count would have blocked the post-wipe undo (#59), which appears after an
+    // action and then is gone. The stricter half is below: anything extra has to ship
+    // `hidden`, so nothing permanent can arrive by calling itself transient.
     const footer = /<footer>([\s\S]*?)<\/footer>/.exec(shell())?.[1] ?? "";
     const buttons = footer.match(/<button[^>]*>/g) ?? [];
     const permanent = buttons.filter((button) => !button.includes("hidden"));
 
     expect(permanent).toHaveLength(2);
-    expect(buttons).toHaveLength(4);
+    // Three now, not four: the recovery line moved out of the bar entirely.
+    expect(buttons).toHaveLength(3);
   });
 
-  it("🔴 ships every conditional footer control hidden", () => {
+  it("🔴 keeps the recovery line out of the footer", () => {
+    // It is transient chrome that appears after an action and stays until the next
+    // wipe, and the footer's budget is about what sits *permanently* above the
+    // keyboard. Pinned above the footer rule instead, so scrolling cannot carry it
+    // away and the keyboard cannot bury it — the line has to be where the regret is.
+    const footer = /<footer>([\s\S]*?)<\/footer>/.exec(shell())?.[1] ?? "";
+
+    expect(footer).not.toContain("data-restore");
+    expect(shell()).toContain("data-recovery");
+  });
+
+  it("🔴 ships every conditional control hidden", () => {
     // The other half of the rule above. A control that renders on first paint and
     // hides itself in script has already cost the reader a flash of chrome they did
     // not ask for, on the surface where chrome is most expensive.
     const footer = /<footer>([\s\S]*?)<\/footer>/.exec(shell())?.[1] ?? "";
 
-    for (const attribute of ["data-clear", "data-restore"]) {
-      const tag = new RegExp(`<button[^>]*${attribute}[^>]*>`).exec(footer)?.[0] ?? "";
-      expect(tag, `${attribute} must ship hidden`).toContain("hidden");
-    }
+    const clear = /<button[^>]*data-clear[^>]*>/.exec(footer)?.[0] ?? "";
+    expect(clear, "data-clear must ship hidden").toContain("hidden");
+
+    // The env badge is conditional too — it only appears off production.
+    const env = /<span[^>]*data-env[^>]*>/.exec(footer)?.[0] ?? "";
+    expect(env, "data-env must ship hidden").toContain("hidden");
+
+    const recovery = /<div[^>]*data-recovery[^>]*>/.exec(shell())?.[0] ?? "";
+    expect(recovery, "data-recovery must ship hidden").toContain("hidden");
   });
 
   it("puts build info in settings, one tap away rather than buried", () => {

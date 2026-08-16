@@ -14,6 +14,64 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-16
+
+knag looks like itself. Two boards, two typefaces, one colour, and the wipe finally
+animates.
+
+### Added
+
+- **The design system, landed** ([#70](https://github.com/danjamk/knag/issues/70)).
+  Two self-hosted typefaces, subset to woff2 and precached — **Familjen Grotesk** for
+  everything you wrote, **DM Mono** for everything the app says about itself. That split
+  is the system: two voices, two faces, two colours.
+
+  **Amber is now the only colour in the interface.** Everything else is chalk, ink or a
+  hairline. `offline`, `not saved` and the delete control used to be red and are not any
+  more — a third colour means something went wrong.
+
+- **The screen** ([#71](https://github.com/danjamk/knag/issues/71)). Row geometry,
+  Arrange mode, the footer, settings and the login screen rebuilt against the design
+  pass. Rows hold a 640px measure above 900px so a wrapped line on a laptop is not 190
+  characters wide.
+
+  **The wipe animates** — and it is the only thing in the product that does. The rows
+  fade in place holding their height, and only then does one collapse close the gap.
+  Doing both at once makes the list jump under the thumb that just tapped, and the
+  release stops feeling like a release.
+
+  **The empty page shows one blinking cursor and nothing else.** No hint, no
+  illustration, no "add your first item". A blank board is the feature.
+
+### Changed
+
+- **Light and Dark are now Whiteboard and Slate.** They were never themes — they are
+  the two surfaces the product already had, finally told what they are. Your existing
+  choice migrates; nobody gets reset to `system`.
+
+- **The wipe control is a word with the count inside it** — `wipe 3`, not `⌫ 3`. A
+  backspace glyph says the bytes are gone, and the whole argument of the product is that
+  they are not. At zero it renders nothing at all.
+
+- **Wiping completed no longer asks, at any count.** The confirm above ~10 items is
+  gone: the count is now inside the control, so you read the size of the action before
+  you tap it, and the recovery line makes taking it back one tap. Spec §7 amended.
+
+- **Wiping the whole page confirms by repetition, not by dialog.** The label swaps to
+  `again to confirm` and disarms itself after a few seconds, or when Settings closes. A
+  browser `confirm()` was the loudest surface in an app whose whole voice is quiet.
+
+- **The recovery line moved above the footer**, where it cannot be scrolled away or
+  buried by the keyboard — the line has to be where the regret is.
+
+- **Save status speaks in the machine voice**: `saved`, `saving`, `not saved`,
+  `updated elsewhere`. Lowercase, no terminal punctuation, and amber whenever it is
+  saying anything other than `saved`.
+
+- **Every glyph is drawn now.** They used to be unicode set in DM Mono — `⠿ ⧉ × ⇅ ⚙ ↗` —
+  and DM Mono has a codepoint for none of them, so all six were rendering from a
+  different platform fallback face on every OS.
+
 ## [0.4.0] — 2026-08-16
 
 knag has a mark: the block cursor. An amber block sitting after the wordmark — `knag▮`.
@@ -351,7 +409,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/danjamk/knag/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/danjamk/knag/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danjamk/knag/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danjamk/knag/compare/v0.1.11...v0.2.0

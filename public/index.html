@@ -16,91 +16,283 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/knag-icon-192.png" />
     <title>knag</title>
     <link rel="manifest" href="/manifest.json" />
+    <!-- The two faces are on the critical path for the first paint. `preload` overlaps
+         them with the stylesheet parse rather than waiting for the @font-face rule to
+         be reached, which is the difference between a swap you notice and one you do
+         not. -->
+    <link
+      rel="preload"
+      href="/fonts/familjen-grotesk-latin-var.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/dm-mono-latin-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <style>
-      /* 🔴 Every colour below is a token. The MVP hard-coded dark, which is the
-         right default and the wrong only option — knag gets opened outdoors and in
-         meetings, unreadable in the first and conspicuous in the second.
+      /* ══ Type ═══════════════════════════════════════════════════════════════
+         Two typefaces, two speakers. Familjen Grotesk is the human voice — the
+         page, the rows, the words you wrote. DM Mono is the machine voice — save
+         status, counts, the wordmark, build info, and raw view.
 
-         `system` follows the OS; `data-theme` on <html> overrides it in either
-         direction. Both blocks redefine the same names, so nothing outside :root
-         ever names a colour. */
+         Self-hosted and subset to the Google `latin` range by
+         `scripts/subset-fonts.sh`. Both are SIL OFL 1.1; the licence travels in
+         each file's own name table and in full at /fonts/OFL.txt.
+
+         🔴 DM Mono 500 is deliberately not shipped. Nothing asks for it, and every
+         face here is a blocking fetch in the service worker's precache. */
+
+      @font-face {
+        font-family: "DM Mono";
+        src: url("/fonts/dm-mono-latin-300.woff2") format("woff2");
+        font-weight: 300;
+        font-style: normal;
+        font-display: swap;
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+          U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2212, U+FEFF,
+          U+FFFD;
+      }
+      @font-face {
+        font-family: "DM Mono";
+        src: url("/fonts/dm-mono-latin-400.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+          U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2212, U+FEFF,
+          U+FFFD;
+      }
+      @font-face {
+        font-family: "Familjen Grotesk";
+        src: url("/fonts/familjen-grotesk-latin-var.woff2") format("woff2");
+        /* The axis floor is 400 — there is no lighter weight to reach for, which is
+           why the dark-mode corrections further down are load-bearing, not optional. */
+        font-weight: 400 700;
+        font-style: normal;
+        font-display: swap;
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+          U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2212, U+FEFF,
+          U+FFFD;
+      }
+
+      /* ══ Colour ═════════════════════════════════════════════════════════════
+         🔴 Every colour is a token, and nothing outside these blocks names one.
+
+         Two boards, one set of names. **Slate** is chalk on a blackboard and the
+         default; **Whiteboard** is marker on dry-erase, cool rather than warm. They
+         are not themes — they are the two surfaces the product already had.
+
+         **Amber is the only colour in the interface.** Everything else is chalk, ink
+         or a hairline. If a third colour appears, something has gone wrong — which is
+         why there is no `--danger` any more: the delete control is dim and a rejected
+         save is amber, where both used to be red.
+
+         Flat hexes rather than `color-mix()`, so a build without it renders
+         identically. Each tint records the mix it came from. */
       :root {
         color-scheme: dark;
-        --bg: #111;
-        --surface: #191919;
-        --raised: #1d1d1d;
-        --fg: #e8e8e8;
-        --dim: #888;
-        --faint: #4a4a4a;
-        --line: #333;
-        --field: #1a1a1a;
-        --button: #2a2a2a;
-        --accent: #6b8f6b;
-        --link: #7aa2d2;
-        --danger: #a05a5a;
-        --danger-bg: #3a2020;
-        --done: #666;
-        --badge-bg: #4a3a1a;
-        --badge-fg: #d8b878;
-        --mode-bg: #3a3a2a;
-        --mode-fg: #d8d8a8;
+
+        --board: #11150f; /* green-black, not pure black */
+        --ink: #d8d6cd; /* chalk: dusty, never #fff */
+        --dim: #6e7568; /* checked rows, glyphs at rest, secondary */
+        --hairline: #242a20;
+        --checkbox-rest: #4a5246;
+        --amber: #ffb000;
+        --amber-field: #3a2c05;
+        --amber-field-ink: #ffb000;
+        --selection: #2a331f;
+
+        --row-focus: #171c14; /* focused row ground (ink 4% on board) */
+        --row-drag: #1d231b; /* the row under the finger in Arrange */
+        --arrange-tint: #171b15; /* every row's ground in Arrange (ink 4%) */
+        --press-tint: #22271f; /* pressed glyph (ink 10%) */
+        --press-amber: #4a3a14; /* press-tint over amber-field */
+        --caret: #ffb000; /* the caret is machine voice */
+        --backdrop: rgb(0 0 0 / 0.55);
       }
 
-      /* Light. Warm rather than pure white — this is a legal pad, and a page of
-         plain text on #fff at arm's length in daylight is glare, not contrast. */
-      :root[data-theme="light"] {
+      :root[data-theme="whiteboard"] {
         color-scheme: light;
-        --bg: #faf9f7;
-        --surface: #f0eee9;
-        --raised: #eceae4;
-        --fg: #23211e;
-        --dim: #6b6862;
-        --faint: #a8a49c;
-        --line: #d8d5cd;
-        --field: #fff;
-        --button: #e8e5de;
-        --accent: #4a7a4a;
-        --link: #2d5f96;
-        --danger: #a03030;
-        --danger-bg: #f5dede;
-        --done: #a8a49c;
-        --badge-bg: #f0e2c0;
-        --badge-fg: #7a5f20;
-        --mode-bg: #e6e2c8;
-        --mode-fg: #5a5520;
+
+        --board: #edf1f3; /* cool, slightly blue — a whiteboard has a cool cast */
+        --ink: #1a1d1b;
+        --dim: #9aa09c;
+        --hairline: #e2e6e4;
+        --checkbox-rest: #b6bcb8;
+        --amber: #b07100; /* #ffb000 is illegible on a light ground */
+        --amber-field: #f6e7c6;
+        --amber-field-ink: #8a5800;
+        --selection: #dce6ea;
+
+        --row-focus: #e4e9eb;
+        --row-drag: #dce3e5;
+        --arrange-tint: #e6eaeb;
+        --press-tint: #dde1e2;
+        --press-amber: #edd9af;
+        --caret: #b07100;
+        --backdrop: rgb(0 0 0 / 0.4);
       }
 
+      /* Following the OS. Written as a plain `:root` inside the query so every name
+         stays a token and all three states — explicit slate, explicit whiteboard, and
+         the unstamped OS default — resolve to a complete palette.
+
+         🔴 This block and `:root[data-theme="whiteboard"]` have **equal specificity**
+         (0,2,0), and this one comes later, so on a light-preferring OS an explicit
+         whiteboard choice resolves through *here* rather than through the block above.
+         Every one of the six states lands on the right palette because the two lists
+         are identical — which is exactly the thing that has to stay true. Change a
+         whiteboard value in one place only and the app will look correct on a dark OS
+         and wrong on a light one, from the same setting. Change both. */
       @media (prefers-color-scheme: light) {
-        :root:not([data-theme="dark"]) {
+        :root:not([data-theme="slate"]) {
           color-scheme: light;
-          --bg: #faf9f7;
-          --surface: #f0eee9;
-          --raised: #eceae4;
-          --fg: #23211e;
-          --dim: #6b6862;
-          --faint: #a8a49c;
-          --line: #d8d5cd;
-          --field: #fff;
-          --button: #e8e5de;
-          --accent: #4a7a4a;
-          --link: #2d5f96;
-          --danger: #a03030;
-          --danger-bg: #f5dede;
-          --done: #a8a49c;
-          --badge-bg: #f0e2c0;
-          --badge-fg: #7a5f20;
-          --mode-bg: #e6e2c8;
-          --mode-fg: #5a5520;
+          --board: #edf1f3;
+          --ink: #1a1d1b;
+          --dim: #9aa09c;
+          --hairline: #e2e6e4;
+          --checkbox-rest: #b6bcb8;
+          --amber: #b07100;
+          --amber-field: #f6e7c6;
+          --amber-field-ink: #8a5800;
+          --selection: #dce6ea;
+          --row-focus: #e4e9eb;
+          --row-drag: #dce3e5;
+          --arrange-tint: #e6eaeb;
+          --press-tint: #dde1e2;
+          --press-amber: #edd9af;
+          --caret: #b07100;
+          --backdrop: rgb(0 0 0 / 0.4);
         }
       }
+
+      /* ══ Everything else ════════════════════════════════════════════════════ */
+      :root {
+        --font-body: "Familjen Grotesk", system-ui, sans-serif;
+        --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+        /* 🔴 16px is a hard floor on anything editable. Below it iOS Safari zooms the
+           viewport on focus and never zooms back. */
+        --size-row: 16px;
+        --size-body: 17px;
+        --size-machine: 13px; /* save status, recovery line, build info */
+        --size-micro: 11px; /* env badge */
+        --size-wordmark: 14px;
+
+        --leading-row: 1.4;
+        --leading-body: 1.55;
+
+        /* Dark-mode bloom correction. Slate only, and never inside a fence. */
+        --track-chalk: 0.012em;
+        --track-machine: 0.02em;
+
+        --space-1: 2px;
+        --space-2: 4px;
+        --space-3: 8px;
+        --space-4: 12px;
+        --space-5: 16px;
+        --space-6: 24px;
+
+        /* 🔴 Row geometry is fixed targets and flexing text: four have to fit one row
+           at 380px — grip 28, checkbox 18, text, copy 28. Degrade by wrapping the
+           text, never by shrinking a target. */
+        --row-pad-y: 5px;
+        --row-pad-left: 14px;
+        --row-pad-right: 10px;
+        --row-gap: 8px;
+        --row-min-height: 32px;
+        --blank-row-height: 20px;
+        --target: 28px;
+        --target-arrange: 36px; /* grip and delete in Arrange, where they are the aim */
+        --arrange-row-min: 44px;
+        --checkbox-size: 18px;
+
+        --radius-sm: 3px; /* controls, checkboxes */
+        --radius-md: 6px; /* fields, dialog buttons */
+        --radius-lg: 10px; /* the settings dialog, and nothing else */
+        --hairline-width: 1px;
+
+        /* About 72 characters. At 1280 a full-bleed wrapped row is a 190-character
+           line and the eye loses the return. */
+        --measure-wide: 640px;
+
+        /* 🔴 The wipe is the only animation in the product. Everything else is still.
+           These are read back by `app.ts` through getComputedStyle, which makes the
+           media query below the single place reduced motion is handled. */
+        --wipe-duration: 420ms;
+        --wipe-stagger: 26ms;
+        --wipe-collapse: 160ms;
+        --wipe-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+        --state-duration: 90ms; /* press and checked — a state change, not motion */
+        --cursor-blink: 1.06s;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        :root {
+          --wipe-duration: 1ms;
+          --wipe-stagger: 0ms;
+          --wipe-collapse: 1ms;
+          /* The row still leaves; the cursor simply stops blinking. */
+          --cursor-blink: 0s;
+        }
+      }
+
+      @keyframes knag-wipe {
+        from { opacity: 1; transform: none; }
+        to { opacity: 0; transform: translateX(-10px); }
+      }
+      @keyframes knag-blink {
+        0%, 48% { opacity: 1; }
+        49%, 100% { opacity: 0; }
+      }
+
       * { box-sizing: border-box; }
       html, body { height: 100%; }
+      html { background: var(--board); }
       body {
         margin: 0;
-        background: var(--bg);
-        color: var(--fg);
-        font: 16px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: var(--board);
+        color: var(--ink);
+        font: var(--size-body) / var(--leading-body) var(--font-body);
       }
+      ::selection { background: var(--selection); }
+
+      /* 🔴 Dark-mode text treatment. Light text on a dark ground blooms and reads a
+         weight heavier than the same setting inverted, and Familjen Grotesk's weight
+         axis starts at 400 — there is no lighter weight to drop to. So all three
+         corrections are load-bearing rather than optional: the chalk softened above,
+         the tracking here, and grayscale smoothing on the one platform still doing
+         subpixel AA.
+
+         Scoped to slate only. On a light ground subpixel AA is doing useful work and
+         turning it off makes the text too thin. */
+      :root:not([data-theme="whiteboard"]) body {
+        letter-spacing: var(--track-chalk);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme="slate"]) body {
+          letter-spacing: normal;
+          -webkit-font-smoothing: auto;
+          -moz-osx-font-smoothing: auto;
+        }
+      }
+      :root[data-theme="slate"] body {
+        letter-spacing: var(--track-chalk);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      /* 🔴 Never track a fence or raw view. Tracking undermines the column alignment
+         that makes monospace read as code — ADR-004 arriving from the other
+         direction: what is displayed must not diverge from the bytes. */
+      textarea.fence,
+      [data-body] { letter-spacing: normal; }
 
       /* Full-bleed editor. Safe-area insets matter because a home-screen PWA runs
          fullscreen — without them the notch eats the first line. */
@@ -120,148 +312,76 @@
         flex: 1;
         width: 100%;
         margin: 0;
-        padding: 1rem;
+        padding: var(--space-3) var(--row-pad-left);
         border: 0;
         resize: none;
         background: transparent;
         color: inherit;
-        font: inherit;
-        tab-size: 4;
-        /* 16px minimum, or iOS Safari zooms the viewport on focus and never zooms back. */
+        /* Raw is the escape hatch, and the one place a proportional face would be
+           wrong — you go there to see structure. Mono, and no tracking. */
+        font-family: var(--font-mono);
         font-size: 16px;
+        line-height: 1.5;
+        caret-color: var(--caret);
+        tab-size: 4;
       }
       [data-body]:focus { outline: none; }
 
-      /* List view. One row per block; blanks are thin spacers rather than absent,
-         so a row's position keeps matching its block index. */
+      /* ── Rows ──────────────────────────────────────────────────────────────
+         One row per block; blanks are thin spacers rather than absent, so a row's
+         position keeps matching its block index. */
       [data-rows] {
+        position: relative;
         flex: 1;
         overflow-y: auto;
         list-style: none;
         margin: 0;
-        padding: 0.5rem 0;
+        padding: var(--space-3) 0;
       }
-      /* 🔴 Four targets in one row at 380px (spec §7): grip, checkbox, text, copy.
-         Grip and copy are fixed at 28px and the text flexes between them, so the
-         layout degrades by truncating prose rather than by shrinking a tap target
-         below what a thumb can hit. */
-      /* A little breathing room on the left. The checkbox sat hard against the edge
-         and the list read as cramped — a legal pad has a margin. */
+
+      /* The empty page says nothing at all — no hint, no illustration, no "add your
+         first item". A blank board is the feature. Only the cursor, because the page
+         is live, sitting where the first row's text would begin. It goes the instant
+         the row takes focus and the real caret takes over. */
+      [data-rows][data-empty]::before {
+        content: "";
+        position: absolute;
+        left: var(--row-pad-left);
+        top: calc(var(--space-3) + var(--row-pad-y));
+        width: 8px;
+        height: 17px;
+        background: var(--amber);
+        animation: knag-blink var(--cursor-blink) step-end infinite;
+      }
+      [data-rows][data-empty]:focus-within::before { display: none; }
+
       [data-rows] li {
         display: flex;
         /* 🔴 Not `center`. A wrapped row is several lines tall, and centring puts its
            checkbox halfway down the block instead of beside the line it belongs to. */
         align-items: flex-start;
-        gap: 0.5rem;
-        padding: 0.3rem 0.6rem 0.3rem 0.85rem;
-        min-height: 2rem;
+        gap: var(--row-gap);
+        padding: var(--row-pad-y) var(--row-pad-right) var(--row-pad-y) var(--row-pad-left);
+        min-height: var(--row-min-height);
       }
-      /* Nudge the fixed-height controls onto the first line's baseline. */
-      [data-rows] li > * { margin-top: 0.15rem; }
-      [data-rows] li > textarea { margin-top: 0; }
-      .grip, .copy, .remove {
-        flex: none;
-        width: 28px;
-        height: 28px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        color: var(--faint);
-        font: inherit;
-        font-size: 0.9rem;
-        border-radius: 4px;
-      }
-      .copy { cursor: pointer; }
-      .copy:active { background: var(--button); }
-      /* The row being dragged. Kept subtle — the movement is the feedback. */
-      li.dragging { opacity: 0.4; background: var(--raised); }
 
-      /* 🔴 Reorder is a mode, not an always-on grip. A drag handle competing for the
-         same touch as an always-live text field is worse than one competing with a
-         tap target — which is what live rows made it (ADR-003 §5). */
-      [data-rows].reorder li { background: var(--surface); margin-bottom: 1px; }
-      [data-rows].reorder textarea.text,
-      [data-rows].reorder textarea.fence {
-        pointer-events: none;
-        color: var(--dim);
+      /* The laptop measure. Rows hold ~72 characters and stay left-aligned at the same
+         14px padding as the phone — not centred, because this page starts at the
+         top-left corner on every device. The footer stays edge to edge: the footer
+         belongs to the window, the page belongs to the measure. */
+      @media (min-width: 900px) {
+        [data-rows] li { max-width: var(--measure-wide); }
       }
-      /* Bigger in the mode than a normal control, because in the mode it is the
-         only thing you are aiming at. */
-      .reorder .grip, .reorder .remove { width: 36px; height: 36px; font-size: 1.05rem; }
-      .grip {
-        cursor: grab;
-        /* Without this, a drag starting on the grip selects text across rows on
-           desktop and fights the gesture on touch. */
-        touch-action: none;
-        user-select: none;
-      }
-      .remove { cursor: pointer; color: var(--danger); }
-      .remove:active { background: var(--danger-bg); }
 
-      /* The one destructive control in settings. Coloured rather than merely labelled,
-         because it sits among theme and view switches that cost nothing to press. */
-      button.danger { color: var(--danger); border-color: var(--danger); }
-      button.danger:active { background: var(--danger-bg); }
+      /* Where you are. A 4% ink ground — enough to say it, not enough to look like a
+         selected item in a list. */
+      [data-rows] li:focus-within { background: var(--row-focus); }
 
-      /* Reads as part of the status line rather than as a fourth control — it is
-         transient, and the footer's three-button rule is about permanent chrome. */
-      .restore { border: 0; background: none; color: var(--link); padding: 0 0.4rem;
-                 font: inherit; cursor: pointer; }
-      .restore:active { opacity: 0.6; }
-      [data-reorder].on { background: var(--mode-bg); color: var(--mode-fg); }
+      li.blank {
+        min-height: var(--blank-row-height);
+        padding: 0 var(--row-pad-right) 0 var(--row-pad-left);
+      }
 
-      li.blank { min-height: 1.25rem; padding: 0 0.6rem 0 0.85rem; }
-      li.fence { flex-wrap: wrap; align-items: flex-start; }
-      li.fence .grip { order: 1; }
-      li.fence .copy { order: 1; margin-left: auto; }
-      /* A fence is one block and inherently multi-line, so it gets the element that
-         is natively multi-line. This is what removes the last thing raw view was
-         required for (ADR-003 §2). */
-      textarea.fence {
-        flex: 1 1 100%;
-        order: 2;
-        margin: 0;
-        padding: 0.6rem 0.8rem;
-        border: 0;
-        border-radius: 6px;
-        background: var(--surface);
-        color: inherit;
-        font: inherit;
-        font-size: 16px;
-        resize: vertical;
-        white-space: pre;
-        overflow-x: auto;
-      }
-      textarea.fence:focus { outline: 1px solid var(--line); }
-
-      .open {
-        flex: none;
-        width: 28px;
-        height: 28px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--link);
-        text-decoration: none;
-        border-radius: 4px;
-      }
-      /* 🔴 `input[type="checkbox"]`, not `input`. A bare `li.checkbox input` also
-         matches the row's *text* input — and at (0,1,2) it outranks `input.text` at
-         (0,1,1), so `flex: none; width: 1.1rem` collapsed every checkbox row's text
-         to about 17px with the copy button jammed against it. The row still worked;
-         it was just unreadable. */
-      li.checkbox input[type="checkbox"] {
-        flex: none;
-        width: 1.15rem;
-        height: 1.15rem;
-        margin: 0;
-        padding: 0;
-        border-radius: 4px;
-        accent-color: var(--accent);
-      }
       /* 🔴 A textarea, not an input, purely so long rows wrap. An input is
          single-line by construction and truncates with an ellipsis, which turns a
          long note into `buy milk and also…` with no way to read it. Height is set
@@ -276,10 +396,12 @@
         border-radius: 0;
         background: transparent;
         color: inherit;
-        font: inherit;
+        font-family: var(--font-body);
         /* 16px or iOS zooms the viewport on focus and never zooms back. */
         font-size: 16px;
-        line-height: 1.4;
+        line-height: var(--leading-row);
+        letter-spacing: inherit;
+        caret-color: var(--caret);
         resize: none;
         overflow: hidden;
         /* Wraps, and still preserves every space and tab exactly. */
@@ -287,136 +409,445 @@
         word-break: break-word;
       }
       textarea.text:focus { outline: none; }
-      li.checked textarea.text { text-decoration: line-through; color: var(--done); }
+      /* Checked rows dim and strike **and stay**. They sit there until you wipe —
+         that is the nag working, and it is what makes the wipe satisfying. */
+      li.checked textarea.text { text-decoration: line-through; color: var(--dim); }
 
+      /* 🔴 `input[type="checkbox"]`, not `input`. A bare `li.checkbox input` also
+         matches the row's *text* field — and at (0,1,2) it outranks `textarea.text`
+         at (0,1,1), so `flex: none; width: 18px` collapsed every checkbox row's text
+         to about 17px with the copy button jammed against it. The row still worked;
+         it was just unreadable. */
+      li.checkbox input[type="checkbox"] {
+        appearance: none;
+        -webkit-appearance: none;
+        flex: none;
+        width: var(--checkbox-size);
+        height: var(--checkbox-size);
+        margin: 3px 0 0;
+        padding: 0;
+        border: var(--hairline-width) solid var(--checkbox-rest);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        transition: background-color var(--state-duration), border-color var(--state-duration);
+      }
+      li.checkbox input[type="checkbox"]:checked {
+        background: var(--amber);
+        border-color: var(--amber);
+      }
+      /* 🔴 The tick is the board showing through the amber, not a mark drawn on top —
+         the one place a checked control gets to be amber at all. Two rotated borders
+         rather than a data-URI SVG, because a data URI cannot read a custom property:
+         the tick would become the single hardcoded colour in this file, and it would
+         be wrong on one of the two boards. */
+      li.checkbox input[type="checkbox"]:checked::after {
+        content: "";
+        display: block;
+        width: 4px;
+        height: 8px;
+        margin: 1px 0 0 5px;
+        border: solid var(--board);
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+      li.checkbox input[type="checkbox"]:disabled { opacity: 0.5; }
+
+      /* A fence is one block and inherently multi-line, so it gets the element that
+         is natively multi-line. This is what removes the last thing raw view was
+         required for (ADR-003 §2).
+
+         No border and no field: a fence is code, not a container. Mono text in the
+         flow, so nothing implies the page has structure the bytes do not say it has. */
+      li.fence { flex-wrap: wrap; align-items: flex-start; }
+      li.fence .grip { order: 1; }
+      li.fence .copy { order: 1; margin-left: auto; }
+      textarea.fence {
+        flex: 1 1 100%;
+        order: 2;
+        margin: 0;
+        padding: var(--space-1) 0;
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-mono);
+        font-size: 16px;
+        line-height: 1.5;
+        caret-color: var(--caret);
+        resize: none;
+        overflow-x: auto;
+        white-space: pre;
+      }
+      textarea.fence:focus { outline: none; }
+
+      /* ── Row controls ──────────────────────────────────────────────────────
+         All glyphs are inline SVG on a 16-unit grid, 1.5 stroke, square caps. They
+         used to be unicode set in DM Mono, which has no codepoints for any of them —
+         so every one was already rendering from a different platform fallback face
+         inside a one-family system. `--dim` at rest, `--ink` when active, never
+         amber. */
+      .grip, .copy, .remove, .open {
+        flex: none;
+        width: var(--target);
+        height: var(--target);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--dim);
+        border-radius: var(--radius-sm);
+        text-decoration: none;
+      }
+      .copy, .remove { cursor: pointer; }
+      .copy:active, .remove:active, .open:active {
+        background: var(--press-tint);
+        color: var(--ink);
+      }
+      /* A link is the one row control that is not chrome — it is a place to go, so it
+         takes the machine voice like every other thing the app rather than the writer
+         put on screen. */
+      .open { color: var(--amber); }
+      .grip {
+        cursor: grab;
+        /* Without this, a drag starting on the grip selects text across rows on
+           desktop and fights the gesture on touch. */
+        touch-action: none;
+        user-select: none;
+      }
+
+      /* ── Arrange (ADR-003 §5) ──────────────────────────────────────────────
+         An explicit mode, not an always-on grip. A drag handle competing for the same
+         touch as an always-live text field is worse than one competing with a tap
+         target — which is what live rows made it. */
+      [data-rows].reorder li {
+        align-items: center;
+        min-height: var(--arrange-row-min);
+        background: var(--arrange-tint);
+        margin-bottom: 1px;
+      }
+      [data-rows].reorder textarea.text,
+      [data-rows].reorder textarea.fence {
+        pointer-events: none;
+        color: var(--dim);
+      }
+      /* Bigger in the mode than a normal control, because in the mode it is the only
+         thing you are aiming at. The row grows to 44 to hold them. */
+      .reorder .grip, .reorder .remove {
+        width: var(--target-arrange);
+        height: var(--target-arrange);
+      }
+      /* The row under the finger. Kept subtle — the movement is the feedback. */
+      li.dragging { opacity: 0.4; background: var(--row-drag); }
+
+      /* ── The wipe ──────────────────────────────────────────────────────────
+         🔴 The only animation in the product, and it is two stages on purpose. The
+         rows go transparent **in place, holding their height**, and only then does a
+         single collapse close the gap. Fading and collapsing at once makes the list
+         jump under the thumb that just tapped, and the release stops feeling like a
+         release and starts feeling like a mis-tap. */
+      li.wiping {
+        animation: knag-wipe var(--wipe-duration) var(--wipe-ease) forwards;
+        animation-delay: calc(var(--i) * var(--wipe-stagger));
+      }
+      li.wiping.closing {
+        max-height: 0;
+        min-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        overflow: hidden;
+        transition: max-height var(--wipe-collapse) var(--wipe-ease),
+          padding var(--wipe-collapse) var(--wipe-ease),
+          min-height var(--wipe-collapse) var(--wipe-ease);
+      }
+
+      /* ── The recovery line ─────────────────────────────────────────────────
+         🔴 Chrome, never a line in the document. Writing "wiped 6 · bring back" into
+         the page would put the app's words in the user's file and break byte
+         preservation, which is principle 3 of the product.
+
+         Pinned between the last row and the footer rule, so scrolling cannot carry it
+         away and the keyboard cannot bury it — the line has to be where the regret
+         is, which is at the bottom of the thumb's reach, in the corner the wipe
+         happened in. There is no history browser; this is the whole of the undo. */
+      [data-recovery] {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        padding: 10px var(--row-pad-left);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        color: var(--amber);
+      }
+      [data-recovery] .dot { opacity: 0.6; }
+      button[data-restore] {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        letter-spacing: inherit;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        cursor: pointer;
+      }
+      button[data-restore]:active { opacity: 0.6; }
+
+      /* ── The footer ────────────────────────────────────────────────────────
+         The only chrome in the app. There is no header — the page starts at the top
+         edge with your content. */
       footer {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        padding: 0.5rem 1rem;
-        border-top: 1px solid var(--line);
-        color: var(--dim);
-        font-size: 0.75rem;
+        gap: var(--space-4);
+        padding: var(--space-3) var(--space-4) var(--space-3) var(--row-pad-left);
+        border-top: var(--hairline-width) solid var(--hairline);
+        background: var(--board);
       }
-      footer button {
-        padding: 0.2rem 0.6rem;
-        font-size: 0.75rem;
-        border-radius: 4px;
-      }
-      /* Pushed left of the view toggle so the destructive control is never the one
-         under your thumb by accident. */
-      [data-clear] { margin-left: auto; }
 
-      /* Settings. Rare controls live here so the footer can stay at three. */
+      /* `knag▮` — DM Mono Light with the block cursor after it. It blinks, because a
+         blinking cursor is by definition a thing that will not leave you alone. It is
+         the nag, literally, and the only other moving thing in the product. */
+      .wordmark {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 2px;
+        flex: none;
+        font-family: var(--font-mono);
+        font-weight: 300;
+        font-size: var(--size-wordmark);
+        letter-spacing: 0.01em;
+        line-height: 1;
+        color: var(--ink);
+      }
+      .wordmark .block {
+        display: inline-block;
+        width: 7px;
+        height: 10px;
+        background: var(--amber);
+        animation: knag-blink var(--cursor-blink) step-end infinite;
+      }
+
+      /* The machine slot. `saved` sits back in `--dim`; anything else is the machine
+         speaking up and speaks in amber — including `offline` and `not saved`, which
+         are amber rather than red because a third colour means something went wrong. */
+      [data-save-status] {
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        color: var(--amber);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      [data-save-status][data-rest] { color: var(--dim); }
+
+      .bar-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+      }
+
+      /* 🔴 Wipe is a labelled control, never a glyph, and the count goes *inside* it:
+         you are told the size of the thing you are about to do, in the thing that
+         does it. `⌫` was the wrong promise — a backspace glyph says the bytes are
+         gone, and the whole argument of the product is that they are not.
+
+         At zero it renders nothing at all — no disabled state, no ghost. An empty
+         right edge of the footer is the page saying there is nothing to release. It
+         is the only coloured element on the bar and the only one that is a word. */
+      button[data-clear] {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border: var(--hairline-width) solid transparent;
+        border-radius: var(--radius-sm);
+        background: var(--amber-field);
+        color: var(--amber-field-ink);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        line-height: 1;
+        cursor: pointer;
+      }
+      button[data-clear]:active {
+        background: var(--press-amber);
+        border-color: var(--amber);
+        transition: background-color var(--state-duration);
+      }
+
+      .bar-glyph {
+        width: var(--target);
+        height: var(--target);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .bar-glyph:active { background: var(--press-tint); color: var(--ink); }
+      /* The mode has to be legible from the bar: in Arrange the page looks like a page
+         you cannot type in, which is exactly what it is. */
+      .bar-glyph[aria-pressed="true"] { background: var(--press-tint); color: var(--ink); }
+
+      /* Non-prod is labelled. Dev holds test content only and sits behind no
+         rate-limit rule, so it should never be mistakable for the real thing. */
+      .env {
+        flex: none;
+        padding: 1px 5px;
+        border-radius: var(--radius-sm);
+        background: var(--amber-field);
+        color: var(--amber-field-ink);
+        font-family: var(--font-mono);
+        font-size: var(--size-micro);
+        letter-spacing: var(--track-machine);
+        line-height: 1.4;
+      }
+
+      /* ── Settings ──────────────────────────────────────────────────────────
+         Rare controls live here so the footer can stay short. The dialog is the only
+         10px radius in the product and the only place a backdrop appears. */
       dialog[data-settings] {
         width: min(28rem, 100vw - 2rem);
         padding: 0;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        background: var(--bg);
-        color: var(--fg);
+        border: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-lg);
+        background: var(--board);
+        color: var(--ink);
       }
-      dialog[data-settings]::backdrop { background: rgb(0 0 0 / 0.55); }
-      dialog[data-settings] form { padding: 1.25rem; }
-      dialog[data-settings] h2 { font-size: 1rem; margin: 0 0 1rem; }
+      dialog[data-settings]::backdrop { background: var(--backdrop); }
+      dialog[data-settings] form { padding: var(--space-5); }
+      dialog[data-settings] h2 {
+        margin: 0 0 18px;
+        font-family: var(--font-body);
+        font-size: 18px;
+        font-weight: 500;
+      }
       dialog[data-settings] h3 {
-        font-size: 0.75rem;
-        font-weight: 600;
+        margin: 0 0 var(--space-3);
+        font-family: var(--font-mono);
+        font-size: var(--size-micro);
+        font-weight: 400;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
         color: var(--dim);
-        margin: 0 0 0.5rem;
       }
-      dialog[data-settings] section { margin-bottom: 1.5rem; }
-      .choices { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+      dialog[data-settings] section { margin-bottom: var(--space-6); }
+      .choices { display: flex; gap: var(--space-3); flex-wrap: wrap; }
       .choices button {
         flex: 1;
         min-width: 5rem;
-        padding: 0.5rem;
-        font-size: 0.85rem;
-        border-radius: 6px;
-        border: 1px solid var(--line);
-        background: var(--field);
-        color: inherit;
+        padding: 9px 10px;
+        border-radius: var(--radius-md);
+        border: var(--hairline-width) solid var(--hairline);
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-mono);
+        font-size: 16px;
+        letter-spacing: var(--track-machine);
         cursor: pointer;
       }
       .choices button[aria-pressed="true"] {
-        background: var(--mode-bg);
-        color: var(--mode-fg);
-        border-color: var(--mode-fg);
+        border-color: var(--amber);
+        background: var(--amber-field);
+        color: var(--amber-field-ink);
       }
-      .note { margin: 0.6rem 0 0; font-size: 0.75rem; color: var(--dim); line-height: 1.4; }
+      /* The whole-page wipe. It carries its own count and confirms **by repetition** —
+         a second tap within a few seconds, not a browser dialog. See `app.ts`. */
+      .choices button[data-wipe-all] { flex: 1 1 100%; }
+      .choices button[data-wipe-all][data-armed] {
+        border-color: var(--amber);
+        background: var(--amber-field);
+        color: var(--amber-field-ink);
+      }
+      .note {
+        margin: 10px 0 0;
+        font-size: 14px;
+        color: var(--dim);
+        line-height: 1.45;
+      }
       /* Build info: one tap from anywhere, because "is my change live" cost a round
-         trip once already. Moved off the footer, not buried. */
+         trip once already. Moved off the footer, not buried. The values are the
+         machine speaking, so they are amber. */
       [data-build-detail] {
         display: grid;
         grid-template-columns: auto 1fr;
-        gap: 0.3rem 1rem;
+        gap: var(--space-2) var(--space-5);
         margin: 0;
-        font-size: 0.75rem;
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
       }
       [data-build-detail] dt { color: var(--dim); }
-      [data-build-detail] dd { margin: 0; word-break: break-all; }
+      [data-build-detail] dd { margin: 0; color: var(--amber); word-break: break-all; }
       .done {
         width: 100%;
-        padding: 0.6rem;
-        border-radius: 6px;
-        border: 1px solid var(--line);
-        background: var(--button);
-        color: inherit;
+        padding: 11px;
+        border-radius: var(--radius-md);
+        border: var(--hairline-width) solid var(--hairline);
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 16px;
         cursor: pointer;
       }
+      .done:active { background: var(--press-tint); }
 
-      /* Non-prod is labelled. Dev holds test content only and sits behind no
-         rate-limit rule, so it should not be mistakable for the real thing. */
-      .env {
-        padding: 0.05rem 0.35rem;
-        border-radius: 3px;
-        background: var(--badge-bg);
-        color: var(--badge-fg);
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-      }
-      [data-build] { cursor: help; }
-
+      /* ── Login ─────────────────────────────────────────────────────────────
+         One passphrase, an optional device label. No sign-up and no onboarding —
+         there is nothing to onboard. */
       [data-login] {
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
+        gap: var(--space-4);
         max-width: 28rem;
         margin: 0 auto;
-        padding: max(3rem, env(safe-area-inset-top)) 1rem 1rem;
+        padding: max(56px, env(safe-area-inset-top)) var(--space-5) var(--space-5);
       }
-      [data-login] h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem; }
+      [data-login] .wordmark { font-size: 26px; margin-bottom: var(--space-3); }
+      [data-login] .wordmark .block { width: 13px; height: 19px; }
 
-      /* 🔴 Scoped to the login form and the footer. A bare `input, button` selector
-         also styles every row's text input and checkbox — 0.75rem of padding and a
-         border on each — which is how a row checkbox ended up rendering at ~45px. A
-         global element selector in a document made of inputs is a rule that hits
-         everything you did not mean. */
+      /* 🔴 Scoped to the login form. A bare `input, button` selector also styles
+         every row's text field and every row checkbox — padding and a border on each
+         — which is how a row checkbox once rendered at ~45px. A global element
+         selector in a document made of inputs is a rule that hits everything you did
+         not mean. */
       [data-login] input,
-      [data-login] button,
-      footer button {
-        font: inherit;
+      [data-login] button {
+        padding: var(--space-4);
+        border-radius: var(--radius-md);
+        border: var(--hairline-width) solid var(--hairline);
+        background: transparent;
+        color: var(--ink);
         font-size: 16px;
-        border-radius: 6px;
-        border: 1px solid var(--line);
-        background: var(--field);
-        color: inherit;
       }
-      [data-login] input, [data-login] button { padding: 0.75rem; }
-      [data-login] button, footer button { background: var(--button); cursor: pointer; }
+      [data-login] input { font-family: var(--font-mono); caret-color: var(--caret); }
+      [data-login] input:focus { outline: none; border-color: var(--dim); }
+      [data-login] button { font-family: var(--font-body); cursor: pointer; }
+      [data-login] button:active { background: var(--press-tint); }
       button:disabled { opacity: 0.5; cursor: default; }
 
       [hidden] { display: none !important; }
-      [data-error] { color: var(--danger); min-height: 1.5rem; }
+      /* Errors say what happened, in the machine slot's voice. Amber, not red. */
+      [data-error] {
+        min-height: 1.4rem;
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        color: var(--amber);
+      }
     </style>
   </head>
   <body>
     <form data-login hidden>
-      <h1>knag</h1>
+      <span class="wordmark">knag<span class="block" aria-hidden="true"></span></span>
       <!-- autocomplete="current-password" so the browser and the iOS Keychain offer
            to save it. Retyping a long random passphrase on a phone is the friction
            that decides whether this app gets opened. -->
@@ -458,22 +889,34 @@
            index. -->
       <ul data-rows hidden></ul>
 
+      <!-- 🔴 Above the footer, not in it. It is transient chrome that appears after an
+           action and stays until the next wipe, and the footer's control budget is
+           about what sits permanently above the keyboard. -->
+      <div data-recovery hidden>
+        <span data-recovery-count></span>
+        <span class="dot" aria-hidden="true">·</span>
+        <button type="button" data-restore>bring back</button>
+      </div>
+
       <!-- 🔴 Three controls, one conditional. The footer is the only chrome in the
            app and it sits right above the keyboard on a phone — every control here
            is one the reader steps over to reach the document. Rare things live in
            settings, not on this bar. -->
       <footer>
-        <span data-save-status>—</span>
-        <!-- 🔴 Chrome, never a line in the document. Writing "wiped 6 · bring back"
-             into the page would put the app's words in the user's file and break byte
-             preservation, which is principle 3 of the product. It lives beside the
-             save status because that is where the eye already goes after an action. -->
-        <button type="button" data-restore hidden class="restore"></button>
-        <button type="button" data-clear hidden title="clear completed">
-          ⌫ <span data-clear-count>0</span>
-        </button>
-        <button type="button" data-reorder title="rearrange, copy, delete">⇅</button>
-        <button type="button" data-settings-open title="settings">⚙</button>
+        <span class="wordmark">knag<span class="block" aria-hidden="true"></span></span>
+        <span class="env" data-env hidden></span>
+        <span data-save-status data-rest>—</span>
+        <span class="bar-right">
+          <button type="button" data-clear hidden>
+            wipe <span data-clear-count>0</span>
+          </button>
+          <button type="button" class="bar-glyph" data-reorder aria-pressed="false" title="arrange">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M5.5 13.2 V3.2"/><path d="M3 5.7 L5.5 3.2 L8 5.7"/><path d="M10.5 2.8 V12.8"/><path d="M8 10.3 L10.5 12.8 L13 10.3"/></svg>
+          </button>
+          <button type="button" class="bar-glyph" data-settings-open title="settings">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M2.5 4.5 H13.5"/><path d="M2.5 8 H13.5"/><path d="M2.5 11.5 H13.5"/><rect x="9" y="3" width="3" height="3" fill="currentColor" stroke="none"/><rect x="4" y="6.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="7.5" y="10" width="3" height="3" fill="currentColor" stroke="none"/></svg>
+          </button>
+        </span>
       </footer>
     </div>
 
@@ -484,39 +927,46 @@
       <form method="dialog">
         <h2>Settings</h2>
 
+        <!-- 🔴 Board, not Theme. These are not themes — they are the two surfaces the
+             product already had, finally told what they are. Slate is chalk on a
+             blackboard; Whiteboard is marker on dry-erase. There is no third board. -->
         <section>
-          <h3>Theme</h3>
+          <h3>Board</h3>
           <div class="choices">
-            <button type="button" data-theme-set="system">System</button>
-            <button type="button" data-theme-set="light">Light</button>
-            <button type="button" data-theme-set="dark">Dark</button>
+            <button type="button" data-theme-set="slate">slate</button>
+            <button type="button" data-theme-set="whiteboard">whiteboard</button>
+            <button type="button" data-theme-set="system">system</button>
           </div>
         </section>
 
         <section>
           <h3>View</h3>
           <div class="choices">
-            <button type="button" data-view-set="list">List</button>
-            <button type="button" data-view-set="raw">Raw text</button>
+            <button type="button" data-view-set="list">list</button>
+            <button type="button" data-view-set="raw">raw</button>
           </div>
           <p class="note">
             Raw is the escape hatch — bulk paste, sweeps, anything the rows cannot
-            express. The editor is where you land.
+            express. The page is where you land.
           </p>
         </section>
 
-        <!-- 🔴 Here, not on the footer. The bar is capped at three controls and the
-             rule is that rare things live in settings — wiping the whole page is rare,
-             sweeping the done items is not. Placement is provisional and the design
-             pass owns where it finally lands (#71); the behaviour below is not. -->
+        <!-- 🔴 Here, not on the footer. Wiping completed is every morning; wiping the
+             page is when a project ends, and the two frequencies are not comparable.
+             One control cannot hold both without becoming a menu or a long-press —
+             and the one place you must not hide a destructive branch is inside the
+             control people tap without looking. -->
         <section>
-          <h3>Wipe</h3>
+          <h3>Page</h3>
           <div class="choices">
-            <button type="button" data-wipe-all class="danger">Wipe the page</button>
+            <button type="button" data-wipe-all>
+              <span data-wipe-all-label>wipe the page</span>
+              <span data-wipe-all-count>0</span>
+            </button>
           </div>
           <p class="note">
-            Removes everything, finished or not. Kept in history — ask the agent for
-            it back.
+            Everything on the page, finished or not. Recoverable from the line at the
+            bottom of the page.
           </p>
         </section>
 

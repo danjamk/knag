@@ -44,6 +44,30 @@ check "manifest served"             200 "$(status "${BASE}/manifest.json")"
 check "/api/doc rejects anonymous"  401 "$(status "${BASE}/api/doc")"
 check "/mcp rejects anonymous"      401 "$(status "${BASE}/mcp")"
 
+# 🔴 Checked by **content type, never by status code.** `not_found_handling:
+# "single-page-application"` answers a missing asset with the PWA shell and a **200**,
+# verified against a real wrangler server:
+#
+#     GET /fonts/does-not-exist.woff2  →  200 text/html
+#
+# So a status check passes for a file that is not there, which is worse than no check.
+# Same trap as the `.well-known` routes below, arriving through static assets instead
+# of the router.
+#
+# It matters here because a face that did not upload is otherwise **completely
+# silent**: `font-display: swap` renders the fallback stack, the service worker's
+# `cache.addAll` rejects and takes the whole install with it, and nothing reports
+# anything. The app simply comes up in system-ui and stops working offline — which
+# nobody diagnoses as a deploy problem.
+served_as() {
+  curl -sS -o /dev/null -w '%{content_type}' --max-time 10 "$1" 2>/dev/null
+}
+for face in familjen-grotesk-latin-var dm-mono-latin-400 dm-mono-latin-300; do
+  check "font ${face}" "font/woff2" "$(served_as "${BASE}/fonts/${face}.woff2")"
+done
+check "app icon served"   "image/png" "$(served_as "${BASE}/icons/knag-icon-192.png")"
+check "MCP icon served"   "image/png" "$(served_as "${BASE}/icons/mcp-icon-slate-256.png")"
+
 # 🔴 The only place any of this is observable. `not_found_handling:
 # "single-page-application"` answers an unrouted path with the PWA shell and a 200, so a
 # missing `run_worker_first` entry does not 404 — it serves HTML where a connector
