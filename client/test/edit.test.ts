@@ -54,6 +54,63 @@ describe("splitAt — Enter", () => {
     expect(result).toMatchObject({ focusIndex: 1, focusOffset: 0 });
   });
 
+  // ── Bullets (#85) ──────────────────────────────────────────────────────────
+
+  it("🔴 continues a hyphen bullet", () => {
+    // The bytes really do gain `- `. Nothing is rendered that the file does not say,
+    // which is what separates this from styling a bullet — the thing ADR-004 rules out
+    // and ADR-003 §4 declined to trigger on.
+    const result = splitAt("- milk", 0, 6);
+
+    expect(result.body).toBe("- milk\n- ");
+    // 🔴 Offset 2, not 0 — **after** the marker. A checkbox's prefix is stripped by
+    // `displayText` and is not in its editor, so 0 is already past it; a bullet is a
+    // plain text block whose first characters really are `- `, so 0 lands in front of
+    // them and the next keystroke produces `eggs- `. Found by a browser test, because
+    // the body is identical either way.
+    expect(result).toMatchObject({ focusIndex: 1, focusOffset: 2 });
+  });
+
+  it("🔴 copies the marker rather than normalising it", () => {
+    // A `*` bullet continues as `*`. Tidying it to `-` would be knag editing a line the
+    // user did not touch, which is principle 3.
+    expect(splitAt("* milk", 0, 6).body).toBe("* milk\n* ");
+  });
+
+  it("carries the indentation verbatim", () => {
+    expect(splitAt("    - nested", 0, 12).body).toBe("    - nested\n    - ");
+    expect(splitAt("\t- tabbed", 0, 9).body).toBe("\t- tabbed\n\t- ");
+  });
+
+  it("puts the tail on the new bullet when splitting mid-line", () => {
+    expect(splitAt("- milk and eggs", 0, 6).body).toBe("- milk\n-  and eggs");
+  });
+
+  it("🔴 exits the list when Enter lands on an empty bullet", () => {
+    // Same contract as the empty checkbox. Without it there is no way to stop making
+    // bullets except reaching for raw view — the mode-switch ADR-003 removed.
+    const result = splitAt("- milk\n- ", 1, 2);
+
+    expect(result.body).toBe("- milk\n");
+    expect(result).toMatchObject({ focusIndex: 1, focusOffset: 0 });
+  });
+
+  it("leaves a line that merely starts with a dash alone", () => {
+    // `-5 degrees` and `--` are not bullets. The space after the marker is the whole
+    // of the rule, and without it a minus sign starts a list.
+    expect(splitAt("-5 degrees", 0, 10).body).toBe("-5 degrees\n");
+    expect(splitAt("--", 0, 2).body).toBe("--\n");
+    expect(splitAt("—em dash", 0, 8).body).toBe("—em dash\n");
+  });
+
+  it("🔴 does not treat a checkbox as a bullet", () => {
+    // `- [ ] x` starts with `- `, so a naive bullet rule matches it and produces
+    // `- - [ ] ` on the next line. The checkbox branch owns those and runs first, but
+    // the pattern refuses them too rather than relying on ordering.
+    expect(splitAt("- [ ] task", 0, 10).body).toBe("- [ ] task\n- [ ] ");
+    expect(splitAt("- [x] done", 0, 10).body).toBe("- [x] done\n- [ ] ");
+  });
+
   it("does not split a fence — its textarea handles Enter natively", () => {
     const body = "```\ncode\n```";
     expect(splitAt(body, 0, 2).body).toBe(body);

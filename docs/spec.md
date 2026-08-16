@@ -439,6 +439,22 @@ is the one catastrophic data-loss path and it costs ten lines to close.
 - Immediately on blur
 - Immediately on checkbox toggle, reorder, or clear
 
+🔴 **Writes are serialised on the client** (#83). While one `PUT` is in flight the next
+is queued rather than sent, and at most one is queued — the follow-up reads `body` and
+`baseVersion` when it runs, so it already carries the newest of both.
+
+Without this, two immediate saves overlap and the second carries the `base_version` the
+first has not yet updated, so the server rejects it as conflicting. With one operator
+and one device, the "other writer" is your own previous keystroke — and because a 409
+is resolved by loading the server's copy over the local one, **the losing write's
+keystrokes are discarded** while the status line calls it a reload. Six rapid `Enter`
+presses reproduced it.
+
+A genuine cross-device 409 still reloads and still says so. Serialising removes the
+self-inflicted conflicts only; nothing swallows a real one. Any request carrying
+`base_version` — a wipe, an undo — must **await** the flush before it sends, or it is
+stale by construction.
+
 ---
 
 ## 7. Client — list view (default)
@@ -496,8 +512,23 @@ behave like line boundaries:
 |---|---|
 | `Enter` at end of row | new empty row below, focused |
 | `Enter` mid-row | split the block in two |
+| `Enter` on a checkbox or bullet | continue the list with the same marker |
+| `Enter` on an *empty* checkbox or bullet | drop the marker and leave the list |
 | `Backspace` at position 0 | merge into the previous row, caret at the join |
-| `↑` / `↓` at the boundary | move focus between rows |
+| `↑` / `←` at the start of a row | previous row, caret at its **end** |
+| `↓` / `→` at the end of a row | next row, caret at 0 |
+
+🔴 A boundary key crosses a row **only** with the caret exactly at the boundary and
+**nothing selected**. Anywhere inside a line the arrows belong to the field — a row is
+a textarea that can be several visual lines tall, and intercepting inside one makes a
+long wrapped line unnavigable. A live selection is not a caret: every editor collapses
+it on an arrow, so a boundary jump would eat the gesture.
+
+Nothing is skipped. A blank row is a place you can type, and stepping over one would
+make the arrows disagree with what is on screen.
+
+The horizontal pair was missing until #84 — the caret hit the end of a row and stopped
+dead, so moving through the page by keyboard meant reaching for `↓` and then `Home`.
 
 **Fenced blocks are an inline `<textarea>`** — one block, natively multi-line,
 and the reason raw view is no longer required for anything.
@@ -518,6 +549,16 @@ reason converting on space is safe rather than merely fast.
 **A single `- ` stays a literal dash.** Rendering it as a bullet would be the
 first place in knag where the display differs from the bytes, and principle 3
 has held absolutely. The gain is cosmetic; the precedent is not.
+
+🔴 **`Enter` continuing a bullet is not the same thing** (#85). Continuing inserts two
+literal characters — the file really does gain `- `, it is visible in raw view, and
+backspace removes it like any other text. Nothing is *displayed* that the bytes do not
+say, which is the whole of the rule above. It is what checkbox continuation has always
+done.
+
+The marker is **copied, never normalised**: a `*` continues as `*` and indentation
+carries across verbatim. Ordered lists are out — continuing `1. ` means renumbering,
+which would be the first edit knag makes to a line the user did not touch.
 
 ### Spellcheck and autocorrect
 
