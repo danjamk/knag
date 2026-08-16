@@ -84,6 +84,20 @@ summarises the phase rather than pretending it was written as it happened.
   Nothing a person can see changes. It matters because it is the first thing anyone
   debugging the connector will hit, and it was pointing at the wrong problem.
 
+- **The browser suite is no longer flaky** ([#69](https://github.com/danjamk/knag/issues/69)).
+  It failed roughly a fifth of CI runs, and the failures looked like a dozen broken tests
+  when they were one dead server: `wrangler dev` exits fatally partway through a long run,
+  and Playwright never restarts it, so everything after that point fails at `page.goto`
+  with "Could not connect". It had already sent a PR that touched only shell scripts to a
+  red CI.
+
+  Each spec file now gets its own dev server. Measured over five runs each on a clean
+  tree: **one server for twenty tests failed 4 of 5; one server per file failed 0 of 10.**
+
+  **No retries were added, deliberately.** They were the obvious fix and would have hidden
+  both this failure and the next real one — and this suite is the only place several of
+  knag's guarantees are checked at all.
+
 - **`make health` never checked which environment answered.** It compared the build id
   and stopped there — but the build id is identical whichever environment a deploy lands
   in, so the one failure `KNAG_ENV` exists to catch was the one thing the check could not

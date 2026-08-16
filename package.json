@@ -23,7 +23,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p browser/tsconfig.json",
     "check": "pnpm typecheck && pnpm test",
     "deploy": "wrangler deploy --config worker/wrangler.jsonc",
-    "test:browser": "playwright test"
+    "test:browser": "bash scripts/browser-tests.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
