@@ -5,7 +5,7 @@ import { type Principal, unauthorized } from "./auth.js";
 import type { Env } from "./env.js";
 import { isCompleted, parse, serialize } from "./blocks.js";
 import { loadHistory, reportingZone, resolveRange } from "./history.js";
-import { clearCompleted, readDocument, writeDocument } from "./store.js";
+import { type WipeScope, readDocument, wipe, writeDocument } from "./store.js";
 
 /**
  * The MCP server — the agent half of the product (spec §10, §14.6).
@@ -330,18 +330,36 @@ function registerWipe(server: McpServer, env: Env): void {
     {
       title: "Wipe the page",
       description: [
-        "Remove every checked item (`- [x] …`) from the page, at any indentation, and record what was removed.",
+        "Remove lines from the page and record what went. This is the product's central gesture: checked items deliberately sit on the page nagging until they are wiped.",
         "",
-        "This is the same action as the wipe control in the app, and it is the product's central gesture: checked items deliberately sit on the page nagging until they are wiped. Nothing is lost — the removed lines are written to the history as the authoritative record of what was finished, and the page as it stood before the wipe is kept.",
+        "Two scopes:",
         "",
-        "Unchecked lines are never touched. Wiping a page with nothing checked succeeds and reports zero.",
+        "- `completed` (the default) removes every checked item (`- [x] …`), at any indentation. Unchecked lines are never touched.",
+        "- `all` empties the page entirely. For a list you are simply done with — a grocery list, where you do not tick the last three things.",
+        "",
+        "🔴 `all` removes work that was never finished. Prefer `completed` unless the user has clearly asked for the whole page to go, and say which one you used.",
+        "",
+        "Nothing is lost either way: the page as it stood before the wipe is kept in the history. Only the *checked* lines are recorded as finished, so a wipe-all does not inflate what you got done.",
+        "",
+        "Wiping a page with nothing to remove succeeds and reports zero.",
         "",
         "🔴 Takes a `base_version` for the same reason knag_write does, and conflicts the same way.",
       ].join("\n"),
-      inputSchema: { base_version: BASE_VERSION },
+      inputSchema: {
+        base_version: BASE_VERSION,
+        scope: z
+          .enum(["completed", "all"])
+          .optional()
+          .describe(
+            "`completed` (default) removes checked items only. `all` empties the page, including unfinished lines.",
+          ),
+      },
       outputSchema: {
         version: z.number(),
-        wiped_count: z.number().describe("How many checked lines were removed."),
+        wiped_count: z.number().describe("How many lines were removed from the page."),
+        cleared_count: z
+          .number()
+          .describe("How many of them were checked, and so recorded as finished."),
       },
       annotations: {
         readOnlyHint: false,
@@ -351,36 +369,58 @@ function registerWipe(server: McpServer, env: Env): void {
         openWorldHint: false,
       },
     },
-    async ({ base_version }) => {
+    async ({ base_version, scope }) => {
+      const wipeScope: WipeScope = scope === "all" ? "all" : "completed";
       const current = await readDocument(env);
       const blocks = parse(current.body);
       const completed = blocks.filter(isCompleted);
 
+      // `parse("")` yields a single blank block, so an empty page is detected on the
+      // body rather than the block count — otherwise wiping nothing would report one.
+      const wipedCount =
+        wipeScope === "all" ? (current.body === "" ? 0 : blocks.length) : completed.length;
+
       // Reported as success with a count of zero rather than as an error: the caller
-      // asked for the checked items to be gone, and they are.
-      if (completed.length === 0) {
+      // asked for those lines to be gone, and they are.
+      if (wipedCount === 0) {
         return ok(
-          { version: current.version, wiped_count: 0 },
-          `nothing to wipe — no checked items on the page, still at version ${current.version}`,
+          { version: current.version, wiped_count: 0, cleared_count: 0 },
+          wipeScope === "all"
+            ? `nothing to wipe — the page is already empty, still at version ${current.version}`
+            : `nothing to wipe — no checked items on the page, still at version ${current.version}`,
         );
       }
 
-      const result = await clearCompleted(env, {
+      const result = await wipe(env, {
         baseVersion: base_version,
-        body: serialize(blocks.filter((block) => !isCompleted(block))),
-        // The full source line, not the task text — the record should read the way the
-        // page read.
+        body: wipeScope === "all" ? "" : serialize(blocks.filter((block) => !isCompleted(block))),
+        // The finished lines only, under both scopes — see the note in store.ts. The
+        // full source line, not the task text, so the record reads the way the page read.
         clearedLines: completed.map((block) => block.raw),
         source: "agent",
+        scope: wipeScope,
+        wipedCount,
       });
 
       if (result.status === "conflict") {
         return failed(conflictText("this wipe", base_version, result.current));
       }
 
+      // Deadpan, and honest about the two numbers when they differ: on a wipe-all the
+      // count of things removed is not the count of things finished, and an agent
+      // reporting the larger number as an achievement would be lying to the user.
+      const summary =
+        wipeScope === "all"
+          ? `wiped the page — ${result.wiped_count} lines, ${result.cleared_count} of them done`
+          : `wiped ${result.wiped_count}`;
+
       return ok(
-        { version: result.version, wiped_count: result.cleared_count },
-        `wiped ${result.cleared_count} · page now at version ${result.version}`,
+        {
+          version: result.version,
+          wiped_count: result.wiped_count,
+          cleared_count: result.cleared_count,
+        },
+        `${summary} · page now at version ${result.version}`,
       );
     },
   );

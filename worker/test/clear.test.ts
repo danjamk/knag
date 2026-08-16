@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearCompleted, readDocument } from "../src/store.js";
+import { readDocument, wipe } from "../src/store.js";
 
 /**
  * Clear-completed — the sweep, and the only destructive path in the product.
@@ -194,11 +194,10 @@ describe("a write landing between the read and the batch", () => {
       body: SURVIVORS,
       clearedLines: ["- [x] done one", "  - [X] nested done"],
       source: "pwa" as const,
+      scope: "completed" as const,
+      wipedCount: 2,
     };
-    const results = await Promise.all([
-      clearCompleted(env, request),
-      clearCompleted(env, request),
-    ]);
+    const results = await Promise.all([wipe(env, request), wipe(env, request)]);
 
     expect(results.filter((r) => r.status === "cleared")).toHaveLength(1);
     expect(results.filter((r) => r.status === "conflict")).toHaveLength(1);
@@ -254,5 +253,98 @@ describe("the route", () => {
     expect((await clear({})).status).toBe(400);
     expect((await clear({ base_version: "1" })).status).toBe(400);
     expect((await clear({ base_version: -1 })).status).toBe(400);
+  });
+});
+
+describe("wipe-all (#58)", () => {
+  beforeEach(async () => {
+    await put({ body: MIXED, base_version: SEEDED_VERSION });
+  });
+
+  it("empties the page, including lines that were never finished", async () => {
+    const res = await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
+
+    expect(res.status).toBe(200);
+    expect((await readDocument(env)).body).toBe("");
+  });
+
+  it("🔴 records only the checked lines as finished, not everything it removed", async () => {
+    // The decision this feature turns on. `cleared_items` answers "what did I get
+    // done", and it is what /api/history reports as authoritative precisely because a
+    // line-set diff cannot be trusted for that question. A wipe-all removes work that
+    // was never finished; writing those lines here would inflate the done-record and
+    // corrupt the one table whose job is to stay honest.
+    //
+    // MIXED has six blocks, two of them checked.
+    await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
+
+    const items = await clearedItems();
+    expect(items.map((i) => i.line_text)).toEqual(["- [x] done one", "  - [X] nested done"]);
+  });
+
+  it("reports the two counts separately, because they mean different things", async () => {
+    const res = await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
+
+    // Six rows left the page; two of them were things anyone actually finished.
+    expect(await res.json()).toMatchObject({ wiped_count: 6, cleared_count: 2 });
+  });
+
+  it("records a distinct event_type, so history can tell the two apart", async () => {
+    // Without this, history shows an entry claiming two items were cleared and then,
+    // on the next ordinary save, four more lines vanishing with nothing to explain
+    // them. The column is free text with no CHECK, so this costs no migration.
+    await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
+
+    const events = (await revisions()).map((r) => r.event_type);
+    expect(events).toContain("wipe_all");
+    expect(events).not.toContain("clear_completed");
+  });
+
+  it("seals a snapshot of the whole pre-wipe page, which is what makes it recoverable", async () => {
+    // 🔴 #59 restores by diffing this snapshot against the post-wipe body — not by
+    // reading cleared_items, which deliberately does not hold the unfinished lines.
+    // If this snapshot is ever unsealed or partial, undo silently loses work.
+    await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
+
+    const snapshot = (await revisions()).find((r) => r.event_type === "wipe_all");
+    expect(snapshot?.body).toBe(MIXED);
+    expect(snapshot?.is_sealed).toBe(1);
+  });
+
+  it("is a no-op on an already-empty page, reported as success", async () => {
+    await put({ body: "", base_version: SEEDED_VERSION + 1 });
+    const emptyVersion = (await readDocument(env)).version;
+
+    const res = await clear({ base_version: emptyVersion, scope: "all" });
+
+    // `parse("")` yields one blank block, so a block count would report having removed
+    // something from a page that had nothing on it.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ wiped_count: 0, cleared_count: 0 });
+    expect((await readDocument(env)).version).toBe(emptyVersion);
+  });
+
+  it("conflicts on a stale base_version without touching anything", async () => {
+    const res = await clear({ base_version: SEEDED_VERSION, scope: "all" });
+
+    expect(res.status).toBe(409);
+    expect((await readDocument(env)).body).toBe(MIXED);
+    expect(await clearedItems()).toHaveLength(0);
+  });
+
+  it("defaults to completed when no scope is sent, so an older PWA keeps working", async () => {
+    const res = await clear({ base_version: SEEDED_VERSION + 1 });
+
+    expect(res.status).toBe(200);
+    expect((await readDocument(env)).body).toBe(SURVIVORS);
+  });
+
+  it("400s an unrecognised scope rather than quietly doing the safer thing", async () => {
+    // Defaulting a typo to `completed` would look like it worked and leave the page
+    // full — the caller asked for something this route does not do, and should hear so.
+    const res = await clear({ base_version: SEEDED_VERSION + 1, scope: "everything" });
+
+    expect(res.status).toBe(400);
+    expect((await readDocument(env)).body).toBe(MIXED);
   });
 });

@@ -262,20 +262,52 @@ headed for the only copy of the document. It is derived from `principal.source`
 
 ### `POST /api/doc/clear-completed`
 ```json
-{ "base_version": 42 }
+{ "base_version": 42, "scope": "completed" }
 ```
+`scope` is `completed` (the default, and what an older PWA sends by omitting it) or
+`all`. An unrecognised value is a 400 rather than a fallback — a typo that quietly
+wiped only the checked items would look like it worked.
+
 Order of operations matters:
-1. Seal the newest revision (`is_sealed = 1`) so the pre-clear state can't be
+1. Seal the newest revision (`is_sealed = 1`) so the pre-wipe state can't be
    swallowed by the coalescing window.
-2. Insert a revision with `event_type = 'clear_completed'` holding the pre-clear body.
-3. Write the removed lines into `cleared_items`.
-4. Remove all blocks where `kind === 'checkbox' && checked === true` and update
-   `documents`.
+2. Insert a revision holding the pre-wipe body, with `event_type = 'clear_completed'`
+   or `'wipe_all'`.
+3. Write the **finished** lines into `cleared_items` — see below.
+4. Remove the blocks the scope names and update `documents`. `completed` removes
+   `kind === 'checkbox' && checked === true`; `all` empties the page.
 
-Returns `{ version, cleared_count }`.
+Returns `{ version, cleared_count, wiped_count }`.
 
-Steps 1–4 run in a single D1 batch. A partial clear that seals a revision but
-loses the `cleared_items` write is worse than no clear.
+Steps 1–4 run in a single D1 batch. A partial wipe that seals a revision but
+loses the `cleared_items` write is worse than no wipe.
+
+#### 🔴 `cleared_items` records what was *finished*, not what was removed
+
+A wipe-all takes lines that were never done. Those are deliberately **not** written to
+`cleared_items`, because that table is what `/api/history` reports as authoritative for
+"what did I get done" — precisely because a line-set diff cannot be trusted for that
+question. Writing unfinished lines there would corrupt the one record that has to stay
+honest, and inflate every summary built on it.
+
+So the two counts differ, and both are returned:
+
+| | Means |
+|---|---|
+| `wiped_count` | Rows removed from the page |
+| `cleared_count` | Rows written to `cleared_items` — the finished ones |
+
+They are equal for `completed`.
+
+**Two event types, not one**, for the same reason. Without the distinction a wipe-all
+would appear in history as an entry claiming two items were cleared, followed by four
+more lines disappearing on the next ordinary save with nothing to explain them.
+`revisions.event_type` is free text with no `CHECK`, so this needed no migration.
+
+**Recovery does not use `cleared_items`.** Step 2's snapshot is the whole pre-wipe
+document and is sealed, so every removed line is derivable from it and the body step 4
+wrote — for both scopes. That is what [#59](https://github.com/danjamk/knag/issues/59)
+restores from; reading `cleared_items` instead would silently drop the unfinished lines.
 
 ### `GET /api/history?since=&until=`
 Returns revisions in range plus derived, per adjacent pair:
@@ -648,7 +680,7 @@ the login form is worth more to a phisher than a plain one.
 |---|---|---|
 | `knag_read` | `() → { body, version, updated_at }` | |
 | `knag_write` | `(body, base_version) → { version, updated_at, changed }` | Full replacement. Conflict on mismatch. |
-| `knag_wipe` | `(base_version) → { version, wiped_count }` | Same path as the wipe control. |
+| `knag_wipe` | `(base_version, scope?) → { version, wiped_count, cleared_count }` | Same path as the wipe control. `scope` is `completed` (default) or `all`. |
 | `knag_history` | `(since?, until?) → History` | Identical shape to `GET /api/history`. |
 
 One write tool, not three. The document is small enough that read-modify-write
