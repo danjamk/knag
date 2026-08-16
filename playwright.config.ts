@@ -14,6 +14,11 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * Not part of `pnpm check`. The browser download is ~80MB and CI time is not free,
  * so this is its own script and its own job.
+ *
+ * 🔴 **Run it through `pnpm test:browser`, not `playwright test`.** That script invokes
+ * this config once per spec file, because a single `wrangler dev` does not survive the
+ * whole suite — it exits fatally partway through and every remaining test then fails at
+ * `page.goto`. Reasoning and measurements: `scripts/browser-tests.sh` and #69.
  */
 
 /** Fixed so tests can log in. Local only — `wrangler dev` never leaves the machine. */
@@ -26,6 +31,11 @@ export default defineConfig({
   testDir: "./browser",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
+  // 🔴 Zero, and it stays zero. Retries were the obvious answer to #69 and the wrong
+  // one: they would have turned CI green while hiding both that failure and the next
+  // real one. This suite is the only place several of knag's guarantees are checked —
+  // #62 was a real bug that 344 green unit tests missed — so a re-run that passes has
+  // to mean something. The flake is fixed at its source in scripts/browser-tests.sh.
   retries: 0,
   workers: 1,
   reporter: process.env.CI ? "github" : "list",
