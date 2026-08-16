@@ -117,8 +117,7 @@ means the version bump **and** a `CHANGELOG.md` entry land *in the feature PR*, 
 at release time when the reason for the change has been forgotten. After merge:
 a `vX.Y.Z` tag and a GitHub Release with curated notes, never a raw commit dump.
 
-Next feature starts `0.2.0`. Full doctrine:
-`~/yukon/claude-shared/docs/guides/versioning-and-releases.md`.
+Next feature starts `0.2.0`. Full doctrine lives in the house versioning guide.
 
 Every deployment reports `<version>+<shortsha>`, when it was deployed, and **which
 environment** — the last being the one people skip and then need, because a deploy

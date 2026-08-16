@@ -2,8 +2,7 @@
 
 All notable changes to knag are recorded here, following
 [Keep a Changelog](https://keepachangelog.com/). Versions follow
-[SemVer](https://semver.org/) per
-[claude-shared/docs/guides/versioning-and-releases.md](../claude-shared/docs/guides/versioning-and-releases.md):
+[SemVer](https://semver.org/) per the house versioning doctrine:
 a version names released code, and a deployment reports `<version>+<shortsha>` for
 exactly what it is running.
 

@@ -205,7 +205,7 @@ week-long gap *is* the test.
 If it ever fails: refresh-on-load token rotation in `auth.ts` and the client boot
 path. Contained, but not free.
 
-**Dev URL:** https://knag-dev.fractional-lab5.workers.dev
+**Dev URL:** the `*.workers.dev` host in `.env` (`DEV_HOST`)
 **Dev D1:** `knag-dev` · `ac5d4b49-4556-43bd-abd1-151b01027c4f`
 
 The session that starts the clock, read off the live database rather than assumed:
@@ -652,7 +652,7 @@ a complete phantom sweep.
 
 ## Phase 11 — MCP server
 
-**Spec:** §10, §14.6 · **Standard:** `claude-shared/docs/standards/mcp.md`
+**Spec:** §10, §14.6 · **Standard:** the house MCP standard
 **Size:** 1–2 days · **Depends:** P1, P2, P9
 
 **Done when:**

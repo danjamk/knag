@@ -6,7 +6,7 @@
 reads as "nag." Both meanings are the product. Repo `danjamk/knag`.
 
 > **Status.** Functional intent is settled. The technical choices in §2 and §§13–15
-> were revised against `~/yukon/claude-shared/docs/standards/` — see
+> were revised against the house standards — a private, personal set — see
 > [§16 Deltas](#16-deltas-from-the-original-draft) for what changed and why.
 
 ---
@@ -67,16 +67,14 @@ So: `worker/src/blocks.ts` exists exactly once. The client imports it.
 build: one command, one dev dependency, no framework, no config file. Wrangler
 already compiles the Worker's TypeScript, so the deploy path is unchanged.
 
-TypeScript throughout is the house standard
-([node.md](../../claude-shared/docs/standards/node.md)) and `pnpm check`
+TypeScript throughout is the house standard, and `pnpm check`
 (typecheck + test) is the pre-PR gate and exactly what CI runs.
 
 ---
 
 ## 3. Data model
 
-Naming follows
-[database-conventions](../../claude-shared/docs/guides/database-conventions.md):
+Naming follows the house database conventions:
 plural tables, `is_` boolean prefix, `_at` timestamps, `idx_{table}_{column}`.
 
 ```sql
@@ -165,8 +163,7 @@ different lifecycle, revocable independently.
 > magic links were rejected — the link opens in Safari and authenticates the
 > wrong jar.
 
-Cloudflare Access is the house default for a Worker
-([cloudflare.md](../../claude-shared/docs/standards/cloudflare.md)) and is
+Cloudflare Access is the house default for a Worker, and is
 wrong here. See [ADR-001](adr/ADR-001-passphrase-auth.md).
 
 ### 4.1 One authenticate(), returning a principal
@@ -793,9 +790,7 @@ undermine the column alignment that makes monospace read as code.
 
 ## 10. MCP tools
 
-Built against
-[claude-shared/docs/standards/mcp.md](../../claude-shared/docs/standards/mcp.md)
-— read it before step 10, not after. No Resources. The rules that apply in full
+Built against the house MCP standard — read it before step 10, not after. No Resources. The rules that apply in full
 are §2 request isolation, §3 tool design, §4 annotations, §5 server instructions,
 §6 structured output, §8 auth, and §9 security.
 
@@ -1142,8 +1137,7 @@ Nothing seeds `documents`, so every read fails on a fresh deploy.
 
 ### 14.6 MCP transport
 
-Full doctrine in
-[claude-shared/docs/standards/mcp.md](../../claude-shared/docs/standards/mcp.md).
+Full doctrine in the house MCP standard.
 knag-specific points:
 
 - **Streamable HTTP** at `POST /mcp`. Not SSE. Same pattern as PageVault.
@@ -1200,8 +1194,7 @@ claude mcp add --transport http knag https://knag.danjamkuhn.com/mcp \
 
 ## 15. Operations, testing, CI
 
-Not in the original draft. Required by
-[claude-shared](../../claude-shared/docs/standards/README.md).
+Not in the original draft. Required by the house standards.
 
 ### Testing
 
@@ -1281,7 +1274,7 @@ with no run and no way to ask for one.
 
 ### Deploy credential — two accounts
 
-Per [cloudflare.md](../../claude-shared/docs/standards/cloudflare.md) and
+Per the house Cloudflare standard and
 [ADR-002](adr/ADR-002-two-accounts-and-migrations.md):
 
 | | Credential lives in | Who can deploy |

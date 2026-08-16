@@ -5,7 +5,7 @@
 
 ## Context
 
-`~/yukon/claude-shared/docs/standards/cloudflare.md` says:
+The house Cloudflare standard says:
 
 > Cloudflare Access (Zero Trust) in front of a Worker or Pages project, rather
 > than rolling session handling.
