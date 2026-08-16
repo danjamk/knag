@@ -14,6 +14,10 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-15
+
+The agent half. The page becomes something Claude can read and rewrite.
+
 ### Added
 
 - **The MCP server at `POST /mcp`**, with four tools — `knag_read`, `knag_write`,
@@ -65,6 +69,26 @@ summarises the phase rather than pretending it was written as it happened.
   dev check pointed at the prod domain — which does not resolve. The one command
   whose job is verifying a deployment had therefore never verified dev.
 
+### Notes
+
+- **This completes the original spec.** Every numbered step of the build order in
+  `docs/spec.md` §13 has shipped. What follows is the brand pass and the ideas that
+  came out of using it, not the plan it was built to.
+- **Not yet verified: the MCP server against a real client.** 377 tests cover the
+  transport, the auth gate, the annotations and the conflict path, and none of them
+  prove the connector appears in Claude. That check is
+  [#14](https://github.com/danjamk/knag/issues/14)'s last task and the issue stays open
+  until it passes. An MCP server whose own tests are green and whose tool list is empty
+  in the client is a real and common failure, and this release does not claim otherwise.
+- **Not yet verified:** the 7-day iOS cookie question from 0.1.11, still deferred and
+  still self-reporting.
+- **Production does not exist yet.** There is one environment, dev, and it holds real
+  content that `docs/adr/ADR-002` says it should not. Provisioning prod is the
+  outstanding operational debt of this release, not a future nicety.
+- **The bundle grew from 8 KiB gzipped to 211 KiB** — the MCP SDK and zod. That is 7% of
+  the free-tier ceiling, and the deploy reports a 35 ms Worker startup time against a
+  400 ms limit, so it is paid for.
+
 ## [0.1.11] — 2026-08-15
 
 The first plateau: a legal pad you can actually live in.
@@ -110,5 +134,6 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/danjamk/knag/compare/v0.1.11...v0.2.0
 [0.1.11]: https://github.com/danjamk/knag/releases/tag/v0.1.11
