@@ -39,6 +39,13 @@ trailing whitespace, CRLF, and `*` vs `-` markers all survive a round trip. Any
 change touching the parser reruns the round-trip property test before anything
 else. This is principle 3 of the product, not a code-style preference.
 
+Its read-path half is [ADR-004](docs/adr/ADR-004-display-matches-the-bytes.md):
+**the display never diverges from the bytes.** No rendered bold, no styled
+headings, no bullet where the file says `-`. The test for a new rendering is
+whether the file is reconstructable byte-for-byte from what is on screen —
+checkboxes and linkified URLs pass, rendered markdown does not. Read it before
+answering a formatting request; it has been asked three times.
+
 **All SQL lives in `worker/src/store.ts`.** No exceptions, not even one query in
 a handler. That chokepoint is what keeps a future schema change to one file.
 The single-row id is the `DOC_ID` constant there, never a literal `1`.

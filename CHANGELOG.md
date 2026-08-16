@@ -33,6 +33,11 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Changed
 
+- **Rendered formatting is out, and now says why**
+  ([ADR-004](docs/adr/ADR-004-display-matches-the-bytes.md)). The rule behind
+  three decisions already made separately: the display never diverges from the
+  bytes. Indentation was never covered by it and already works; bold, italic and
+  styled headings are not coming. Documentation only — no behavior changed.
 - **The 7-day iOS cookie check is deferred**, not dropped ([#4](https://github.com/danjamk/knag/issues/4)).
   Holding a phone untouched for a week blocks the more valuable activity — using
   knag. Nothing since the auth work has touched auth, and the failure mode
