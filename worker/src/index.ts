@@ -21,6 +21,13 @@ import { type DocumentSource, clearCompleted, readDocument, writeDocument } from
  * reach this handler. Everything else is served from `public/` by Workers Static
  * Assets without a Worker invocation, which is most of the free-tier request budget
  * (spec §14.4). Adding a route here means adding it there too.
+ *
+ * `/.well-known/*` is routed here to reach the 404 at the bottom of this function,
+ * and for no other reason. Static assets answer an unmatched path with the PWA shell
+ * and a 200, so a client probing for OAuth metadata would read `text/html` as a
+ * malformed document rather than as an absent one — a strictly worse failure to
+ * diagnose than the absence it is reporting (ADR-005 §4). knag serves no discovery
+ * metadata yet; when it does, the handler goes above the 404, not around it.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
