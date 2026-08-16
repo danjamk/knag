@@ -234,11 +234,12 @@
 
       @media (prefers-reduced-motion: reduce) {
         :root {
+          /* The row still leaves — it just does not travel to get there. The rules
+             that stop the blink are at the very bottom of this stylesheet, and the
+             comment there says why they cannot be here. */
           --wipe-duration: 1ms;
           --wipe-stagger: 0ms;
           --wipe-collapse: 1ms;
-          /* The row still leaves; the cursor simply stops blinking. */
-          --cursor-blink: 0s;
         }
       }
 
@@ -842,6 +843,29 @@
         font-size: var(--size-machine);
         letter-spacing: var(--track-machine);
         color: var(--amber);
+      }
+
+      /* ── Reduced motion, part two ────────────────────────────────────
+         🔴 **At the bottom, and it has to be.** These selectors are (0,2,0) and so are
+         the rules that set the blink — so an override placed beside the token collapse
+         near the top loses to the declaration that comes later in the file, and the
+         cursor carries on blinking with the media query apparently applied. A media
+         query buys no specificity; only order does. Found by running the suite under
+         the real preference rather than by reading the token values back.
+
+         🔴 `animation: none`, not a zero duration. A `0s` animation still *names* a
+         running animation, so `animation-name` stays `knag-blink` and anything asking
+         whether the interface is still — a test, or a browser's own handling — gets the
+         wrong answer.
+
+         The blink is the mark rather than the interface, but it repeats forever in the
+         corner of a page people read for hours, which is what WCAG 2.2.2 is about.
+         Stopping it costs nothing: the block is still the mark. */
+      @media (prefers-reduced-motion: reduce) {
+        .wordmark .block,
+        [data-rows][data-empty]::before {
+          animation: none;
+        }
       }
     </style>
   </head>

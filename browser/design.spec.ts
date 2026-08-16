@@ -186,6 +186,25 @@ test.describe("the wipe, the only animation in the product", () => {
     await expect.poll(() => knag.document()).not.toContain("- [x]");
   });
 
+  test("🔴 reduced motion leaves the interface still", async ({ knag }) => {
+    // Run under the real preference, not inferred from the token values. The tokens
+    // collapsing to 1ms is what *should* happen; whether the browser resolves them
+    // that way, and whether anything else is still moving, is a different question and
+    // the only one worth asserting.
+    await knag.page.emulateMedia({ reducedMotion: "reduce" });
+    await knag.seed(DAY);
+
+    // The blink stops entirely. A `0s` duration would leave `animation-name` set and
+    // this test green while the mark carried on running an animation.
+    expect(await css(knag.page.locator("footer .wordmark .block"), "animation-name")).toBe("none");
+
+    // The wipe still happens — the row leaves, it just does not travel to get there.
+    await knag.page.locator("[data-clear]").click();
+    await expect.poll(() => knag.document()).not.toContain("- [x]");
+
+    await knag.page.emulateMedia({ reducedMotion: "no-preference" });
+  });
+
   test("nothing else on the page animates", async ({ knag }) => {
     // Everything is still except the wipe and the cursor blink in the mark. A fade on
     // mount or a slide-in dialog is a bug against the system, not a nicety.
