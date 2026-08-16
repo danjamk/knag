@@ -655,14 +655,30 @@ a complete phantom sweep.
 **Size:** 1–2 days · **Depends:** P1, P2, P9
 
 **Done when:**
-- [ ] Streamable HTTP at `POST /mcp`, **a new server instance per request**
-- [ ] Four tools: `knag_read`, `knag_write`, `knag_clear`, `knag_history`
-- [ ] Annotations on every tool — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`, `title` — asserted in tests
-- [ ] Server `instructions` carry the agent contract (§10) once
-- [ ] 401 with `WWW-Authenticate: Bearer` on failure
-- [ ] A 409 reaches the agent as a structured error with the current version and body — never an HTTP 500
-- [ ] **`Origin` is logged, not blocked** (mcp.md §8)
+- [x] Streamable HTTP at `POST /mcp`, **a new server instance per request**
+- [x] Four tools: `knag_read`, `knag_write`, `knag_wipe`, `knag_history`
+- [x] Annotations on every tool — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`, `title` — asserted in tests
+- [x] Server `instructions` carry the agent contract (§10) once
+- [x] 401 with `WWW-Authenticate: Bearer` on failure
+- [x] A 409 reaches the agent as a structured error with the current version and body — never an HTTP 500
+- [x] **`Origin` is logged, not blocked** (mcp.md §8)
 - [ ] Connected from a real client and exercised end to end
+
+Three things the phase did not anticipate:
+
+- **`knag_clear` became `knag_wipe`.** The brand system's word is *wipe*, and a
+  tool name is the one thing here that gets expensive after a connector exists.
+- **`/mcp` is bearer-only**, unlike every other route. It is what makes mcp.md
+  §8's Origin reasoning true by construction rather than by cookie attribute.
+  Spec §10 carries the argument; `test:security` carries the proof.
+- **`knag_history` shares `loadHistory` with the HTTP route** rather than
+  assembling its own query, so the two surfaces cannot answer the same question
+  differently. A test asserts they return byte-identical payloads.
+
+The **server icon** — the connector list supports light and dark variants — is
+deliberately absent until the design pass delivers the mark. A placeholder is
+the first impression in Claude's connector UI, and a wrong one is worse than
+none.
 
 ---
 

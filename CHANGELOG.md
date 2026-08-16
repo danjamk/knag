@@ -16,6 +16,16 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- **The MCP server at `POST /mcp`**, with four tools — `knag_read`, `knag_write`,
+  `knag_wipe`, `knag_history` ([#14](https://github.com/danjamk/knag/issues/14)). This
+  is the agent half of the product rather than a feature bolted on: knag is one
+  plain-text page precisely so an agent can read all of it and rewrite all of it. It is
+  also, for now, the only way to read history. A conflict reaches the agent as a
+  correctable result carrying the current version *and* body — never an HTTP 500 —
+  because the contract is "re-read and re-apply", not "retry".
+- **Server instructions carry the product voice**, not just the agent contract. `wiped
+  6` rather than "Successfully cleared 6 completed items!" — one string, and every agent
+  conversation is on-brand.
 - **`GET /api/history?since=&until=`** — what changed and what got finished, grouped by
   local day ([#15](https://github.com/danjamk/knag/issues/15)). Each revision in range
   carries the lines that `appeared` and `disappeared` since the one before it, and each
@@ -33,6 +43,10 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Changed
 
+- **`/mcp` is bearer-only**, unlike every other route, which accepts the session cookie
+  too. It is what makes `/mcp` free of ambient authority — the premise behind logging a
+  foreign `Origin` rather than blocking it, which is the rule that keeps claude.ai's web
+  app working. Pinned in `pnpm test:security`.
 - **Rendered formatting is out, and now says why**
   ([ADR-004](docs/adr/ADR-004-display-matches-the-bytes.md)). The rule behind
   three decisions already made separately: the display never diverges from the

@@ -1,5 +1,4 @@
 import type { Env } from "./env.js";
-import type { ClearedRecord, RevisionRecord } from "./history.js";
 
 /**
  * Every D1 statement in knag lives in this file.
@@ -294,6 +293,28 @@ export async function clearCompleted(
  * and when it bites, `truncated` says so rather than the answer quietly being partial.
  */
 export const MAX_HISTORY_REVISIONS = 500;
+
+/**
+ * A revision row. Defined here rather than in `history.ts` because it is a row shape,
+ * and because the dependency has to point one way: `history.ts` reads from the store,
+ * so the store cannot import from it.
+ */
+export type RevisionRecord = {
+  id: number;
+  body: string;
+  version: number;
+  created_at: string;
+  source: string;
+  event_type: string | null;
+};
+
+/** A swept line. The authoritative record of what was finished (spec §5). */
+export type ClearedRecord = {
+  id: number;
+  revision_id: number;
+  line_text: string;
+  cleared_at: string;
+};
 
 const REVISION_COLUMNS = "id, body, version, created_at, source, event_type";
 

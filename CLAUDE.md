@@ -55,6 +55,12 @@ The single-row id is the `DOC_ID` constant there, never a literal `1`.
 passphrase matched. Bearer auth is first-class on every `/api/*` route, not an
 agent afterthought — cookie-only must not creep into a route.
 
+`/mcp` is the one route that goes further: it resolves a principal and then
+**refuses anything that is not bearer.** That is deliberate and load-bearing —
+it is what keeps `/mcp` free of ambient authority, which is the premise of
+logging a foreign `Origin` rather than blocking it (spec §10). Do not "fix" it
+by letting the cookie through.
+
 **Secrets never enter `worker/wrangler.jsonc`.** It is committed.
 `wrangler secret put`.
 
