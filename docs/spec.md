@@ -570,18 +570,54 @@ client, no consent screen), and no Resources. The rules that still apply in full
 are §2 request isolation, §3 tool design, §4 annotations, §5 server instructions,
 §6 structured output, and §9 security.
 
-Mounted at `/mcp`, bearer-authenticated.
+Mounted at `/mcp`, **bearer-authenticated and bearer-only** — see below.
 
 | Tool | Signature | Notes |
 |---|---|---|
 | `knag_read` | `() → { body, version, updated_at }` | |
-| `knag_write` | `(body, base_version) → { version }` | Full replacement. 409 on mismatch. |
-| `knag_clear` | `(base_version) → { version, cleared_count }` | Same path as the button. |
-| `knag_history` | `(since?, until?) → revisions[], cleared[]` | With appeared/disappeared. |
+| `knag_write` | `(body, base_version) → { version, updated_at, changed }` | Full replacement. Conflict on mismatch. |
+| `knag_wipe` | `(base_version) → { version, wiped_count }` | Same path as the wipe control. |
+| `knag_history` | `(since?, until?) → History` | Identical shape to `GET /api/history`. |
 
 One write tool, not three. The document is small enough that read-modify-write
 is cheaper than inventing append/patch/delete semantics, and it covers every
 case — add, check off, surgical delete, total sweep — identically.
+
+**`knag_wipe`, not `knag_clear`.** The product's word is *wipe*; a tool named
+`clear` makes the agent say "cleared" while the app says "wipe", and that seam
+shows up in every conversation. The HTTP route is still
+`/api/doc/clear-completed` and the table is still `cleared_items` — renaming an
+API field breaks the PWA and renaming a table is a destructive migration, so
+both wait for the brand pass. A new surface gets the new word; the old ones get
+it when they are being changed anyway.
+
+### 🔴 Bearer only, unlike every other route
+
+`/mcp` refuses the session cookie even though `authenticate()` resolves it.
+
+This is not tidiness. mcp.md §8's argument for *logging* a foreign `Origin`
+rather than blocking it rests on one claim: a `/mcp` that never accepts a cookie
+grants no ambient authority, so a rebound page can only make unauthenticated
+requests that 401 anyway. Accept the cookie and that sentence is false and the
+`Origin` decision loses its foundation.
+
+The cookie is `SameSite=Lax` and this route is POST-only, so a cross-site POST
+would not carry it today regardless — but that makes the property depend on a
+cookie attribute rather than on construction, and mcp.md §9 is explicit that
+by-construction is stronger. No MCP client sends cookies, so it costs nothing.
+Pinned in `pnpm test:security`.
+
+### Server instructions carry the voice, not just the contract
+
+The agent contract below is stated once in the server's `instructions` string
+(mcp.md §5) rather than repeated per tool — with the security-critical rules
+also *named* in the tools that enforce them, so trimming a description cannot
+silently drop a guardrail.
+
+The same string carries the product voice. An agent writing to the page is a
+second author, and `wiped 6` versus "Successfully cleared 6 completed items!" is
+the difference between the product's voice and a generic one. One string, and
+every agent conversation is on-brand.
 
 ### Agent contract
 
@@ -726,7 +762,7 @@ Consequences, all deliberate:
   the whole document.
 - Trailing whitespace after the text is preserved.
 
-`knag_clear` removes blocks where `kind === 'checkbox' && checked === true`.
+`knag_wipe` removes blocks where `kind === 'checkbox' && checked === true`.
 Nothing else, regardless of indentation level.
 
 **🔴 Strip the trailing `\r` before applying this grammar, and before the fence

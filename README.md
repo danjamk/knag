@@ -94,10 +94,17 @@ different passphrase and holds test content only. See
 
 ## Agent access
 
-The MCP server lives at `/mcp`, bearer-authenticated, with four tools:
-`knag_read`, `knag_write`, `knag_clear`, `knag_history`. One write tool, not
-three — the document is small enough that read-modify-write beats inventing
-append/patch/delete semantics.
+The MCP server lives at `/mcp`, with four tools: `knag_read`, `knag_write`,
+`knag_wipe`, `knag_history`. One write tool, not three — the document is small
+enough that read-modify-write beats inventing append/patch/delete semantics.
+
+**Bearer only**, unlike the rest of the API: the session cookie is refused here
+even though it is valid everywhere else. That is what keeps `/mcp` free of
+ambient authority, which is in turn why a foreign `Origin` is logged rather than
+blocked — see [docs/spec.md](docs/spec.md) §10.
+
+There is no history screen in the app, so `knag_history` is currently how
+history gets read.
 
 ```json
 {

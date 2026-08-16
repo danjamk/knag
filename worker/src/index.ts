@@ -7,30 +7,15 @@ import {
 } from "./auth.js";
 import { type Env, buildInfo } from "./env.js";
 import { isCompleted, parse, serialize } from "./blocks.js";
-import {
-  buildHistory,
-  daysBefore,
-  isKnownTimeZone,
-  localMidnight,
-  resolveBoundary,
-  wallClock,
-} from "./history.js";
-import {
-  type DocumentSource,
-  clearCompleted,
-  clearedItemsInRange,
-  readDocument,
-  revisionBefore,
-  revisionsInRange,
-  writeDocument,
-} from "./store.js";
+import { loadHistory, reportingZone, resolveRange } from "./history.js";
+import { handleMcp } from "./mcp.js";
+import { type DocumentSource, clearCompleted, readDocument, writeDocument } from "./store.js";
 
 /**
  * knag — one plain-text document, always live.
  *
- * Live: `/health`, the document API (spec §5), and auth (§4) — passphrase login,
- * session cookie, bearer. The MCP server (§10) arrives with build-order step 10; see
- * docs/spec.md §13.
+ * Live: `/health`, the document API (spec §5), auth (§4) — passphrase login, session
+ * cookie, bearer — and the MCP server at `/mcp` (§10, §14.6).
  *
  * Routing note: `run_worker_first` in wrangler.jsonc lists exactly the paths that
  * reach this handler. Everything else is served from `public/` by Workers Static
@@ -72,6 +57,13 @@ export default {
         );
       }
       return clear(request, env, principal);
+    }
+
+    // The agent half of the product (spec §10). Bearer only — see the note in mcp.ts;
+    // accepting the session cookie here would undermine the reason `Origin` is logged
+    // rather than blocked.
+    if (url.pathname === "/mcp") {
+      return handleMcp(request, env);
     }
 
     if (url.pathname === "/api/history") {
@@ -217,91 +209,29 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
 }
 
 /**
- * Days a bare `GET /api/history` covers, counting today. A week, because a week is the
- * unit the question gets asked in.
- */
-const DEFAULT_HISTORY_DAYS = 7;
-
-/**
- * The zone every history boundary is resolved in (spec §14.3).
- *
- * A misconfigured `KNAG_TZ` falls back to UTC and says so in the logs rather than
- * throwing: the endpoint answering in the wrong zone is a bad day, and the endpoint
- * returning 500 because someone fat-fingered a var is a worse one. The fallback is
- * visible in the response — `timezone` is echoed — so it cannot be mistaken for
- * working.
- */
-function reportingZone(env: Env): string {
-  const configured = env.KNAG_TZ || "America/Chicago";
-  if (isKnownTimeZone(configured)) return configured;
-
-  console.warn(`KNAG_TZ is not a known IANA zone: ${configured}. Falling back to UTC.`);
-  return "UTC";
-}
-
-/**
  * What changed, and what got finished, grouped by local day (spec §5, §14.3).
  *
  * `since` and `until` each take a bare date (`2026-08-14`, resolved to local midnight
  * in the reporting zone) or a full ISO instant. `until` from a bare date is the *next*
  * local midnight, so asking for a single day returns that day.
  *
- * 🔴 One extra revision is read from below `since` purely as the diff floor. It is not
- * returned. Without it the first entry of every range diffs against nothing and reports
- * the entire document as new, which makes the feature actively misleading on exactly
- * the query it exists for.
+ * The resolution and the read both live in `history.ts` — `knag_history` calls exactly
+ * the same two functions, so the HTTP surface and the agent surface cannot answer the
+ * same question differently.
  */
 async function getHistory(url: URL, env: Env): Promise<Response> {
-  const timeZone = reportingZone(env);
-  const now = new Date();
-  const today = wallClock(now, timeZone);
-
-  const since = resolveBoundary(url.searchParams.get("since"), "since", timeZone, () =>
-    localMidnight(daysBefore(today, DEFAULT_HISTORY_DAYS - 1), timeZone),
+  const timeZone = reportingZone(env.KNAG_TZ);
+  const range = resolveRange(
+    { since: url.searchParams.get("since"), until: url.searchParams.get("until") },
+    timeZone,
+    new Date(),
   );
-  if (!since) {
-    return Response.json(
-      { error: "since must be YYYY-MM-DD or an ISO 8601 instant" },
-      { status: 400 },
-    );
+
+  if (!range.ok) {
+    return Response.json({ error: range.message }, { status: 400 });
   }
 
-  const until = resolveBoundary(url.searchParams.get("until"), "until", timeZone, () => now);
-  if (!until) {
-    return Response.json(
-      { error: "until must be YYYY-MM-DD or an ISO 8601 instant" },
-      { status: 400 },
-    );
-  }
-
-  // An inverted range is a typo, not a request for nothing. Answering it with an empty
-  // result would look exactly like a week in which nothing happened.
-  if (since.getTime() >= until.getTime()) {
-    return Response.json({ error: "since must be before until" }, { status: 400 });
-  }
-
-  // Three indexed reads in parallel. `revisionBefore` is issued unconditionally even
-  // though a truncated page supersedes it — one extra indexed lookup is cheaper than
-  // the second round trip that finding out first would cost.
-  const [before, page, cleared] = await Promise.all([
-    revisionBefore(env, since),
-    revisionsInRange(env, { since, until }),
-    clearedItemsInRange(env, { since, until }),
-  ]);
-
-  return Response.json(
-    buildHistory({
-      // A truncated page starts partway into the range, so the revision before the
-      // range is the wrong floor for it — the one the cap dropped is the right one.
-      baseline: page.precedingDropped ?? before,
-      revisions: page.revisions,
-      cleared,
-      since,
-      until,
-      timeZone,
-      truncated: page.truncated,
-    }),
-  );
+  return Response.json(await loadHistory(env, range, timeZone));
 }
 
 /**

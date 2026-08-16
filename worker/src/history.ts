@@ -1,9 +1,23 @@
+import type { Env } from "./env.js";
+import {
+  type ClearedRecord,
+  type RevisionRecord,
+  clearedItemsInRange,
+  revisionBefore,
+  revisionsInRange,
+} from "./store.js";
+
 /**
  * History — the derived view over the revision log (spec §5, §14.3).
  *
- * Pure. No SQL, no bindings, no `Env`. It takes rows and returns the shape both
- * `GET /api/history` and the future `knag_history` MCP tool (#14) hand back, so the
- * two cannot drift into answering the same question differently.
+ * Everything except `loadHistory` at the bottom is pure: it takes rows and returns the
+ * shape that **both** `GET /api/history` and the `knag_history` MCP tool hand back, so
+ * the two cannot drift into answering the same question differently. `loadHistory` is
+ * the one function that reads, and it exists so neither caller assembles the query
+ * itself — a second assembly is a second set of boundary decisions.
+ *
+ * No SQL lives here. The three reads come from `store.ts`, which is still the only
+ * file in the tree that holds a statement.
  *
  * Two things here are not obvious and are the whole reason this is its own module:
  *
@@ -311,24 +325,6 @@ function onlyIn(lines: string[], other: Set<string>): string[] {
   return out;
 }
 
-/** A revision as the history needs it. `store.ts` returns exactly this. */
-export type RevisionRecord = {
-  id: number;
-  body: string;
-  version: number;
-  created_at: string;
-  source: string;
-  event_type: string | null;
-};
-
-/** A swept line as the history needs it. `store.ts` returns exactly this. */
-export type ClearedRecord = {
-  id: number;
-  revision_id: number;
-  line_text: string;
-  cleared_at: string;
-};
-
 export type HistoryRevision = {
   id: number;
   version: number;
@@ -453,3 +449,98 @@ export function buildHistory(input: {
     truncated: input.truncated,
   };
 }
+
+/** Days a request with no `since` covers, counting today. A week, because that is the
+ * unit the question gets asked in. */
+export const DEFAULT_HISTORY_DAYS = 7;
+
+/**
+ * The zone every boundary is resolved in, given whatever `KNAG_TZ` holds (spec §14.3).
+ *
+ * A misconfigured zone falls back to UTC and says so in the logs rather than throwing.
+ * Answering in the wrong zone is a bad day; returning 500 because someone fat-fingered
+ * a var is a worse one. The fallback is never silent — the resolved zone is echoed in
+ * every response, so it cannot be mistaken for working.
+ */
+export function reportingZone(configured: string | undefined): string {
+  const zone = configured || "America/Chicago";
+  if (isKnownTimeZone(zone)) return zone;
+
+  console.warn(`KNAG_TZ is not a known IANA zone: ${zone}. Falling back to UTC.`);
+  return "UTC";
+}
+
+export type RangeResult =
+  | { ok: true; since: Date; until: Date }
+  /** The parameter that was wrong, so the caller can name it. */
+  | { ok: false; field: "since" | "until" | "range"; message: string };
+
+/**
+ * Resolve the requested window, or say which parameter was wrong.
+ *
+ * Shared by the HTTP route and the MCP tool so a bare date means the same thing on
+ * both. An inverted range is rejected rather than answered: an empty result for a typo
+ * is indistinguishable from a quiet week, and the caller has no way to tell.
+ */
+export function resolveRange(
+  params: { since: string | null; until: string | null },
+  timeZone: string,
+  now: Date,
+): RangeResult {
+  const today = wallClock(now, timeZone);
+
+  const since = resolveBoundary(params.since, "since", timeZone, () =>
+    localMidnight(daysBefore(today, DEFAULT_HISTORY_DAYS - 1), timeZone),
+  );
+  if (!since) {
+    return { ok: false, field: "since", message: "since must be YYYY-MM-DD or an ISO 8601 instant" };
+  }
+
+  const until = resolveBoundary(params.until, "until", timeZone, () => now);
+  if (!until) {
+    return { ok: false, field: "until", message: "until must be YYYY-MM-DD or an ISO 8601 instant" };
+  }
+
+  if (since.getTime() >= until.getTime()) {
+    return { ok: false, field: "range", message: "since must be before until" };
+  }
+
+  return { ok: true, since, until };
+}
+
+/**
+ * Read the log and shape it. The one entry point behind both surfaces.
+ *
+ * 🔴 One extra revision is read from **below** `since` purely as the diff floor, and it
+ * is never returned. Without it the first entry of every range diffs against nothing
+ * and reports the entire page as new, which makes the feature actively misleading on
+ * exactly the query it exists for.
+ */
+export async function loadHistory(
+  env: Env,
+  range: { since: Date; until: Date },
+  timeZone: string,
+): Promise<History> {
+  // Three indexed reads in parallel. `revisionBefore` is issued unconditionally even
+  // though a truncated page supersedes it — one extra indexed lookup is cheaper than
+  // the second round trip that finding out first would cost.
+  const [before, page, cleared] = await Promise.all([
+    revisionBefore(env, range.since),
+    revisionsInRange(env, range),
+    clearedItemsInRange(env, range),
+  ]);
+
+  return buildHistory({
+    // A truncated page starts partway into the range, so the revision before the range
+    // is the wrong floor for it — the one the cap dropped is the right one.
+    baseline: page.precedingDropped ?? before,
+    revisions: page.revisions,
+    cleared,
+    since: range.since,
+    until: range.until,
+    timeZone,
+    truncated: page.truncated,
+  });
+}
+
+export type { ClearedRecord, RevisionRecord };
