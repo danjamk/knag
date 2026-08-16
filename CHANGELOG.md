@@ -14,6 +14,11 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-16
+
+The agent half reaches the phone, the wipe becomes a loop you can undo, and the app stops
+pretending when the network goes.
+
 ### Added
 
 - **knag says when it is offline instead of pretending**
@@ -99,16 +104,16 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Changed
 
-- **`/mcp` reaches Claude Code only, and the docs now say so**
+- **The reasoning behind bearer-only auth was wrong, and is recorded as such**
   ([ADR-005](docs/adr/ADR-005-mcp-oauth.md), [#64](https://github.com/danjamk/knag/issues/64)).
-  Connecting knag from Claude Desktop fails at client registration: claude.ai, Desktop
-  and mobile drive an OAuth 2.1 handshake and offer no field for a raw header. v0.2.0
-  shipped a static bearer on the reasoning that a single operator with no third-party
-  clients does not need OAuth — the real discriminator is **which client you need to
-  reach**, and knag is a phone and iPad product.
+  v0.2.0 shipped a static bearer on the grounds that a single operator with no
+  third-party clients does not need OAuth. The real discriminator is **which client you
+  need to reach** — and knag is a phone and iPad product, so it needed OAuth from the
+  start. Spec §10 carried the wrong reasoning and now carries the correction.
 
-  Documentation only; no behavior changed. Spec §10 carried the wrong reasoning and now
-  carries the correction, and the README says plainly which surfaces work today.
+  The gap was closed later in this same release, so nothing shipped broken. It is kept
+  here because the mistake came from a house standard that has since been amended, and a
+  decision reversed without a record is one that gets made again.
 
 ### Fixed
 
@@ -170,6 +175,30 @@ summarises the phase rather than pretending it was written as it happened.
 
   The two checks affected were **`/api/doc` and `/mcp` reject anonymous** — the pair
   that assert authentication is switched on at all. They now run, and they pass.
+
+### Notes
+
+- **Not yet verified: a real connector completing the OAuth handshake.** Discovery,
+  registration, the consent redirect and audience pinning are all exercised against a
+  live deployment, and the tools were driven end to end over the static bearer. The final
+  hop belongs to Claude, and no phone or iPad has done it yet. This release does not
+  claim otherwise.
+- **Production still does not exist.** There is one environment, dev, and it holds real
+  content that `docs/adr/ADR-002` says it should not — on a `*.workers.dev` hostname with
+  no rate-limit rule, and now holding OAuth grants as well. `make backup` was exercised
+  for real this release and its output restored into a scratch database, so the content
+  is provably recoverable; recoverable is not the same as correctly placed.
+- **Four defects this release were found by using knag or by reading a log, not by the
+  suite** — a page going stale on a device you return to, a smoke test structurally
+  incapable of passing, a health check blind to the environment it checked, and CI
+  failing a fifth of the time. The operational and test tooling remains the
+  least-exercised code in the repo.
+- **`page.route` does not intercept requests in the browser suite**, cause unknown. It
+  rules out one way of simulating a dead uplink; the offline tests reach the same
+  property from another direction and say so in place.
+- **Still deferred, and still self-reporting:** the 7-day iOS cookie clock and the
+  two-device 409 path ([#4](https://github.com/danjamk/knag/issues/4)). Both need real
+  devices and elapsed time.
 
 ## [0.2.0] — 2026-08-15
 
@@ -291,6 +320,7 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/danjamk/knag/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danjamk/knag/compare/v0.1.11...v0.2.0
 [0.1.11]: https://github.com/danjamk/knag/releases/tag/v0.1.11
