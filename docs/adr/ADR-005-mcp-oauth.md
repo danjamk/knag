@@ -5,7 +5,7 @@
 **Supersedes:** spec §10's "knag sits at the simple end of that standard: bearer
 auth rather than OAuth 2.1 (single operator, no third-party client, no consent
 screen)"
-**Amends:** `claude-shared/docs/standards/mcp.md` §1 — see *What the standard got
+**Amends:** the house MCP standard, §1 — see *What the standard got
 wrong*
 
 ## Context
@@ -25,7 +25,7 @@ carry arbitrary headers. That is the one surface knag is least about.
 
 ### What the standard got wrong, and what it cost
 
-`claude-shared/docs/standards/mcp.md` §1 offers this table:
+The house MCP standard's §1 offers this table:
 
 | Use | When |
 |---|---|
