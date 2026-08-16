@@ -115,19 +115,41 @@ const router = {
 } satisfies ExportedHandler<Env>;
 
 /**
+ * One provider per origin, cached for the life of the isolate.
+ *
+ * The provider holds no per-request state — pagevault keeps a single one at module
+ * scope — but knag derives `resource` from the origin, so it needs one per hostname
+ * rather than one outright.
+ *
+ * Bounded deliberately. A Worker is reachable only at the hostnames Cloudflare routes
+ * to it, which is two at most; the cap is there so that if that ever stops being true,
+ * this degrades into the construct-every-time behaviour rather than growing without
+ * limit in a long-lived isolate.
+ */
+const providers = new Map<string, OAuthProvider<Env>>();
+const MAX_CACHED_PROVIDERS = 4;
+
+/**
  * OAuth 2.1 for the hosted Claude surfaces — claude.ai, Desktop, mobile (ADR-005, #64).
  *
  * The provider serves `/oauth/token`, `/oauth/register` and the `.well-known` metadata,
  * routes `/oauth/authorize` to the router above, and everything else to it as well.
  *
- * 🔴 Constructed **per request**, not at module scope, so `resource` can be the origin
- * the caller actually reached. That is what pins access-token audiences to this server
- * (RFC 8707) — and doing it this way means the value cannot drift between the two
- * wrangler env blocks, because there is no value in them to drift. A `*.workers.dev`
- * deployment and a custom domain each advertise themselves correctly with no config.
+ * 🔴 Keyed on the request origin rather than configured, so `resource` is whatever the
+ * caller actually reached. That is what pins access-token audiences to this server
+ * (RFC 8707), and it means the value cannot drift between the two wrangler env blocks
+ * because there is no value in them to drift — a `*.workers.dev` deployment and a
+ * custom domain each advertise themselves correctly with no config at all.
+ *
+ * Constructing it is not free: the constructor validates both handlers and four
+ * endpoints and builds the capability document. That is fine once per origin and
+ * wasteful on every poll, which is what the cache above is for.
  */
 function oauthProvider(origin: string): OAuthProvider<Env> {
-  return new OAuthProvider<Env>({
+  const cached = providers.get(origin);
+  if (cached) return cached;
+
+  const provider = new OAuthProvider<Env>({
     apiRoute: "/mcp",
     // The provider has already validated the access token by the time this runs, and it
     // is the only thing that could — so the principal is constructed here rather than
@@ -146,6 +168,9 @@ function oauthProvider(origin: string): OAuthProvider<Env> {
     onError: ({ code, description, status }) =>
       void console.warn(`oauth ${status} ${code}: ${description}`),
   });
+
+  if (providers.size < MAX_CACHED_PROVIDERS) providers.set(origin, provider);
+  return provider;
 }
 
 export default {

@@ -95,8 +95,19 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      # Close the loop: assert /health reports the exact build this run produced. A
-      # stuck or partial rollout fails the run instead of going green. No credential
-      # needed — /health is public and says nothing about the document.
+      # Close the loop: assert /health reports the exact build this run produced, in
+      # the environment it was meant for. A stuck or partial rollout fails the run
+      # instead of going green, and so does a KNAG_ENV declared in only one wrangler
+      # block — which the build id alone cannot see, because it is identical either
+      # way. No credential needed: /health is public and says nothing about the
+      # document.
       - name: Verify the deployed build
-        run: bash scripts/health.sh knag.danjamkuhn.com "${{ steps.build.outputs.id }}"
+        run: bash scripts/health.sh knag.danjamkuhn.com "${{ steps.build.outputs.id }}" prod
+
+      # 🔴 The smoke test, which health.sh is not. It asserts that authentication is
+      # switched on, that the OAuth metadata is served rather than answered with the
+      # PWA shell, and that unrouted paths 404 — none of which the unit suite can see,
+      # because Miniflare does not serve the assets binding. Running it only against
+      # dev meant prod's asset routing had never been checked at all.
+      - name: Smoke-test production
+        run: bash scripts/verify.sh knag.danjamkuhn.com

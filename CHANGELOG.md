@@ -84,6 +84,17 @@ summarises the phase rather than pretending it was written as it happened.
   Nothing a person can see changes. It matters because it is the first thing anyone
   debugging the connector will hit, and it was pointing at the wrong problem.
 
+- **`make health` never checked which environment answered.** It compared the build id
+  and stopped there — but the build id is identical whichever environment a deploy lands
+  in, so the one failure `KNAG_ENV` exists to catch was the one thing the check could not
+  see. A `KNAG_ENV` declared in only one of the two wrangler blocks, which `CLAUDE.md`
+  warns about twice, would have passed.
+
+  `health.sh` now takes the expected environment and fails loudly when the live one
+  disagrees, saying which it got. The production deploy asserts `prod`, and also runs
+  the smoke test — previously it ran only the build-id check, so prod's asset routing
+  had never been verified at all.
+
 - **`make verify` was passing on checks it never ran.** The helper that reads an HTTP
   status used `curl -f`, which exits nonzero on any 4xx — and the `|| echo "000"`
   guarding it appended to the code curl had already printed. Every non-2xx check

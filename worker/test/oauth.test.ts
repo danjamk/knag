@@ -65,6 +65,20 @@ describe("discovery", () => {
     expect(await res.json()).toMatchObject({ resource: `${ORIGIN}/mcp` });
   });
 
+  it("does not serve one host's audience to another", async () => {
+    // 🔴 The provider is cached per origin for the life of the isolate, because
+    // constructing it validates both handlers and four endpoints and builds the
+    // capability document — fine once, wasteful on every poll. The risk that cache
+    // introduces is exactly this: a second hostname being handed the first one's
+    // `resource`, which would mean tokens minted for one host validating against the
+    // other. knag is reachable at a *.workers.dev name and a custom domain both.
+    const first = await SELF.fetch(`${ORIGIN}/.well-known/oauth-protected-resource`);
+    const second = await SELF.fetch("https://other.test/.well-known/oauth-protected-resource");
+
+    expect(await first.json()).toMatchObject({ resource: `${ORIGIN}/mcp` });
+    expect(await second.json()).toMatchObject({ resource: "https://other.test/mcp" });
+  });
+
   it("serves authorization-server metadata naming knag's endpoints", async () => {
     const res = await SELF.fetch(`${ORIGIN}/.well-known/oauth-authorization-server`);
 
