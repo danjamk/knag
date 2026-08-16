@@ -14,6 +14,19 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Changed
+
+- **`/mcp` reaches Claude Code only, and the docs now say so**
+  ([ADR-005](docs/adr/ADR-005-mcp-oauth.md), [#64](https://github.com/danjamk/knag/issues/64)).
+  Connecting knag from Claude Desktop fails at client registration: claude.ai, Desktop
+  and mobile drive an OAuth 2.1 handshake and offer no field for a raw header. v0.2.0
+  shipped a static bearer on the reasoning that a single operator with no third-party
+  clients does not need OAuth — the real discriminator is **which client you need to
+  reach**, and knag is a phone and iPad product.
+
+  Documentation only; no behavior changed. Spec §10 carried the wrong reasoning and now
+  carries the correction, and the README says plainly which surfaces work today.
+
 ### Fixed
 
 - **The page no longer goes stale when you return to a device**
