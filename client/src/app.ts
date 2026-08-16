@@ -25,6 +25,7 @@ import {
   setText,
   toggle,
 } from "../../worker/src/blocks.js";
+import { safeNext } from "./nav.js";
 import { dispositionFor, pollInterval } from "./sync.js";
 import Sortable from "sortablejs";
 import {
@@ -1104,6 +1105,9 @@ document.addEventListener("visibilitychange", () => {
 
 window.addEventListener("focus", () => void pollNow());
 
+/** The consent hand-off, if this page was reached from one. See `safeNext`. */
+const readNext = (): string | null => safeNext(location.search);
+
 loginForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = loginForm.querySelector("button");
@@ -1127,6 +1131,15 @@ loginForm?.addEventListener("submit", async (event) => {
       // (spec §4). Nothing here touches document.cookie, and nothing ever should: a
       // client-set cookie dies after 7 days of Safari inactivity.
       loginForm.reset();
+
+      // Straight back to consent when that is why we are here — no flash of the
+      // editor in between, and no document fetched only to be navigated away from.
+      const next = readNext();
+      if (next) {
+        location.assign(next);
+        return;
+      }
+
       const authedDoc = await load();
       if (authedDoc) {
         // 🔴 Before `render`, not after. Rows size themselves from `scrollHeight`,
@@ -1159,10 +1172,19 @@ view = readView(globalThis.localStorage);
 
 const doc = await load();
 if (doc) {
-  // 🔴 Before `render`, not after — see the login path above and `autoGrow`.
-  showEditor(true);
-  render(doc);
-  schedulePoll();
+  // Already logged in and sent here by the consent screen anyway — a session that was
+  // absent when `/oauth/authorize` looked and present a moment later. Rare, and cheap
+  // to handle: go back rather than stranding the visitor in the editor wondering what
+  // happened to the thing they were authorizing.
+  const pending = readNext();
+  if (pending) {
+    location.assign(pending);
+  } else {
+    // 🔴 Before `render`, not after — see the login path above and `autoGrow`.
+    showEditor(true);
+    render(doc);
+    schedulePoll();
+  }
 } else {
   showEditor(false);
 }

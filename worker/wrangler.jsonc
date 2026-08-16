@@ -53,6 +53,24 @@
     }
   ],
 
+  // Token storage for the OAuth 2.1 provider (ADR-005). Grants, authorization codes
+  // and access tokens — never the document, which stays in D1.
+  //
+  // The BINDING is `OAUTH_KV` because the library requires that exact name. The
+  // NAMESPACE is titled `knag-dev-oauth`, per-project and per-environment, for the
+  // same reason the D1 binding is `DB` while the database is `knag-dev`.
+  //
+  // 🔴 Do not create one titled `OAUTH_KV`. The dev Cloudflare account is shared with
+  // other projects and already carries a stray namespace by that generic name; a
+  // second project taking the default title is how two services end up issuing tokens
+  // out of one store.
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "40850ad736e5401c90901ae22e980bd7"
+    }
+  ],
+
   // The PWA shell — real files, not template literals inside a TS module.
   // `run_worker_first` keeps the API and MCP routes on the Worker; everything else
   // is served straight from assets, which costs no Worker invocation.
@@ -67,7 +85,7 @@
   "assets": {
     "directory": "../public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/mcp", "/health", "/.well-known/*"],
+    "run_worker_first": ["/api/*", "/mcp", "/health", "/.well-known/*", "/oauth/*"],
     "not_found_handling": "single-page-application"
   },
 
@@ -119,12 +137,21 @@
         }
       ],
 
+      // Against the PROD account, once:
+      //   pnpm exec wrangler kv namespace create knag-oauth --env prod
+      "kv_namespaces": [
+        {
+          "binding": "OAUTH_KV",
+          "id": "REPLACE_WITH_PROD_OAUTH_KV_ID"
+        }
+      ],
+
       // 🔴 Must match the dev block's list exactly. A path routed in only one
       // environment works locally and serves the PWA shell in production.
       "assets": {
         "directory": "../public",
         "binding": "ASSETS",
-        "run_worker_first": ["/api/*", "/mcp", "/health", "/.well-known/*"],
+        "run_worker_first": ["/api/*", "/mcp", "/health", "/.well-known/*", "/oauth/*"],
         "not_found_handling": "single-page-application"
       },
 

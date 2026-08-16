@@ -44,13 +44,20 @@ check "manifest served"             200 "$(status "${BASE}/manifest.json")"
 check "/api/doc rejects anonymous"  401 "$(status "${BASE}/api/doc")"
 check "/mcp rejects anonymous"      401 "$(status "${BASE}/mcp")"
 
-# 🔴 The only place this is observable. `not_found_handling: "single-page-application"`
-# answers an unrouted path with the PWA shell and a 200, so a missing `run_worker_first`
-# entry turns "knag serves no OAuth metadata" into "knag's OAuth metadata is corrupt".
-# The unit suite cannot see it: Miniflare does not serve the assets binding, so every
-# path reaches the Worker there regardless. See ADR-005 §4.
-check "/.well-known/ not shell"     404 "$(status "${BASE}/.well-known/oauth-protected-resource")"
-check "/.well-known/ deep not shell" 404 "$(status "${BASE}/.well-known/oauth-authorization-server/mcp")"
+# 🔴 The only place any of this is observable. `not_found_handling:
+# "single-page-application"` answers an unrouted path with the PWA shell and a 200, so a
+# missing `run_worker_first` entry does not 404 — it serves HTML where a connector
+# expects JSON, turning "no metadata here" into "metadata is corrupt". The unit suite
+# cannot see it: Miniflare does not serve the assets binding, so every path reaches the
+# Worker there regardless. See ADR-005 §4.
+check "OAuth resource metadata"     200 "$(status "${BASE}/.well-known/oauth-protected-resource")"
+check "OAuth server metadata"       200 "$(status "${BASE}/.well-known/oauth-authorization-server")"
+check "unknown .well-known 404s"    404 "$(status "${BASE}/.well-known/openid-configuration")"
+
+# A bare GET carries no authorization request, so the consent endpoint rejects it. The
+# point of the check is the 400 rather than a 200: a 200 here means the SPA shell
+# answered and `/oauth/*` never reached the Worker at all.
+check "/oauth/authorize is live"    400 "$(status "${BASE}/oauth/authorize")"
 
 if [ "$FAILURES" -gt 0 ]; then
   echo "✗ ${FAILURES} check(s) failed" >&2

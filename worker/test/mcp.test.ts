@@ -109,7 +109,16 @@ describe("auth", () => {
     });
 
     expect(res.status).toBe(401);
-    expect(res.headers.get("WWW-Authenticate")).toBe('Bearer realm="knag"');
+
+    // 🔴 Asserted by shape, not by string. As of ADR-005 this 401 comes from the
+    // OAuth provider rather than knag's `unauthorized()`, and it carries the RFC 9728
+    // pointer that lets a connector *start* the handshake instead of merely failing —
+    // which is the difference between "add the URL and it works" and the registration
+    // error that opened #64. The realm is the provider's and carries no meaning; the
+    // metadata URL is the part a client acts on.
+    const challenge = res.headers.get("WWW-Authenticate") ?? "";
+    expect(challenge).toMatch(/^Bearer /);
+    expect(challenge).toContain('resource_metadata="https://knag.test/.well-known/');
   });
 
   it("401s on a wrong bearer token", async () => {

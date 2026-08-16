@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
-import { authenticate, unauthorized } from "./auth.js";
+import { type Principal, unauthorized } from "./auth.js";
 import type { Env } from "./env.js";
 import { isCompleted, parse, serialize } from "./blocks.js";
 import { loadHistory, reportingZone, resolveRange } from "./history.js";
@@ -83,15 +83,29 @@ const INSTRUCTIONS = [
  * attribute rather than on construction, and mcp.md §9 is explicit that by-construction
  * is the stronger posture. No MCP client sends cookies, so this costs nothing.
  *
+ * 🔴 As of ADR-005 there are **two** bearer credentials that reach here, and the
+ * principal is resolved by the caller rather than here, because only one of them can be
+ * checked locally:
+ *
+ *   - `KNAG_BEARER_TOKEN`, compared in `authenticate()` — the Claude Code path.
+ *   - An OAuth access token, which only the provider can validate, and which it hands
+ *     to this handler having already done so.
+ *
+ * Both are `Authorization: Bearer`. Neither is a cookie, and no caller may pass a
+ * session principal in — the guard below refuses it, and index.ts never constructs one.
+ * So the no-ambient-authority property the Origin decision rests on is unchanged.
+ *
  * Pinned in `pnpm test:security`.
  */
-export async function handleMcp(request: Request, env: Env): Promise<Response> {
-  const principal = await authenticate(request, env);
-
-  // A valid session cookie resolves a principal and is still refused here. MCP clients
-  // expect a 401 to mean "authenticate", never "go away" — anything else surfaces as a
-  // silent empty tool list, which is the hardest MCP failure to diagnose (mcp.md §8).
-  if (!principal || principal.source !== "bearer") {
+export async function handleMcp(
+  request: Request,
+  env: Env,
+  principal: Principal,
+): Promise<Response> {
+  // Defence in depth. Both callers already resolve a bearer, so reaching this is a bug
+  // in index.ts rather than anything a client did — but the cost of being wrong here is
+  // the whole reason `/mcp` is different from every other route.
+  if (principal.source !== "bearer") {
     return unauthorized();
   }
 

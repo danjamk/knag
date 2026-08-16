@@ -599,9 +599,50 @@ are §2 request isolation, §3 tool design, §4 annotations, §5 server instruct
 > you need to reach* — and knag is a phone, iPad and laptop product.
 >
 > [ADR-005](adr/ADR-005-mcp-oauth.md) and [#64](https://github.com/danjamk/knag/issues/64).
-> Until that ships, `/mcp` is reachable from Claude Code only.
+> **Shipped.** OAuth 2.1 is a second, independent way in; the static bearer stays.
 
 Mounted at `/mcp`, **bearer-authenticated and bearer-only** — see below.
+
+### Two ways to hold a bearer
+
+| | Credential | Reaches | Validated by |
+|---|---|---|---|
+| Static | `KNAG_BEARER_TOKEN` | Claude Code, CI, curl | `authenticate()`, a local compare |
+| OAuth 2.1 | An access token knag issued | claude.ai, Desktop, mobile | the provider, which alone can |
+
+Both arrive as `Authorization: Bearer`, both resolve to `source: "bearer"`, and
+both land in the revision log as `agent`. Neither is a cookie, so §10's
+bearer-only property below is untouched by having two of them.
+
+The static path is checked **first, ahead of the provider**, because
+`KNAG_BEARER_TOKEN` is not a token the provider minted and it would reject it —
+taking out the only surface that worked, in the release that added the others.
+
+Discovery lives at `/.well-known/oauth-protected-resource` and
+`/.well-known/oauth-authorization-server`, with `/oauth/authorize`,
+`/oauth/token` and `/oauth/register` (DCR — without it a connector cannot
+self-register, which is the exact error that opened #64).
+
+**The audience is derived from the request origin**, not from a var. A
+`*.workers.dev` host and a custom domain each advertise themselves correctly,
+and there is no value to add to both wrangler env blocks and forget in one.
+
+### 🔴 Consent is the mirror image of `/mcp`
+
+`/oauth/authorize` accepts **the session cookie and refuses the bearer**. A grant
+minted from a header is a grant nobody agreed to; consent is a thing a person
+does in a browser.
+
+A visitor without a session is redirected to the ordinary login with a `next`
+parameter, and returned afterwards — so **the passphrase is never typed into the
+consent page**. That also settles rate limiting: `/oauth/authorize` accepts no
+credential, so the only thing worth guessing is still behind `/api/login`, which
+the WAF rule already covers (§4.2). No new limiter, because no new surface.
+
+`next` is matched against a one-entry allowlist rather than a same-origin test.
+`//evil.example` and `/\evil.example` both pass a naive "starts with `/`" check
+and are read as *hosts* by browsers — an open redirect on the page that hosts
+the login form is worth more to a phisher than a plain one.
 
 | Tool | Signature | Notes |
 |---|---|---|
@@ -897,16 +938,21 @@ knag-specific points:
   verification do the work. (mcp.md §8.)
 - Bearer auth via `Authorization` header; return **401** with
   `WWW-Authenticate: Bearer` on failure so the client surfaces a clear error
-  rather than a silent empty tool list. Once [ADR-005](adr/ADR-005-mcp-oauth.md)
-  lands the same 401 also carries `resource_metadata`, pointing at the RFC 9728
+  rather than a silent empty tool list. Since [ADR-005](adr/ADR-005-mcp-oauth.md)
+  the same 401 also carries `resource_metadata`, pointing at the RFC 9728
   document a connector needs to start the OAuth flow.
 - **Unmatched paths must not fall through to the PWA shell.**
-  `not_found_handling: "single-page-application"` currently serves `index.html`
-  with a **200** for `/.well-known/oauth-protected-resource` and everything else
-  unrouted. A connector probing for OAuth metadata therefore receives HTML and a
-  success status, which reads as corrupt metadata rather than as absent metadata —
-  a strictly worse failure to diagnose. Each such path needs a `run_worker_first`
-  entry in **both** wrangler env blocks.
+  `not_found_handling: "single-page-application"` serves `index.html` with a
+  **200** for anything unrouted. A connector probing for OAuth metadata would
+  therefore receive HTML and a success status, which reads as corrupt metadata
+  rather than as absent metadata — a strictly worse failure to diagnose. Each
+  such path needs a `run_worker_first` entry in **both** wrangler env blocks;
+  `/.well-known/*` and `/oauth/*` are there for exactly this reason.
+
+  🔴 **The unit suite cannot see this.** Miniflare does not serve the `assets`
+  binding, so every path reaches the Worker in tests whether or not it is routed.
+  It is checked against a real deployment in `scripts/verify.sh`, and nowhere
+  else.
 - Tool errors return structured MCP errors, not HTTP 500s. A 409 from the write
   path must reach the agent as a usable message — including the current version
   and body — so it can re-read and re-apply rather than retrying blind.

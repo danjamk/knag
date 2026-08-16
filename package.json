@@ -1,6 +1,6 @@
 {
   "name": "knag",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "One plain-text document, always live, edited from any device and by the agent",
   "license": "MIT",
@@ -19,7 +19,7 @@
     "dev": "wrangler dev --config worker/wrangler.jsonc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:security": "vitest run worker/test/auth.test.ts worker/test/mcp.test.ts",
+    "test:security": "vitest run worker/test/auth.test.ts worker/test/mcp.test.ts worker/test/oauth.test.ts client/test/nav.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p browser/tsconfig.json",
     "check": "pnpm typecheck && pnpm test",
     "deploy": "wrangler deploy --config worker/wrangler.jsonc",
@@ -44,6 +44,7 @@
     "wrangler": "^4.110.0"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.10.3",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "sortablejs": "1.15.7",
     "zod": "^4.4.3"

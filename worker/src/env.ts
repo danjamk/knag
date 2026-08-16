@@ -1,3 +1,5 @@
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+
 /**
  * The Worker's bindings, vars and secrets.
  *
@@ -10,6 +12,27 @@ export interface Env {
 
   /** The PWA shell in `public/`, served by Workers Static Assets. */
   ASSETS: Fetcher;
+
+  /**
+   * OAuth 2.1 grants, authorization codes and access tokens (ADR-005).
+   *
+   * The name is fixed by `@cloudflare/workers-oauth-provider`, which looks up this
+   * exact binding. Nothing else reads it — no knag code touches KV directly, and the
+   * document never goes here.
+   *
+   * 🔴 Declared in **both** wrangler env blocks. Named environments do not inherit
+   * bindings, and a missing one here does not fail a deploy — it fails the first
+   * OAuth handshake in production, long after the deploy looked fine.
+   */
+  OAUTH_KV: KVNamespace;
+
+  /**
+   * Injected into `env` by the OAuthProvider before it calls a handler — not a
+   * binding, and absent from wrangler.jsonc for that reason. Optional because the
+   * only thing that guarantees it is the provider being in front of the request,
+   * which `handleAuthorize` checks rather than assumes.
+   */
+  OAUTH_PROVIDER?: OAuthHelpers;
 
   /** `<semver>+<shortsha>`, baked at deploy. Blank in dev and in tests. */
   KNAG_VERSION: string;
