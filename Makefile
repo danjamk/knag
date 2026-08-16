@@ -146,7 +146,7 @@ deploy: check build preflight ## Deploy the Worker (bakes version + timestamp in
 	@echo "$(GREEN)✓ Deployed $(BUILD_ID) to $(ENV)$(RESET)"
 
 health: ## Assert the live deployment matches this checkout (ENV=dev|prod)
-	@bash scripts/health.sh "$(HOST)" "$(BUILD_ID)"
+	@bash scripts/health.sh "$(HOST)" "$(BUILD_ID)" "$(ENV)"
 
 verify: health ## Smoke-test the live deployment (ENV=dev|prod)
 	@bash scripts/verify.sh "$(HOST)"
