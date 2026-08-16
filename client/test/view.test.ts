@@ -466,10 +466,10 @@ describe("theme (spec §9)", () => {
   it("🔴 reports the colour actually in effect, so the iOS status bar matches", () => {
     // Leaving the meta tag dark under a light theme puts a black strip above a white
     // app, which reads as a rendering bug rather than a preference.
-    expect(themeColor("dark", false)).toBe("#111111");
+    expect(themeColor("dark", false)).toBe("#11150F");
     expect(themeColor("light", true)).toBe("#faf9f7");
     // `system` defers to the OS in both directions.
-    expect(themeColor("system", true)).toBe("#111111");
+    expect(themeColor("system", true)).toBe("#11150F");
     expect(themeColor("system", false)).toBe("#faf9f7");
   });
 });

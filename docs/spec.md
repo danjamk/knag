@@ -600,7 +600,10 @@ with `run_worker_first` for `/api/*` and `/mcp`. The shell is real files in
 `public/manifest.json`:
 - `"display": "standalone"`
 - `"theme_color"` matching the app background so iOS status bar doesn't clash
-- 192px and 512px icons
+- 192px and 512px icons, plus a **separate** 512 for `purpose: "maskable"` — Android
+  crops maskable icons to a circle, so the same file cannot serve both without losing
+  the mark's corners. The `apple-touch-icon` is the *non*-maskable one; iOS applies its
+  own mask and pre-padded art arrives double-padded.
 
 Add to Home Screen on iPhone/iPad, Add to Dock on macOS Safari. No Electron —
 it doesn't run on iPad regardless (iOS mandates WebKit), and the only thing it

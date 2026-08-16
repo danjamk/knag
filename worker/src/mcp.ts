@@ -118,7 +118,7 @@ export async function handleMcp(
   // response into another's, and the SDK added a guard against exactly this (mcp.md
   // §2). knag has one operator today, which makes the blast radius small and the habit
   // no less wrong — §17's multi-user branch would turn it into an incident.
-  const server = buildServer(env);
+  const server = buildServer(env, new URL(request.url).origin);
   const transport = new WebStandardStreamableHTTPServerTransport({
     // Stateless, and **omitting `sessionIdGenerator` is how you say so** — the SDK
     // treats its absence as "session management disabled". The documented spelling is
@@ -160,16 +160,50 @@ function noteMcpOrigin(request: Request): void {
   console.info(`mcp request from origin ${origin}`);
 }
 
-function buildServer(env: Env): McpServer {
+/**
+ * The mark, for the connector list.
+ *
+ * 🔴 **Absolute, derived from the request origin.** `IconSchema.src` is "URL or data
+ * URI" and says nothing about what a relative path resolves against — the client
+ * fetching it is Claude, not a browser sitting on this origin, so `/icons/…` is a bet
+ * on someone else's base URL. The origin is already in hand and costs one argument.
+ * It also keeps dev and prod each advertising their own copy rather than one of them
+ * pointing at the other, which is the same reason `resourceMetadata.resource` is
+ * derived rather than configured (ADR-005).
+ *
+ * `theme` names the ground the icon is **drawn for**, not the ink: `dark` is the slate
+ * board for a dark UI, `light` is the whiteboard. Getting that backwards puts an amber
+ * block on a near-white tile inside a dark connector list.
+ *
+ * Two entries, 256px, PNG. PNG rather than the SVG sources because it is one of the two
+ * MIME types a client that renders icons at all MUST support; the design pass specifies
+ * this exact array. The mark is two rectangles, so 256 downscales to a connector row
+ * without artefacts and the 32/64 exports are not shipped.
+ */
+function serverIcons(origin: string) {
+  return [
+    {
+      src: `${origin}/icons/mcp-icon-slate-256.png`,
+      mimeType: "image/png",
+      sizes: ["256x256"],
+      theme: "dark" as const,
+    },
+    {
+      src: `${origin}/icons/mcp-icon-whiteboard-256.png`,
+      mimeType: "image/png",
+      sizes: ["256x256"],
+      theme: "light" as const,
+    },
+  ];
+}
+
+function buildServer(env: Env, origin: string): McpServer {
   const server = new McpServer(
     {
       name: "knag",
       title: "knag",
       version: env.KNAG_VERSION || "0.0.0-dev",
-      // The connector list shows an icon here, and the SDK supports separate light and
-      // dark variants. Deliberately absent until the design pass delivers the mark —
-      // a placeholder icon is the first impression in Claude's connector UI, and a
-      // wrong one is worse than none.
+      icons: serverIcons(origin),
     },
     { instructions: INSTRUCTIONS },
   );

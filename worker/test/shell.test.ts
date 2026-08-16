@@ -148,7 +148,17 @@ describe("PWA shell (spec §9)", () => {
 
   it("declares a theme colour matching the background", () => {
     // A mismatch shows as a bright status bar strip above a dark app on iOS.
-    expect(shell()).toContain('name="theme-color" content="#111111"');
+    // `#11150F` is Slate, the board — green-black, not neutral.
+    expect(shell()).toContain('name="theme-color" content="#11150F"');
+  });
+
+  it("🔴 points the apple-touch-icon at the non-maskable mark", () => {
+    // iOS applies its own mask. Handing it the maskable art — already padded into the
+    // middle 80% for Android's circle crop — double-pads it, and the mark lands on the
+    // home screen visibly smaller than every icon beside it.
+    const tag = /<link[^>]*rel="apple-touch-icon"[^>]*>/.exec(shell())?.[0] ?? "";
+    expect(tag).toContain("/icons/knag-icon-192.png");
+    expect(tag).not.toContain("maskable");
   });
 
   it("sets viewport-fit=cover so safe-area insets resolve", () => {

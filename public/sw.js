@@ -25,9 +25,21 @@
 
 // Only has to change if the *set* of cached paths changes. Correctness no longer
 // depends on it, which is the point of the rewrite above.
-const CACHE = "knag-shell-v2";
+const CACHE = "knag-shell-v3";
 
-const SHELL = ["/", "/index.html", "/app.js", "/manifest.json", "/icon-192.png", "/icon-512.png"];
+// 🔴 The PWA icons only. The MCP connector icons live in `public/icons/` too and are
+// deliberately absent: they are fetched by Claude's connector UI, never by this
+// browser, so precaching them would block install on two files nobody here reads.
+const SHELL = [
+  "/",
+  "/index.html",
+  "/app.js",
+  "/manifest.json",
+  "/icons/knag-icon.svg",
+  "/icons/knag-icon-192.png",
+  "/icons/knag-icon-512.png",
+  "/icons/knag-icon-512-maskable.png",
+];
 
 self.addEventListener("install", (event) => {
   // Take over immediately rather than waiting for every tab to close. On a
