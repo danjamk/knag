@@ -14,6 +14,48 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-16
+
+Three things found by using it. One of them was quietly discarding keystrokes.
+
+### Fixed
+
+- **The editor was racing its own saves, and losing**
+  ([#83](https://github.com/danjamk/knag/issues/83)). Typing fast enough — a burst of
+  returns, a run of line merges — put two writes in flight at once. Both carried the
+  same version, because the first had not come back yet, so the server rejected the
+  second as a conflict.
+
+  That is why the cursor sometimes vanished mid-sentence, and why the footer said
+  `reloaded · it changed elsewhere` when you were the only person using it: the
+  "elsewhere" was your own previous keystroke.
+
+  **It could lose text.** A conflict is resolved by loading the server's copy over the
+  local one — right when another device really did write, wrong when the conflict is
+  self-inflicted, and silent either way because the status line calls it a reload.
+  Writes are serialised now. A real conflict from a second device still reloads and
+  still says so.
+
+- **Left and right arrows cross a row boundary**
+  ([#84](https://github.com/danjamk/knag/issues/84)). Right at the end of a line moves
+  to the next; left at the start moves to the end of the previous. Up and down already
+  did this — the horizontal pair was simply never written, so the caret hit the end of
+  a row and stopped dead.
+
+  Up at the start of a row also stops throwing the caret to the far left of the row
+  above, and neither arrow moves anything when there is a selection to collapse.
+
+### Added
+
+- **Enter on a hyphen bullet starts another one**
+  ([#85](https://github.com/danjamk/knag/issues/85)). `- milk` + Enter gives you `- `,
+  the way a checkbox already did. Enter on an empty bullet drops the marker and leaves
+  the list.
+
+  The marker is copied, never tidied: a `*` continues as `*`, and indentation carries
+  across exactly. Ordered lists stay out — continuing `1. ` means renumbering, which
+  would be the first edit knag makes to a line you did not touch.
+
 ## [0.5.0] — 2026-08-16
 
 knag looks like itself. Two boards, two typefaces, one colour, and the wipe finally
@@ -409,7 +451,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/danjamk/knag/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/danjamk/knag/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/danjamk/knag/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danjamk/knag/compare/v0.2.0...v0.3.0

@@ -776,6 +776,50 @@ async function pollNow(): Promise<void> {
 // ── Saving ───────────────────────────────────────────────────────────────────
 
 /**
+ * The save currently in flight, and whether another was asked for while it ran.
+ *
+ * 🔴 **Writes are serialised, and that is a correctness fix rather than an
+ * optimisation (#83).** Every structural edit saves immediately rather than on the
+ * debounce — a split or a merge is a complete intent (spec §6) — and nothing used to
+ * stop two of them being in flight at once. Both then carried the same
+ * `base_version`, because the first had not returned to update it:
+ *
+ *     Enter #1 → PUT body=B1, base_version=V0   ┐ both in flight
+ *     Enter #2 → PUT body=B2, base_version=V0   ┘
+ *                server: #1 commits as V1, #2 arrives stale → 409
+ *
+ * The 409 is then resolved the only way a 409 can be — by loading the server's copy
+ * over the local one — so **the losing write's keystrokes are discarded**, and the
+ * status line calls it a reload rather than a loss. With one operator and one device
+ * the "elsewhere" was your own previous keystroke.
+ *
+ * One follow-up is queued, never a chain of them: the follow-up reads `body` and
+ * `baseVersion` when it runs, so it already carries the newest of both and a queue of
+ * two would send the same document twice.
+ */
+let inFlight: Promise<void> | null = null;
+let queuedSave = false;
+
+function save(): Promise<void> {
+  if (inFlight) {
+    queuedSave = true;
+    return inFlight;
+  }
+
+  inFlight = writeDocument().finally(() => {
+    inFlight = null;
+    if (!queuedSave) return;
+    queuedSave = false;
+    // Only if something is still unsaved. `writeDocument` clears `dirty` when the body
+    // it sent is still the current one, so a follow-up whose work the first save
+    // already covered would be an empty round trip.
+    if (dirty) void save();
+  });
+
+  return inFlight;
+}
+
+/**
  * Write the editor's exact contents.
  *
  * 🔴 Never retry with the stale body. On 409 the server's copy wins and is loaded —
@@ -783,10 +827,16 @@ async function pollNow(): Promise<void> {
  * this project, and the 409 carries the current body precisely so that a second
  * round trip is unnecessary (spec §5, §6).
  *
+ * 🔴 A 409 still means what it always meant. Serialising local writes removes the
+ * *self*-inflicted conflicts; a genuine one from another device must still reload and
+ * still say so. Nothing here swallows a conflict.
+ *
  * A 409 also subsumes anything sitting in `pendingRemote`: the server's copy is by
  * definition at least as new as whatever the poll saw, so `render` clears the queue.
+ *
+ * Call `save()`, never this directly — it is the unserialised half.
  */
-async function save(): Promise<void> {
+async function writeDocument(): Promise<void> {
   // Sent from `body`, not from the textarea. In list view the textarea is hidden and
   // its value is whatever was last painted into it; reading from the element would
   // save the wrong document the moment a checkbox is toggled.
@@ -867,16 +917,28 @@ editor?.addEventListener("blur", () => {
   // the queue would be stale. Only when there is nothing to save does the queued
   // update get applied directly.
   if (dirty) {
-    saveNow();
+    void saveNow();
     return;
   }
   applyPendingRemote();
 });
 
-function saveNow(): void {
-  if (!dirty) return;
+/**
+ * Flush the debounce.
+ *
+ * 🔴 **Returns the promise, and callers that are about to send a versioned request
+ * must await it (#83).** `requestWipe` and the restore handler both flush first so
+ * that `body` and `baseVersion` describe the same page the server holds — but a flush
+ * that is not awaited has not landed, so `baseVersion` is still the pre-save one and
+ * the request that follows is stale by construction. That produced a 409 on a wipe
+ * taken straight after typing, and a 409 on a wipe is not a cosmetic failure.
+ *
+ * Also resolves when there was nothing to flush, so an await is always safe.
+ */
+function saveNow(): Promise<void> {
+  if (!dirty) return inFlight ?? Promise.resolve();
   clearTimeout(saveTimer);
-  void save();
+  return save();
 }
 
 function applyPendingRemote(): void {
@@ -938,7 +1000,7 @@ rowsEl?.addEventListener("focusout", (event) => {
     if (rowsEl?.contains(document.activeElement) && document.activeElement !== document.body) return;
     focused = false;
     if (dirty) {
-      saveNow();
+      void saveNow();
       return;
     }
     applyPendingRemote();
@@ -995,19 +1057,68 @@ rowsEl?.addEventListener("keydown", (event) => {
     return;
   }
 
-  // Arrows only cross a row boundary when the caret is already at one — otherwise
-  // they belong to the field, which is what makes long lines navigable.
-  if (event.key === "ArrowUp" && start === 0) {
+  // 🔴 Arrows cross a row boundary only when the caret is already **at** one, and only
+  // when nothing is selected. Anywhere else they belong to the field — a row is a
+  // textarea that can be several visual lines tall, and intercepting inside it would
+  // make a long wrapped line unnavigable.
+  //
+  // A live selection is not a caret: every editor collapses it on an arrow rather than
+  // moving somewhere, so a boundary jump would eat the gesture.
+  const collapsed = start === end;
+  const atStart = collapsed && start === 0;
+  const atEnd = collapsed && end === target.value.length;
+
+  /**
+   * Step to the neighbouring row, or leave the keystroke to the browser.
+   *
+   * 🔴 The guard is **"did the row actually change"**, not "is the index in range".
+   * `neighbor` reports nowhere-to-go by returning the row it was given, along with the
+   * offset it was handed — so acting on it unconditionally moves the caret to that
+   * offset *within the current row*. That is how `ArrowRight` at the end of the last
+   * line threw the caret back to the start of it, which is worse than doing nothing.
+   *
+   * Not calling `preventDefault` on the no-move path leaves the browser to do what it
+   * already does correctly at a document boundary: nothing.
+   */
+  const step = (direction: -1 | 1, landing: "start" | "end"): boolean => {
+    const result = neighbor(body, index, direction, 0);
+    if (result.focusIndex === index) return false;
     event.preventDefault();
-    const result = neighbor(body, index, -1, start);
-    focusRow(result.focusIndex, editorIn(result.focusIndex)?.value.length ?? 0);
+    const offset = landing === "end" ? (editorIn(result.focusIndex)?.value.length ?? 0) : 0;
+    focusRow(result.focusIndex, offset);
+    return true;
+  };
+
+  // 🔴 Up-from-the-start lands at the **end** of the row above, not at its start.
+  // `neighbor` preserves the column, which is right for a vertical move — but this
+  // branch only fires with the caret already at offset 0, so the preserved column is
+  // always 0 and the caret would drop at the far left of the row above rather than
+  // where its text ends. Reading it as "back one line" is what makes it feel right,
+  // and back one line ends at that line's end.
+  if (event.key === "ArrowUp" && atStart) {
+    step(-1, "end");
     return;
   }
 
-  if (event.key === "ArrowDown" && end === target.value.length) {
-    event.preventDefault();
-    const result = neighbor(body, index, 1, end);
-    focusRow(result.focusIndex, result.focusOffset);
+  if (event.key === "ArrowDown" && atEnd) {
+    step(1, "start");
+    return;
+  }
+
+  // Left at the start and right at the end (#84) — the horizontal pair of the same
+  // boundary rule, which was simply never written. The caret hit the end of a row and
+  // stopped dead, so moving through the page by keyboard meant reaching for the down
+  // arrow and then Home.
+  //
+  // Nothing is skipped: a blank row is a place you can type, and stepping over one
+  // would make the arrows disagree with what is on screen.
+  if (event.key === "ArrowLeft" && atStart) {
+    step(-1, "end");
+    return;
+  }
+
+  if (event.key === "ArrowRight" && atEnd) {
+    step(1, "start");
   }
 });
 
@@ -1193,7 +1304,10 @@ function animateWipe(indices: number[]): Promise<void> {
 }
 
 async function requestWipe(scope: WipeScope): Promise<void> {
-  saveNow();
+  // 🔴 Awaited (#83). An un-awaited flush has not landed, so `baseVersion` below is
+  // still the pre-save one and the wipe is stale by construction — a 409 on a wipe
+  // taken straight after typing.
+  await saveNow();
   setStatus("wiping");
 
   // Captured before the request, because it is the only copy of the pre-wipe page this
@@ -1369,7 +1483,8 @@ restoreButton?.addEventListener("click", async () => {
 
   // Flush anything unsaved first, so `body` and `baseVersion` describe the same page
   // the server holds — otherwise the restore races the user's own last keystroke.
-  saveNow();
+  // 🔴 Awaited (#83): an un-awaited flush is exactly the race it is meant to close.
+  await saveNow();
   setStatus("bringing back");
 
   const restored = restoredBody({
@@ -1526,7 +1641,7 @@ function setReordering(on: boolean): void {
 
   // Leaving the mode flushes anything the drags queued, so the document is settled
   // before the caret goes anywhere near it again.
-  if (!on) saveNow();
+  if (!on) void saveNow();
   paintRows();
 }
 
@@ -1575,7 +1690,7 @@ settingsDialog?.addEventListener("click", (event) => {
   if (chosenView && chosenView !== view) {
     // Flush first: switching views repaints from `body`, and an unsaved edit still
     // on the debounce would have its save race the repaint.
-    saveNow();
+    void saveNow();
     view = chosenView as ViewMode;
     writeView(globalThis.localStorage, view);
     paint();
@@ -1634,7 +1749,7 @@ rowsEl?.addEventListener("click", (event) => {
 // fetch, which is what makes picking up another device feel live.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
-    saveNow();
+    void saveNow();
     stopPolling();
     return;
   }

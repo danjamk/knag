@@ -34,6 +34,42 @@ function newCheckboxLine(from: Block, text: string): string {
 }
 
 /**
+ * A plain hyphen or asterisk bullet: indentation, one marker, one space.
+ *
+ * 🔴 This is a **text** block, not a parsed kind. `blocks.ts` has no bullet — and it
+ * must not gain one. A bullet is a line that happens to start with `- `, and the
+ * moment the parser knows better than that, the display stops matching the bytes
+ * (ADR-004) and `*` starts wanting to be normalised to `-`.
+ *
+ * Deliberately not `1. ` or any other ordered form. Continuing a numbered list means
+ * *renumbering* one, which is the first edit knag would make to a line the user did
+ * not touch, and there is no version of that which preserves bytes.
+ */
+const BULLET = /^(\s*)([-*]) (?!\[[ xX]\] )/;
+
+/**
+ * `Enter` on a bullet continues it (#85).
+ *
+ * 🔴 This does not reopen ADR-003 §4, which says a bare `- ` is **not** a shorthand
+ * trigger and stays a literal dash. That argument is about *rendering* — drawing a
+ * bullet where the file says `-` would be the first place the display diverges from
+ * the bytes, and it still would be.
+ *
+ * Continuing the list inserts two literal characters into the document. The file
+ * really does gain `- `, it is visible in raw view, and backspace removes it like any
+ * other text. It is the same thing checkbox continuation has always done.
+ *
+ * The marker is **copied, never normalised**: a `*` bullet continues as `*`, and the
+ * indentation is carried across verbatim. Returns null for anything that is not a
+ * bullet, including a checkbox — whose own prefix would otherwise match `- `.
+ */
+function bulletPrefix(text: string): string | null {
+  const match = BULLET.exec(text);
+  if (!match) return null;
+  return `${match[1] ?? ""}${match[2] as string} `;
+}
+
+/**
  * `Enter` — split the row at the caret.
  *
  * Splitting a checkbox produces **two checkboxes**, because that is what every list
@@ -63,13 +99,33 @@ export function splitAt(body: string, index: number, offset: number): EditResult
     return { body: serialize(next), focusIndex: index, focusOffset: 0 };
   }
 
+  const bullet = block.kind === "text" ? bulletPrefix(text) : null;
+
+  // 🔴 Enter on an **empty** bullet leaves the list, exactly as an empty checkbox does.
+  // Without it there is no way to stop making bullets except reaching for raw view —
+  // the mode-switch ADR-003 removed. The caret stays put; only the marker goes.
+  if (bullet !== null && text === bullet) {
+    const next = blocks.map((b, i) => (i === index ? { ...b, raw: b.eol ?? "" } : b));
+    return { body: serialize(next), focusIndex: index, focusOffset: 0 };
+  }
+
   // 🔴 The line ending moves to the *second* half. A split turns one line into two,
   // and the ending belonged to the end of the original — which is now the end of the
   // tail. Leaving it on the head produces `hello\r\n world`, a stray carriage return
   // mid-document that survives every round trip because `raw` is honoured verbatim.
   const eol = eolOf(block);
   const head = { ...block, raw: lineFor(block, before) };
-  const tailRaw = (block.kind === "checkbox" ? newCheckboxLine(block, after) : after) + eol;
+  const continued =
+    block.kind === "checkbox"
+      ? newCheckboxLine(block, after)
+      : bullet !== null
+        ? // 🔴 The tail keeps whatever came after the caret, minus the prefix it is
+          // about to be given again — otherwise splitting `- milk and eggs` mid-line
+          // produces `- ` followed by ` and eggs` with the marker duplicated on a
+          // line that already carried one.
+          bullet + after.replace(BULLET, "")
+        : after;
+  const tailRaw = continued + eol;
 
   const next = [
     ...blocks.slice(0, index),
@@ -80,7 +136,15 @@ export function splitAt(body: string, index: number, offset: number): EditResult
     ...blocks.slice(index + 1),
   ];
 
-  return { body: serialize(next), focusIndex: index + 1, focusOffset: 0 };
+  // 🔴 The caret goes **after** a bullet's marker, and at 0 for everything else.
+  //
+  // A checkbox's `- [ ] ` prefix is not in its editor — `displayText` strips it, and
+  // offset 0 is already past it. A bullet has no parsed prefix: it is a plain text
+  // block whose first two characters happen to be `- `, so they *are* in the editor and
+  // offset 0 lands in front of them. Typing then produced `eggs- ` rather than
+  // `- eggs`, which the unit tests could not see because they assert on the body.
+  const focusOffset = bullet !== null ? bullet.length : 0;
+  return { body: serialize(next), focusIndex: index + 1, focusOffset };
 }
 
 /**

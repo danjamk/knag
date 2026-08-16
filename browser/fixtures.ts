@@ -100,6 +100,30 @@ export class Knag {
     return focused.evaluate((el: { selectionStart: number | null }) => el.selectionStart ?? -1);
   }
 
+  /**
+   * Put the caret at an exact offset in a row.
+   *
+   * 🔴 Exists because **`Home` does not move the caret in WebKit** — it scrolls. A test
+   * that pressed it looked like it was starting at the beginning of a line and was
+   * really starting wherever the last click left the caret, so a `Backspace` meant to
+   * merge two rows quietly deleted a character instead. The test still passed or failed;
+   * it just was not testing the thing it named. Verified by probing `selectionStart`
+   * before and after the keypress.
+   *
+   * `End` is fine and is used directly. Nothing else here should reach for `Home`.
+   */
+  async placeCaret(index: number, offset: number): Promise<void> {
+    const field = this.editor(index);
+    await field.click();
+    await field.evaluate(
+      (el: { focus: () => void; setSelectionRange: (a: number, b: number) => void }, at: number) => {
+        el.focus();
+        el.setSelectionRange(at, at);
+      },
+      offset,
+    );
+  }
+
   /** The `data-index` of the row holding focus, or -1. */
   async focusedRowIndex(): Promise<number> {
     const row = this.page.locator("[data-rows] li:focus-within");
