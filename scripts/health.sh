@@ -8,7 +8,7 @@
 #   scripts/health.sh <host> <expected-build-id> [expected-environment]
 #
 # 🔴 The environment argument is not decoration. `KNAG_ENV` is declared in BOTH
-# wrangler env blocks and baked by both the Makefile and deploy-prod.yml, and one
+# wrangler env blocks and baked by the Makefile and both deploy workflows, and one
 # declared in only one place reports the wrong environment in the other. Checking only
 # the version cannot see that: the build id is identical either way, so the single
 # failure this field exists to catch was the one thing /health was not asserting.

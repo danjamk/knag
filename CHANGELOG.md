@@ -13,6 +13,48 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-17
+
+Infrastructure only. Nothing in the running Worker behaves differently.
+
+### Added
+
+- **Dev deploys itself on merge to `main`**
+  ([#82](https://github.com/danjamk/knag/issues/82)). `deploy-dev.yml` runs the real
+  five-step upgrade sequence — backup → migrate → deploy → health → verify — against
+  the dev account on every merge, with no reviewer and no way to skip migrations.
+
+  **The reason was never the saved `make deploy`.** It is that `deploy-prod.yml` had
+  never executed: zero GitHub environments, zero secrets. So the first time that
+  sequence ran *anywhere*, it would have run against production, against the prod D1,
+  with every step running for the first time. Dev now rehearses it dozens of times
+  first, and the two workflows are maintained as mirrors — a change to one belongs in
+  both unless it is a listed divergence.
+
+- **A deployment runbook** at [docs/deployment.md](docs/deployment.md) — what ships
+  where, the exact Cloudflare API token permissions, provisioning a pipeline from
+  nothing, what each credential can reach if it leaks, and what a failure at each of
+  the five steps means. The provisioning checklist for production, which is still
+  unprovisioned, is in there too.
+
+### Fixed
+
+- **`deploy-prod.yml` never set `CLOUDFLARE_ACCOUNT_ID`.** Without it wrangler resolves
+  the account by calling `GET /accounts` — a lookup a token scoped tightly to one
+  account can fail. Because the workflow had never run, that failure was waiting on the
+  *first step of a first production deploy*, right where a first-time operator has the
+  least information. Found by writing the dev workflow, which is exactly what it was
+  for.
+
+### Changed
+
+- **[ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md) amended.** A third
+  credential location now exists, so §1b states what the two-account split actually
+  rests on: not the number of credentials, but that each one is readable only by the
+  job that names it. Every deployment credential lives on a GitHub Environment or in
+  `.env.local` — **never a repo-level secret.** §4 records why dev deploying
+  automatically does not contradict production deploying manually.
+
 ## [0.6.0] — 2026-08-16
 
 Three things found by using it. One of them was quietly discarding keystrokes.
@@ -450,7 +492,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/danjamk/knag/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/danjamk/knag/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/danjamk/knag/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/danjamk/knag/compare/v0.3.0...v0.4.0

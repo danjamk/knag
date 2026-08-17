@@ -51,8 +51,9 @@ help: ## Show this help message
 		/^[a-zA-Z_-]+:.*?##/ { printf "  $(YELLOW)%-16s$(RESET) %s\n", $$1, $$2 }' \
 		$(MAKEFILE_LIST)
 	@echo ""
-	@echo "$(BOLD)Prod is CI's job.$(RESET) The prod Cloudflare token is not on this"
-	@echo "machine by design — ship it from Actions → Deploy to production."
+	@echo "$(BOLD)Deploying is CI's job.$(RESET) Dev ships on every merge to main; prod"
+	@echo "ships from Actions → Deploy to production, manually. The prod Cloudflare"
+	@echo "token is not on this machine by design. Runbook: docs/deployment.md."
 	@echo ""
 
 ##@ Getting Started

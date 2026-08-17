@@ -108,9 +108,18 @@ writing to a column that no longer exists, against the only copy of the document
 `make backup` first, always. Full reasoning:
 [ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md) §3.
 
-**Prod is CI's job.** The prod Cloudflare token is not on this machine by design;
-`ENV=dev` is the default for every target. Production ships from Actions →
-Deploy to production, manually. Tagging a release does not deploy anything.
+**Deploying is CI's job, and the two workflows mirror each other.** Dev ships on
+every merge to `main` (`deploy-dev.yml`); prod ships from Actions → Deploy to
+production, manually (`deploy-prod.yml`). Tagging a release deploys nothing. The
+prod Cloudflare token is not on this machine by design, and `ENV=dev` is the
+default for every Make target.
+
+Both workflows run the same five steps — `backup → migrate → deploy → health →
+verify` — and that is deliberate: dev is the rehearsal for a prod deploy, which is
+why **a change to one belongs in both unless it is a deliberate divergence.** The
+divergences are enumerated in [docs/deployment.md](docs/deployment.md), which is
+also where the API token permissions and the provisioning steps live. An unlisted
+difference between the two files is indistinguishable from drift.
 
 **knag is in release mode**, as of `v0.1.11` — the cap on the build phase. That
 means the version bump **and** a `CHANGELOG.md` entry land *in the feature PR*, not
@@ -122,9 +131,9 @@ Next feature starts `0.2.0`. Full doctrine lives in the house versioning guide.
 Every deployment reports `<version>+<shortsha>`, when it was deployed, and **which
 environment** — the last being the one people skip and then need, because a deploy
 that looks right and went to the wrong place is indistinguishable from one that
-failed. `KNAG_ENV` is declared in *both* wrangler env blocks and baked by both the
-Makefile and `deploy-prod.yml`; a var set in only one of those reports the wrong
-environment in the other.
+failed. `KNAG_ENV` is declared in *both* wrangler env blocks and baked by the
+Makefile and *both* deploy workflows; a var set in only one of those reports the
+wrong environment in the other.
 
 ## Agent contract
 
