@@ -1,0 +1,403 @@
+<title>knag Row Model Probe</title>
+
+<style>
+  :root {
+    --ground: #0E1116;
+    --panel: #161B22;
+    --edge: #232B36;
+    --chalk: #C9D1D9;
+    --dim: #7D8590;
+    --cyan: #4FC3D9;
+    --pass: #5FB37E;
+    --fail: #E56A6A;
+    --warn: #D9A441;
+
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  /* Single-theme on purpose: this is an instrument, and it should read
+     identically whatever theme the host is in. Every colour is painted. */
+  body {
+    background: var(--ground);
+    color: var(--chalk);
+    font-family: var(--sans);
+    line-height: 1.55;
+    margin: 0;
+    padding: 24px 18px 96px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap { max-width: 68ch; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+
+  h1 { font-size: 1.45rem; line-height: 1.2; margin: 0 0 6px; text-wrap: balance; }
+  h2 {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin: 0 0 10px;
+    font-weight: 600;
+  }
+  p { margin: 0 0 10px; }
+  .lede { color: var(--dim); font-size: 0.95rem; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  ol, ul { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 8px; }
+  li::marker { color: var(--dim); }
+
+  code, .mono { font-family: var(--mono); font-size: 0.85em; }
+  code { background: #0B0E12; border: 1px solid var(--edge); border-radius: 4px; padding: 1px 5px; }
+
+  /* ── The thing under test ────────────────────────────────────────────── */
+
+  #doc {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    line-height: 1.7;
+    /* 🔴 Load-bearing: leading and trailing spaces have to survive. */
+    white-space: pre-wrap;
+    background: #0B0E12;
+    border: 1px solid var(--edge);
+    border-radius: 6px;
+    padding: 12px;
+    outline: none;
+    caret-color: var(--cyan);
+  }
+  #doc:focus-visible { border-color: var(--cyan); }
+  #doc ::selection { background: #2B5566; color: #fff; }
+  #doc::selection { background: #2B5566; color: #fff; }
+
+  .row { min-height: 1.7em; }
+  .pre { user-select: none; }
+
+  .box {
+    display: inline-block;
+    width: 0.85em; height: 0.85em;
+    border: 1.5px solid var(--dim);
+    border-radius: 3px;
+    vertical-align: -0.08em;
+    margin-right: 0.5em;
+    position: relative;
+  }
+  .row[data-checked="1"] .box { border-color: var(--cyan); }
+  .row[data-checked="1"] .box::after {
+    content: "";
+    position: absolute; left: 0.22em; top: 0.02em;
+    width: 0.22em; height: 0.45em;
+    border: solid var(--cyan);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+
+  /* ── Readouts ────────────────────────────────────────────────────────── */
+
+  .readout {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    background: #0B0E12;
+    border: 1px solid var(--edge);
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 0;
+    color: var(--chalk);
+  }
+
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-family: var(--mono); font-size: 0.8rem; }
+  .kv dt { color: var(--dim); }
+  .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+  .verdict {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 0.75rem; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    border-radius: 999px; padding: 4px 11px;
+    border: 1px solid currentColor;
+  }
+  .verdict::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .verdict[data-state="pass"] { color: var(--pass); }
+  .verdict[data-state="fail"] { color: var(--fail); }
+  .verdict[data-state="idle"] { color: var(--dim); }
+
+  .stripe { border-left: 3px solid var(--edge); padding-left: 12px; }
+  .stripe[data-state="pass"] { border-left-color: var(--pass); }
+  .stripe[data-state="fail"] { border-left-color: var(--fail); }
+
+  .ws { color: var(--warn); opacity: 0.75; }
+  .caret { color: var(--fail); font-weight: 700; }
+
+  button {
+    font-family: var(--mono); font-size: 0.8rem;
+    background: #1D242E; color: var(--chalk);
+    border: 1px solid var(--edge); border-radius: 6px;
+    padding: 9px 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--cyan); color: var(--cyan); }
+  button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  .row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+  .check-list { list-style: none; padding: 0; }
+  .check-list li { display: flex; gap: 10px; align-items: flex-start; }
+  .check-list input { margin-top: 5px; flex: none; accent-color: var(--cyan); }
+
+  .note { font-size: 0.85rem; color: var(--dim); }
+  .q { color: var(--chalk); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <h1>Row Model Probe</h1>
+    <p class="lede">
+      Does <code>contenteditable</code> give knag native cross-row selection without
+      destroying byte preservation? This page answers that, on the device that decides
+      it. Nothing here touches the real app.
+    </p>
+  </header>
+
+  <section class="panel">
+    <h2>Run it on the iPhone</h2>
+    <ol>
+      <li><span class="q">Long-press inside a line, then drag the handles down across several lines.</span> If the selection stops at one line, the whole approach is dead and nothing below matters.</li>
+      <li><span class="q">Copy the selection.</span> Watch the Selection panel — it shows exactly what would land on the clipboard.</li>
+      <li><span class="q">Select across a checkbox line and copy.</span> Does it read <code>- [ ] milk</code>, or does the checkbox vanish?</li>
+      <li><span class="q">Type. Press Enter mid-line. Press Backspace at the start of a line.</span> Watch Structure — it goes red the moment the browser invents an element the model does not have.</li>
+      <li><span class="q">Edit the indented line and the one with trailing spaces.</span> Watch Bytes.</li>
+    </ol>
+  </section>
+
+  <section class="panel">
+    <h2>The document</h2>
+    <p class="note">
+      One <code>contenteditable</code> container, one child per line. Checkbox prefixes are
+      <code>contenteditable="false"</code> islands. Deliberately loaded with the awkward cases:
+      a blank line, leading indent, trailing spaces, and a <code>*</code> bullet that must stay a <code>*</code>.
+    </p>
+    <div id="doc" contenteditable="true" spellcheck="false" aria-label="Test document"></div>
+    <div class="row-actions">
+      <button type="button" id="recheck">Re-run checks</button>
+      <button type="button" id="reset">Reset document</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>1 · Selection</h2>
+    <dl class="kv">
+      <dt>spans</dt><dd id="sel-rows">—</dd>
+      <dt>anchor</dt><dd id="sel-anchor">—</dd>
+      <dt>focus</dt><dd id="sel-focus">—</dd>
+      <dt>length</dt><dd id="sel-len">—</dd>
+    </dl>
+    <p class="note" style="margin:12px 0 6px">What a copy would put on the clipboard:</p>
+    <pre class="readout" id="sel-text">—</pre>
+  </section>
+
+  <section class="panel">
+    <h2>2 · Structure</h2>
+    <div class="stripe" id="struct-stripe" data-state="idle">
+      <span class="verdict" id="struct-verdict" data-state="idle">idle</span>
+      <p class="note" style="margin:8px 0 0" id="struct-note">
+        Every child of the container must be one <code>.row</code>. Anything else is the
+        browser inventing structure — the classic contenteditable failure.
+      </p>
+    </div>
+    <pre class="readout" id="struct-out" style="margin-top:12px">—</pre>
+  </section>
+
+  <section class="panel">
+    <h2>3 · Bytes</h2>
+    <div class="stripe" id="byte-stripe" data-state="idle">
+      <span class="verdict" id="byte-verdict" data-state="idle">idle</span>
+      <p class="note" style="margin:8px 0 0">
+        The document rebuilt from the DOM, compared against the source byte for byte.
+        <span class="ws">·</span> is a space, <span class="ws">⏎</span> a line break. This is
+        knag principle 3, and it is where contenteditable usually loses.
+      </p>
+    </div>
+    <pre class="readout" id="byte-out" style="margin-top:12px">—</pre>
+  </section>
+
+  <section class="panel">
+    <h2>Verdict</h2>
+    <ul class="check-list">
+      <li><input type="checkbox" id="c1"><label for="c1">Selection crossed rows by long-press and drag</label></li>
+      <li><input type="checkbox" id="c2"><label for="c2">Copied text had the right line breaks</label></li>
+      <li><input type="checkbox" id="c3"><label for="c3">A copied checkbox line read as <code>- [ ] milk</code></label></li>
+      <li><input type="checkbox" id="c4"><label for="c4">Enter and Backspace left Structure green</label></li>
+      <li><input type="checkbox" id="c5"><label for="c5">Indent and trailing spaces left Bytes green</label></li>
+    </ul>
+    <p class="note" style="margin-top:14px">
+      All five green means the vision is reachable and the work is a known quantity.
+      <strong>1 failing kills the approach outright.</strong> 4 or 5 failing is the honest
+      reason to take multi-select in Arrange instead.
+    </p>
+  </section>
+
+</div>
+
+<script>
+  // The source of truth. Deliberately awkward: a blank line, leading indent,
+  // trailing spaces, a `*` marker that must not be normalised to `-`.
+  const SOURCE = [
+    "groceries",
+    "- [ ] milk",
+    "- [x] eggs",
+    "",
+    "  indented note",
+    "* star bullet",
+    "trailing spaces here   ",
+  ].join("\n");
+
+  const doc = document.getElementById("doc");
+
+  /** Split a line into the prefix that is rendered as an island, and its text. */
+  function parseLine(line) {
+    const m = /^(\s*)- \[([ xX])\] (.*)$/.exec(line);
+    if (m) return { kind: "check", indent: m[1], checked: m[2].toLowerCase() === "x", text: m[3] };
+    return { kind: "text", text: line };
+  }
+
+  function render(source) {
+    doc.textContent = "";
+    for (const line of source.split("\n")) {
+      const parsed = parseLine(line);
+      const row = document.createElement("div");
+      row.className = "row";
+      row.dataset.kind = parsed.kind;
+
+      if (parsed.kind === "check") {
+        // The exact bytes this island stands for, kept out of the editable flow.
+        row.dataset.prefix = parsed.indent + "- [" + (parsed.checked ? "x" : " ") + "] ";
+        row.dataset.checked = parsed.checked ? "1" : "0";
+        const pre = document.createElement("span");
+        pre.className = "pre";
+        pre.contentEditable = "false";
+        pre.append(Object.assign(document.createElement("span"), { className: "box" }));
+        row.append(pre);
+      } else {
+        row.dataset.prefix = "";
+      }
+
+      const t = document.createElement("span");
+      t.className = "t";
+      t.textContent = parsed.text;
+      row.append(t);
+      doc.append(row);
+    }
+  }
+
+  /** Rebuild the document from the DOM, the way a real save would have to. */
+  function reconstruct() {
+    return [...doc.children]
+      .map((el) => {
+        if (!el.classList || !el.classList.contains("row")) return el.textContent;
+        const t = el.querySelector(".t");
+        return (el.dataset.prefix || "") + (t ? t.textContent : el.textContent);
+      })
+      .join("\n");
+  }
+
+  const visible = (s) =>
+    s.replace(/ /g, '<span class="ws">·</span>').replace(/\n/g, '<span class="ws">⏎</span>\n');
+
+  // ── 2 · Structure ──────────────────────────────────────────────────────
+  function checkStructure() {
+    const problems = [];
+    [...doc.childNodes].forEach((node, i) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (node.textContent.trim() !== "") problems.push(`child ${i}: bare text node "${node.textContent}"`);
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      if (!node.classList.contains("row")) problems.push(`child ${i}: <${node.nodeName.toLowerCase()}> is not a .row`);
+      else if (!node.querySelector(".t")) problems.push(`child ${i}: .row lost its .t span`);
+    });
+
+    const ok = problems.length === 0;
+    set("struct", ok, ok
+      ? `${doc.children.length} rows, every one intact`
+      : problems.join("\n"));
+  }
+
+  // ── 3 · Bytes ──────────────────────────────────────────────────────────
+  function checkBytes() {
+    const rebuilt = reconstruct();
+    if (rebuilt === SOURCE) {
+      set("byte", true, "identical to source — " + SOURCE.length + " bytes");
+      return;
+    }
+    let i = 0;
+    while (i < rebuilt.length && i < SOURCE.length && rebuilt[i] === SOURCE[i]) i++;
+    const from = Math.max(0, i - 24);
+    const out =
+      "first divergence at byte " + i + "\n\n" +
+      "source  " + visible(SOURCE.slice(from, i + 24)) + "\n" +
+      "rebuilt " + visible(rebuilt.slice(from, i + 24)) + "\n" +
+      "        " + " ".repeat(i - from) + '<span class="caret">^</span>';
+    set("byte", false, out, true);
+  }
+
+  function set(name, ok, text, isHtml) {
+    const verdict = document.getElementById(name + "-verdict");
+    const stripe = document.getElementById(name + "-stripe");
+    const out = document.getElementById(name + "-out");
+    const state = ok ? "pass" : "fail";
+    verdict.dataset.state = state;
+    verdict.textContent = ok ? "pass" : "fail";
+    stripe.dataset.state = state;
+    if (isHtml) out.innerHTML = text;
+    else out.textContent = text;
+  }
+
+  // ── 1 · Selection ──────────────────────────────────────────────────────
+  function rowIndexOf(node) {
+    let el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    while (el && el !== doc && !(el.classList && el.classList.contains("row"))) el = el.parentElement;
+    return el && el.classList && el.classList.contains("row") ? [...doc.children].indexOf(el) : -1;
+  }
+
+  function reportSelection() {
+    const sel = document.getSelection();
+    const text = sel ? sel.toString() : "";
+    const inside = sel && sel.anchorNode && doc.contains(sel.anchorNode);
+
+    const a = inside ? rowIndexOf(sel.anchorNode) : -1;
+    const f = inside ? rowIndexOf(sel.focusNode) : -1;
+    const spans = a >= 0 && f >= 0 ? Math.abs(f - a) + 1 : 0;
+
+    document.getElementById("sel-anchor").textContent = inside ? `row ${a}, offset ${sel.anchorOffset}` : "—";
+    document.getElementById("sel-focus").textContent = inside ? `row ${f}, offset ${sel.focusOffset}` : "—";
+    document.getElementById("sel-len").textContent = text.length ? `${text.length} chars` : "—";
+
+    const rowsEl = document.getElementById("sel-rows");
+    if (!inside || spans === 0) rowsEl.textContent = "—";
+    else {
+      rowsEl.textContent = spans === 1 ? "1 row" : `${spans} rows ✓`;
+      rowsEl.style.color = spans > 1 ? "var(--pass)" : "var(--dim)";
+    }
+
+    document.getElementById("sel-text").innerHTML = text ? visible(text) : "—";
+  }
+
+  function runChecks() { checkStructure(); checkBytes(); }
+
+  render(SOURCE);
+  runChecks();
+
+  document.addEventListener("selectionchange", reportSelection);
+  doc.addEventListener("input", runChecks);
+  document.getElementById("recheck").addEventListener("click", runChecks);
+  document.getElementById("reset").addEventListener("click", () => { render(SOURCE); runChecks(); reportSelection(); });
+</script>
