@@ -512,20 +512,41 @@ behave like line boundaries:
 | `Enter` on a checkbox or bullet | continue the list with the same marker |
 | `Enter` on an *empty* checkbox or bullet | drop the marker and leave the list |
 | `Backspace` at position 0 | merge into the previous row, caret at the join |
-| `↑` / `←` at the start of a row | previous row, caret at its **end** |
-| `↓` / `→` at the end of a row | next row, caret at 0 |
+| `←` at the start of a row | previous row, caret at its **end** |
+| `→` at the end of a row | next row, caret at 0 |
+| `↑` on the row's first visual line | previous row, **same column** |
+| `↓` on the row's last visual line | next row, **same column** |
 
-🔴 A boundary key crosses a row **only** with the caret exactly at the boundary and
-**nothing selected**. Anywhere inside a line the arrows belong to the field — a row is
-a textarea that can be several visual lines tall, and intercepting inside one makes a
-long wrapped line unnavigable. A live selection is not a caret: every editor collapses
-it on an arrow, so a boundary jump would eat the gesture.
+🔴 A boundary key crosses a row only with **nothing selected** — a live selection is not
+a caret, every editor collapses it on an arrow, and a boundary jump would eat the
+gesture.
+
+🔴 **"At a boundary" means two different things for the two pairs, and conflating them
+was #88.** For `←`/`→` it is an **offset**: the first or last character. For `↑`/`↓` it
+is a **visual line**, which an offset cannot express — a row is a textarea that can be
+several visual lines tall, and intercepting inside one makes a long wrapped line
+unnavigable. Requiring the exact offset instead meant a `↓` from mid-row was never
+intercepted, so the browser handled it and moved the caret to the end of the text:
+changing rows cost two presses, and the first went somewhere nobody asked for.
+
+🔴 **The preserved column is a pixel x, not a character offset.** A character count is
+not a column in a proportional face — `iiii` and `WWWW` put offset 4 nowhere near each
+other on screen. Measuring both the visual line and the column is what
+`client/src/caret.ts` exists for, and it is the only place in the client that reads
+layout.
+
+`↑` on the first row and `↓` on the last do **nothing**. Handing the keystroke back
+would let a one-line textarea slam the caret to the start or end of its text, which is
+the same unasked-for jump, just at the ends of the document.
 
 Nothing is skipped. A blank row is a place you can type, and stepping over one would
 make the arrows disagree with what is on screen.
 
 The horizontal pair was missing until #84 — the caret hit the end of a row and stopped
 dead, so moving through the page by keyboard meant reaching for `↓` and then `Home`.
+That same change gave `↑` the *end* of the row above rather than its column, reading it
+as "back one line"; #88 corrected it, and the horizontal pair kept the behaviour, where
+it is right.
 
 **Fenced blocks are an inline `<textarea>`** — one block, natively multi-line,
 and the reason raw view is no longer required for anything.

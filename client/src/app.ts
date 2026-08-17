@@ -25,6 +25,7 @@ import {
   setText,
   toggle,
 } from "../../worker/src/blocks.js";
+import { caretX, offsetNearestX, visualEdge } from "./caret.js";
 import { safeNext } from "./nav.js";
 import { offerExpiresAt, restoredBody } from "./restore.js";
 import {
@@ -1063,7 +1064,12 @@ rowsEl?.addEventListener("keydown", (event) => {
   // make a long wrapped line unnavigable.
   //
   // A live selection is not a caret: every editor collapses it on an arrow rather than
-  // moving somewhere, so a boundary jump would eat the gesture.
+  // moving somewhere, so a boundary jump would eat the gesture. That holds for all four
+  // arrows.
+  //
+  // 🔴 "At a boundary" means two different things for the two pairs, and conflating
+  // them was #88. For `←`/`→` it is an **offset**: the first or last character. For
+  // `↑`/`↓` it is a **visual line**, which an offset cannot express — see caret.ts.
   const collapsed = start === end;
   const atStart = collapsed && start === 0;
   const atEnd = collapsed && end === target.value.length;
@@ -1089,19 +1095,50 @@ rowsEl?.addEventListener("keydown", (event) => {
     return true;
   };
 
-  // 🔴 Up-from-the-start lands at the **end** of the row above, not at its start.
-  // `neighbor` preserves the column, which is right for a vertical move — but this
-  // branch only fires with the caret already at offset 0, so the preserved column is
-  // always 0 and the caret would drop at the far left of the row above rather than
-  // where its text ends. Reading it as "back one line" is what makes it feel right,
-  // and back one line ends at that line's end.
-  if (event.key === "ArrowUp" && atStart) {
-    step(-1, "end");
-    return;
-  }
+  /**
+   * `↑` / `↓` — move to the neighbouring row and keep the column (#88).
+   *
+   * 🔴 Gated on the caret's **visual** line, not its offset. The old gate was
+   * `start === 0` / `end === value.length`, which meant a `↓` from the middle of a row
+   * was never intercepted — so the browser handled it, and what a browser does with
+   * `↓` in a one-line textarea is move the caret to the end of the text. Changing rows
+   * cost two presses and the first one threw the caret somewhere nobody asked for.
+   *
+   * A wrapped row is still navigable because `visualEdge` is false in its interior,
+   * which is the case an offset comparison could not distinguish from a boundary.
+   *
+   * 🔴 The column is the caret's **x in pixels**, carried across and resolved against
+   * the target row's own glyphs. `neighbor`'s `Math.min(offset, length)` is a character
+   * count, and a character count is not a column in a proportional face — row `iiii`
+   * and row `WWWW` put offset 4 nowhere near each other on screen. `neighbor` is still
+   * what decides *whether* there is a row to move to; only the landing differs.
+   */
+  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    if (!collapsed) return;
 
-  if (event.key === "ArrowDown" && atEnd) {
-    step(1, "start");
+    const direction = event.key === "ArrowUp" ? -1 : 1;
+    const edge = visualEdge(target, start);
+    // The interior of a wrapped row belongs to the field — this is the whole reason the
+    // gate has to be visual.
+    if (direction === -1 ? !edge.first : !edge.last) return;
+
+    // 🔴 `preventDefault` here, before knowing whether there is a row to move to. At a
+    // visual edge the keystroke is ours either way: handing it back at the first or last
+    // row lets the browser do what it does in a one-line textarea — slam the caret to
+    // the start or end of the text — which is the same "press nobody asked for" this
+    // issue is about, just at the ends of the document. `↑` on the first row now does
+    // nothing, which is what a text editor does.
+    const column = caretX(target, start);
+    event.preventDefault();
+
+    const result = neighbor(body, index, direction, 0);
+    if (result.focusIndex === index) return;
+
+    const landing = editorIn(result.focusIndex);
+    if (!landing) return;
+
+    // Coming up, land on the row above's **last** visual line; going down, its first.
+    focusRow(result.focusIndex, offsetNearestX(landing, column, direction === -1 ? "last" : "first"));
     return;
   }
 

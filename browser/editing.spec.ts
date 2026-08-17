@@ -1,12 +1,15 @@
 import { expect, test } from "./fixtures.js";
 
 /**
- * The typing model, where only a real browser can reach it (#83, #84, #85).
+ * The typing model, where only a real browser can reach it (#83, #85).
  *
  * Every test here is a caret or a race — two things the pure suite in `client/test/`
  * is structurally blind to. `edit.ts` is pure precisely so its *decisions* can be
  * tested without a DOM; what it cannot tell you is whether the caret survived the
  * repaint that applied them, or whether two of them raced each other to the server.
+ *
+ * Moving the caret between rows lives in `arrows.spec.ts` (#84, #88), split out when
+ * this file reached eighteen tests — see the note at the top of that file.
  */
 
 const DOC = "first line\nsecond line\nthird line";
@@ -90,65 +93,6 @@ test.describe("typing fast", () => {
     await knag.saved();
     await expect(knag.page.locator("[data-save-status]")).not.toHaveText(/reloaded/);
     expect(await knag.document()).toBe("aabbccdd");
-  });
-});
-
-test.describe("arrow keys across a row boundary", () => {
-  test("🔴 right at the end of a line moves to the next", async ({ knag }) => {
-    // Every other editor does this, and its absence is felt immediately: the caret hits
-    // the end of a row and simply stops, so moving through the page by keyboard means
-    // reaching for the down arrow and then Home.
-    await knag.seed(DOC);
-
-    const row = knag.editor(0);
-    await row.click();
-    await row.press("End");
-    await knag.page.keyboard.press("ArrowRight");
-
-    expect(await knag.focusedRowIndex()).toBe(1);
-    expect(await knag.caretOffset()).toBe(0);
-  });
-
-  test("🔴 left at the start of a line moves to the end of the previous", async ({ knag }) => {
-    await knag.seed(DOC);
-
-    await knag.placeCaret(1, 0);
-    await knag.page.keyboard.press("ArrowLeft");
-
-    expect(await knag.focusedRowIndex()).toBe(0);
-    expect(await knag.caretOffset()).toBe("first line".length);
-  });
-
-  test("stays put at the very start and the very end of the page", async ({ knag }) => {
-    // Nothing to move to. The keystroke is a no-op rather than an error, and the caret
-    // does not jump somewhere arbitrary.
-    await knag.seed(DOC);
-
-    await knag.placeCaret(0, 0);
-    await knag.page.keyboard.press("ArrowLeft");
-    expect(await knag.focusedRowIndex()).toBe(0);
-    expect(await knag.caretOffset()).toBe(0);
-
-    const last = knag.editor(2);
-    await last.click();
-    await last.press("End");
-    await knag.page.keyboard.press("ArrowRight");
-    expect(await knag.focusedRowIndex()).toBe(2);
-    expect(await knag.caretOffset()).toBe("third line".length);
-  });
-
-  test("leaves the arrows alone inside a line", async ({ knag }) => {
-    // The boundary is the only place these are intercepted. Anywhere else they belong
-    // to the field, which is what makes a long wrapped row navigable at all.
-    await knag.seed(DOC);
-
-    const row = knag.editor(1);
-    await row.click();
-    await row.press("End");
-    await knag.page.keyboard.press("ArrowLeft");
-
-    expect(await knag.focusedRowIndex()).toBe(1);
-    expect(await knag.caretOffset()).toBe("second line".length - 1);
   });
 });
 

@@ -13,6 +13,49 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-08-17
+
+The up and down arrows behave like a text editor's.
+
+### Fixed
+
+- **`↓` and `↑` move to the next row in one press, and keep the column**
+  ([#88](https://github.com/danjamk/knag/issues/88)). Two bugs in the same four keys,
+  both reported from real use.
+
+  **The first press used to be eaten.** A row is a `<textarea rows="1">`, so pressing
+  `↓` inside one has no line below to go to and the browser does what it always does at
+  the last line: moves the caret to the end of the text. knag only intercepted once the
+  caret was *already* at the end, so changing rows cost two presses and the first one
+  threw the caret somewhere you did not ask for.
+
+  **`↑` used to land at the end of the row above** rather than at the same column. That
+  was a deliberate call in [#84](https://github.com/danjamk/knag/issues/84), reading it
+  as "back one line" — which is `←` semantics, not `↑` semantics.
+
+  `←` and `→` are unchanged; they were correct as shipped.
+
+  Two things this needed that a smaller fix would have got wrong. The arrows are now
+  gated on the caret's **visual line**, not its offset, because a row wraps — a long
+  note is several lines tall and `↑`/`↓` have to keep working inside it. And the
+  preserved column is a **pixel x**, not a character offset: a character count is not a
+  column in a proportional face, so `iiii` and `WWWW` put offset 4 nowhere near each
+  other on screen.
+
+  `↑` on the first row and `↓` on the last now do nothing, instead of letting the
+  browser slam the caret to the start or end of the line.
+
+### Notes
+
+- **The arrows had no tests at all** before this, which is why #84's wrong call went
+  unnoticed. There are now eleven, in a new `browser/arrows.spec.ts` — five of them fail
+  without this fix. None of it is reachable from the unit suite: every assertion depends
+  on where a glyph actually landed.
+- **A goal column is not preserved across consecutive presses.** Passing `↓` through a
+  short row clamps to its end and the original column is lost, where a full editor would
+  remember it. That needs state surviving keystrokes and invalidated by every edit,
+  click and repaint — deliberately not built.
+
 ## [0.6.1] — 2026-08-17
 
 Infrastructure only. Nothing in the running Worker behaves differently.
@@ -492,7 +535,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/danjamk/knag/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/danjamk/knag/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/danjamk/knag/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/danjamk/knag/compare/v0.4.0...v0.5.0
