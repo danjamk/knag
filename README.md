@@ -116,15 +116,23 @@ testing Chromium would report on a browser knag never runs on.
 Two Cloudflare accounts, separated by **which credential is active**, not by anything in
 the config:
 
-| | Credential lives in | Who can deploy |
+| | Ships on | Credential lives in |
 |---|---|---|
-| **dev** | `.env.local` in your clone | you, locally — every `make deploy` |
-| **prod** | a GitHub Environment secret | only `deploy-prod.yml` |
+| **dev** | every merge to `main`, automatically | a `development` GitHub Environment secret |
+| **dev** | `make deploy`, on demand | `.env.local` in your clone |
+| **prod** | a manual click | a `production` GitHub Environment secret |
 
 The prod token is never on the laptop, which is what makes a stray deploy from a scratch
 clone unable to reach production. Ship prod from **Actions → Deploy to production**,
 manually. Tagging a release deploys nothing — the version names the code; deploying is
 the decision to adopt it.
+
+Dev is the opposite: it tracks `main` with no reviewer and no way to skip migrations,
+because dev tracking `main` is not a decision. The point of automating it was never the
+saved command — it is that the five steps below now run on every merge, so the first
+production deploy is a rehearsed sequence rather than a first attempt. Setting the
+pipeline up from nothing, including the exact API token permissions, is in
+[docs/deployment.md](docs/deployment.md).
 
 The upgrade order is not negotiable:
 
@@ -200,6 +208,7 @@ read.
 | | |
 |---|---|
 | [docs/spec.md](docs/spec.md) | The build spec — data model, API, sync rules, block grammar, build order. §12 is the scope boundary; §17 is what a larger future would break. |
+| [docs/deployment.md](docs/deployment.md) | The runbook — what ships where, provisioning a pipeline from nothing, and what a failure at each step means. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and why, per release. |
 | [ADR-001](docs/adr/ADR-001-passphrase-auth.md) | Why this rolls its own sessions instead of using Cloudflare Access. |
 | [ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md) | Two Cloudflare accounts, and why migrations are additive-only. |

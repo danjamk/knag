@@ -25,8 +25,12 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Scopes the secrets below to THIS job — ci.yml cannot read them — and is where
-    # an optional required-reviewer gate lives.
+    # Scopes the secrets below to THIS job — ci.yml and deploy-dev.yml cannot read
+    # them — and is where an optional required-reviewer gate lives.
+    #
+    # 🔴 This environment DOES NOT EXIST YET, and neither does its token. Creating it
+    # means creating three things, not one — the `CLOUDFLARE_API_TOKEN` secret and
+    # both variables below. See docs/deployment.md.
     environment: production
     steps:
       - uses: actions/checkout@v5
@@ -61,6 +65,13 @@ jobs:
             d1 export knag --remote --output backups/knag-prod.sql
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # 🔴 Added when deploy-dev.yml was written, because it is the one thing this
+          # file was missing and could not discover: with no account id set, wrangler
+          # resolves the account by calling GET /accounts — a lookup a token scoped
+          # tightly to one account can fail, on the first step of a first prod run.
+          # Setting it explicitly skips the lookup. A variable, not a secret: an
+          # account id names a resource, it does not grant anything.
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
       # 🔴 This one is not a warning waiting to happen — it is the restore point for a
       # prod database, and it runs on every deploy. A node20 action that stops being
@@ -84,8 +95,9 @@ jobs:
             d1 migrations apply knag --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
-# The build id, computed once so the deploy and the verify below cannot disagree
+      # The build id, computed once so the deploy and the verify below cannot disagree
       # about what was shipped. Matches the Makefile's BUILD_ID format exactly —
       # <version>+<shortsha> — because `make health` compares against the same string.
       - name: Compute the build id
@@ -100,6 +112,7 @@ jobs:
             --var KNAG_ENV:"prod"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
       # Close the loop: assert /health reports the exact build this run produced, in
       # the environment it was meant for. A stuck or partial rollout fails the run

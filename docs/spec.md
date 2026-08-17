@@ -1272,20 +1272,35 @@ not the knowledge that the document was wrong three deploys ago.
 webhooks have been throttled to the point where a PR and its merge both landed
 with no run and no way to ask for one.
 
-### Deploy credential — two accounts
+`.github/workflows/deploy-dev.yml` deploys dev on every merge to `main`, running
+the full five-step upgrade sequence below rather than a bare `wrangler deploy` —
+because a workflow that only deployed would ship a Worker against an un-migrated
+D1 the first time a PR added a migration. It is also the rehearsal for
+`deploy-prod.yml`, which is manual and, as of this writing, has never run. The two
+files mirror each other deliberately; the divergences are enumerated in
+[docs/deployment.md](deployment.md), which is the operational runbook for all of
+this.
+
+### Deploy credential — two accounts, three locations
 
 Per the house Cloudflare standard and
-[ADR-002](adr/ADR-002-two-accounts-and-migrations.md):
+[ADR-002](adr/ADR-002-two-accounts-and-migrations.md) §1, §1b:
 
 | | Credential lives in | Who can deploy |
 |---|---|---|
 | **dev** | `.env.local` in this clone | you, locally — every `make deploy` |
+| **dev** | a GitHub Environment secret on `development` | only `deploy-dev.yml` |
 | **prod** | a GitHub Environment secret on `production` | only `deploy-prod.yml` |
 
 **The prod token is never on the laptop.** That placement is the mechanism; the
 `env.prod` block in `wrangler.jsonc` names resources and grants nothing. The top
 level of that file is dev, so every command that forgets a flag does the safe
 thing.
+
+What keeps three credentials from weakening the two-account split is that each one
+is readable only by the job that names it: **every deployment credential lives on
+a GitHub Environment or in `.env.local`, never as a repo-level secret.** `ci.yml`
+declares no environment and can read none of them.
 
 Secrets are never in `wrangler.jsonc` — `wrangler secret put --env <env>`, and
 **different values per environment**:
@@ -1306,6 +1321,8 @@ make health ENV=prod          # assert live == checkout
 ```
 
 `deploy-prod.yml` runs exactly this, in this order, on manual dispatch only.
+`deploy-dev.yml` runs the same five steps against dev on every merge to `main`,
+plus `make verify`'s smoke test at the end.
 
 **Between `migrate` and `deploy`, the currently deployed Worker runs against the
 new schema.** So: every migration must be backward-compatible with the deployed

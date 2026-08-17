@@ -13,7 +13,11 @@
   // anything in this file:
   //
   //   dev   CLOUDFLARE_API_TOKEN in .env.local  → every local `make deploy`
-  //   prod  a GitHub Environment secret, only   → only deploy-prod.yml
+  //   dev   a GitHub Environment secret          → only deploy-dev.yml, on merge
+  //   prod  a GitHub Environment secret          → only deploy-prod.yml, manual
+  //
+  // Three locations, two accounts. Each is readable only by the job that names it —
+  // an Environment secret, never a repo-level one (ADR-002 §1b).
   //
   // The prod token is never on the laptop. That placement IS the guarantee — the
   // env blocks below only name resources, they grant nothing. A laptop holding the
