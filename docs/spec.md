@@ -1323,6 +1323,21 @@ not the knowledge that the document was wrong three deploys ago.
 webhooks have been throttled to the point where a PR and its merge both landed
 with no run and no way to ask for one.
 
+The **browser suite is a second job, and it does not run on `push`.** It is roughly three
+minutes against `check`'s fifty seconds, and the pull request already ran it against the
+same tree, so running it again on the squash commit paid twice for one answer.
+
+🔴 The consequence, stated rather than discovered: **"CI is green on `main`" means
+typecheck and unit tests.** Nothing browser-tests `main`'s actual tree. The PR run covers
+the same content unless another PR landed in between, and two things stand behind that
+gap — a production deploy runs the suite itself before touching the account, and
+`workflow_dispatch` takes a `ref`, so a full run against `main` before a release is one
+click. That is the moment to want one.
+
+CI also cancels superseded runs on the same ref (`cancel-in-progress: true`), which is the
+**opposite** of both deploy workflows and correct for the same reason they are: losing a
+test run costs nothing, and losing a deploy mid-flight can leave a half-applied migration.
+
 `.github/workflows/deploy-dev.yml` deploys dev on every merge to `main`, running
 the full five-step upgrade sequence below rather than a bare `wrangler deploy` —
 because a workflow that only deployed would ship a Worker against an un-migrated

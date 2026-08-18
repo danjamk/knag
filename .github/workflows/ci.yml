@@ -15,6 +15,16 @@ on:
         required: false
         type: string
 
+# 🔴 Supersede, don't accumulate. Pushing three times while iterating started three full
+# WebKit suites and left the earlier two running to completion.
+#
+# `cancel-in-progress: true` here is the OPPOSITE of the deploy workflows, and both are
+# correct: cancelling a test run loses nothing, while cancelling a deploy mid-flight can
+# leave a half-applied migration against the only copy of the document.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -41,16 +51,50 @@ jobs:
       # checks something `check` does not, the local gate is a lie.
       - run: pnpm check
 
-  # 🔴 Separate from `check`, deliberately. The WebKit download is ~80MB and adds
-  # about a minute, so making every typecheck pay for it would make the fast gate
-  # slow — and a slow gate is one people stop running.
+  # 🔴 Separate from `check`, deliberately. This job is ~3 minutes against `check`'s
+  # ~50 seconds, so making every typecheck pay for it would make the fast gate slow —
+  # and a slow gate is one people stop running.
   #
   # It is not optional either. Three bugs have shipped that 263 unit tests could not
   # see: a CSS specificity conflict, a toolbar that reflowed, and rows clipped to
   # zero height. All three were found by a human on an iPhone. This job is what
   # stops the next one costing that.
+  #
+  # 🔴 **Not on `push`.** A merge to `main` runs `check` and nothing else here. The pull
+  # request already ran this suite against the same tree, so running it again on the
+  # squash commit was paying twice for one answer — and this is the single most expensive
+  # thing in the repo's CI.
+  #
+  # What that costs, stated plainly rather than discovered later: **nothing browser-tests
+  # `main`'s actual tree.** The PR run tested the merge of head into base, which is the
+  # same content unless another PR landed in between — a real gap, and the one this used
+  # to cover. Two things stand behind it:
+  #
+  #   - a production deploy runs the suite itself, before anything touches the account
+  #     (deploy-prod.yml)
+  #   - `workflow_dispatch` still runs it, with a `ref` input — so a full run against
+  #     `main` before a release is one click, and that is the moment to want one
+  #
+  # So "CI is green on main" now means typecheck and unit tests. If that stops being
+  # enough, put this back rather than inventing something cleverer.
   browser:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    # 🔴 The official Playwright image, which ships WebKit **and** its system libraries
+    # already installed. What it replaces is `playwright install --with-deps webkit`,
+    # which downloaded ~80MB and then ran `apt-get` against Ubuntu mirrors on a fresh VM
+    # every single run — the largest and by far the most variable part of this job. It
+    # was measured stalling for over ten minutes with the suite not yet started, which is
+    # what prompted this.
+    #
+    # 🔴 The tag must match the Playwright version in the lockfile. The step below
+    # asserts it rather than trusting it, because the failure mode otherwise is silent:
+    # a mismatched image makes Playwright re-download the browser at run time, which is
+    # slow, green, and looks exactly like this optimisation still working.
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
+    env:
+      # The version this image ships. Bump alongside the tag above.
+      PLAYWRIGHT_IMAGE_VERSION: "1.62.1"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -70,10 +114,21 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
-      # right; testing Chromium would report on a browser knag never runs on.
-      - run: pnpm exec playwright install --with-deps webkit
+      - name: Assert the image ships the Playwright this repo installs
+        run: |
+          installed="$(node -p "require('@playwright/test/package.json').version")"
+          if [ "$installed" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "::error::Playwright ${installed} is installed but the container ships ${PLAYWRIGHT_IMAGE_VERSION}."
+            echo "::error::Update both in .github/workflows/ci.yml and deploy-prod.yml:"
+            echo "::error::  container: mcr.microsoft.com/playwright:v${installed}-noble"
+            echo "::error::  PLAYWRIGHT_IMAGE_VERSION: \"${installed}\""
+            exit 1
+          fi
+          echo "✓ Playwright ${installed} matches the image"
 
+      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
+      # right; testing Chromium would report on a browser knag never runs on. No install
+      # step — the image already has it, which is the whole point of the container.
       - run: pnpm test:browser
 
       # 🔴 Also node20 on v4, and it never appeared in a deprecation warning because it
