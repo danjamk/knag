@@ -120,8 +120,10 @@ jobs:
       # block — which the build id alone cannot see, because it is identical either
       # way. No credential needed: /health is public and says nothing about the
       # document.
+      # The same propagation budget as deploy-dev — see the note there. Not a
+      # divergence; the two files stay mirrors.
       - name: Verify the deployed build
-        run: bash scripts/health.sh knag.danjamkuhn.com "${{ steps.build.outputs.id }}" prod
+        run: bash scripts/health.sh knag.danjamkuhn.com "${{ steps.build.outputs.id }}" prod 90
 
       # 🔴 The smoke test, which health.sh is not. It asserts that authentication is
       # switched on, that the OAuth metadata is served rather than answered with the

@@ -13,6 +13,29 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-08-18
+
+### Fixed
+
+- **A successful dev deploy reported itself as a failure**
+  ([#99](https://github.com/danjamk/knag/issues/99)). `make health` asserts that what is
+  live is the code that was just deployed. It was asking too soon: a deploy returns
+  before the new Worker has finished rolling out, so the check read the *previous* build
+  and called drift.
+
+  Seen on the first run that could produce it — the deploy landed `0.7.0` at `12:05:25Z`,
+  health asked nine seconds later and was served `0.6.2`. Nothing was wrong except the
+  timing of the question, and the red run said the opposite.
+
+  `scripts/health.sh` now takes a propagation budget and retries until the build id
+  matches. Both deploy workflows pass 90 seconds. **A match returns immediately**, so a
+  healthy deploy pays nothing, and `make health` still answers instantly by default —
+  locally the question is "is what is live the code I am standing in", and a command that
+  waits before answering that is a worse command.
+
+  A wrong *environment* is never retried. That is `KNAG_ENV` declared in one wrangler
+  block and not the other, and waiting does not fix a config error.
+
 ## [0.7.0] — 2026-08-18
 
 Pick several rows in Arrange and copy or delete them together. And a control that had
@@ -581,7 +604,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/danjamk/knag/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/danjamk/knag/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/danjamk/knag/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/danjamk/knag/compare/v0.6.0...v0.6.1

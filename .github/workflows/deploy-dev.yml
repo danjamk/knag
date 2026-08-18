@@ -137,8 +137,17 @@ jobs:
       # hostname was deliberately taken out of the tracked files when the repo went
       # public — it is a live login form that the WAF rate-limit rule cannot cover
       # (spec §4.2). Same reason `.env.example` ships DEV_HOST as a placeholder.
+      # 🔴 The trailing `90` is a propagation budget, not a timeout. A deploy returns
+      # before the new Worker has finished rolling out, so this check can be served the
+      # *previous* build and call a successful deploy a failure — which is exactly what
+      # happened on the first run it could (deploy landed 12:05:25Z, health asked at
+      # 12:05:34Z and read the old version). It retries until the build id matches or the
+      # budget runs out; a match returns immediately, so a healthy deploy pays nothing.
+      #
+      # A wrong *environment* is never retried — that is a KNAG_ENV declared in one
+      # wrangler block and not the other, and waiting does not fix a config error.
       - name: Verify the deployed build
-        run: bash scripts/health.sh "${{ vars.DEV_HOST }}" "${{ steps.build.outputs.id }}" dev
+        run: bash scripts/health.sh "${{ vars.DEV_HOST }}" "${{ steps.build.outputs.id }}" dev 90
 
       # The smoke test, which health.sh is not. It asserts authentication is switched
       # on, that OAuth metadata is served rather than answered with the PWA shell, that
