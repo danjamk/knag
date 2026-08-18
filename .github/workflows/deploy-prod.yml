@@ -23,7 +23,56 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 🔴 The browser suite gates production, and this is a deliberate divergence from
+  # deploy-dev.yml — the one place the two files are not mirrors. See the divergence
+  # table in docs/deployment.md.
+  #
+  # Why it exists: `pnpm check` is a typecheck and a unit suite, and there are three
+  # bugs on record that 263 unit tests could not see — a CSS specificity conflict, a
+  # toolbar that reflowed, and rows clipped to zero height. All three were found by a
+  # human on an iPhone. Without this job, the only thing standing between those and
+  # production is remembering to look at a different workflow's result first.
+  #
+  # Why prod and not dev: dev tracks `main` and is the rehearsal, so a bad dev deploy
+  # is information and self-corrects on the next merge. A bad prod deploy is the thing
+  # this whole pipeline exists to prevent, and prod is manual — you already clicked
+  # Run, so you can wait four minutes.
+  #
+  # 🔴 No `environment:` on this job, on purpose. It needs no credential, and keeping
+  # it outside `production` means it cannot read the prod token and does not consume
+  # the reviewer approval. The approval is then asked *after* the tests are green,
+  # which is the right order to ask a human anything.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
+      # right; testing Chromium would report on a browser knag never runs on.
+      - run: pnpm exec playwright install --with-deps webkit
+
+      - run: pnpm test:browser
+
+      # The trace is worth most on the run that blocked a production deploy.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-trace-prod-gate
+          path: test-results/
+          retention-days: 7
+
   deploy:
+    # Nothing touches the prod account until the browser suite is green.
+    needs: browser
     runs-on: ubuntu-latest
     # Scopes the secrets below to THIS job — ci.yml and deploy-dev.yml cannot read
     # them — and is where an optional required-reviewer gate lives.

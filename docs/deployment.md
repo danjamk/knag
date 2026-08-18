@@ -54,7 +54,8 @@ make verify ENV=dev
 ```
 
 In CI it is the step list in `deploy-dev.yml` and `deploy-prod.yml`, which mirror each
-other deliberately. **A change to one belongs in both unless it is a deliberate
+other deliberately — with one job in front of prod's, the browser suite, which is the
+single listed divergence between them. **A change to one belongs in both unless it is a deliberate
 divergence** — the divergences are listed at the end of this document.
 
 ## Provisioning the dev pipeline
@@ -181,6 +182,7 @@ tells you most of what you need.
 
 | Fails at | Means | Do |
 |---|---|---|
+| **browser** (prod only) | The Playwright suite is red on this commit. Nothing has touched the prod account — the gate runs before the deploy job and holds no credential | Read the uploaded trace artifact. This job existing is the point: `pnpm check` cannot see rendering, geometry, visibility or focus |
 | `pnpm check` | Something merged red, or a flake. CI runs the same gate on the same commit | Look at the `ci.yml` run for the same SHA. Nothing has touched the account yet |
 | **Back up D1** | Almost always the credential: missing, wrong account, or missing `D1: Edit` | Check the token's permissions and account scope. Nothing has changed yet — this is the safe place to fail |
 | **Apply migrations** | A migration is bad, or partially applied | 🔴 The backup artifact from this run is your restore point. Do not retry blindly: read the migration, and check `d1_migrations` for what actually applied |
@@ -217,6 +219,7 @@ decision rather than drift.
 
 | | dev | prod | Why |
 |---|---|---|---|
+| **Browser suite gates the deploy** | no | **yes** | `pnpm check` is a typecheck and a unit suite. Three bugs are on record that 263 unit tests could not see, all three found by a human on an iPhone. Dev is the rehearsal and self-corrects on the next merge; a bad prod deploy is what this pipeline exists to prevent, and prod is manual so you can wait four minutes |
 | Trigger | `push` to `main` | `workflow_dispatch` | Dev tracking `main` is the point. A release names code; deploying prod is a decision to adopt it |
 | Required reviewer | none | yes (optional but intended) | Dev is not a decision |
 | `skip_migrations` input | **absent** | present | Dev is where the migration path gets exercised. An input that lets you skip it defeats the rehearsal |
