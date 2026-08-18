@@ -13,6 +13,52 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-18
+
+Pick several rows in Arrange and copy or delete them together. And a control that had
+been ignoring half of every tap.
+
+### Added
+
+- **Several rows at once, in Arrange** ([#96](https://github.com/danjamk/knag/issues/96)).
+  Tap a row to pick it, tap again to put it back. Copy or delete then acts on everything
+  picked, not just the row you tapped.
+
+  Copy joins the rows with a line break and strips `- [ ] ` prefixes, exactly as copying
+  a single row already did. Delete takes the whole set in one go and still does not ask —
+  the revision log is the undo, and the picked rows are already tinted, so the size of
+  the action is readable before you take it.
+
+  Nothing new appears on screen and no new colour enters the palette: a picked row uses
+  the existing ink-at-10% ground, one step above the row under your finger so the two
+  stay apart while you drag one out of a selection.
+
+  **This is the answer to "I cannot select across lines", and it is deliberately not the
+  same thing** — it works on whole rows, so it cannot take half of one line through half
+  of another. [ADR-006](docs/adr/ADR-006-cross-row-selection.md) records what was measured
+  and why that gap is accepted.
+
+### Fixed
+
+- **Tapping the middle of a control in Arrange did nothing**
+  ([#97](https://github.com/danjamk/knag/issues/97)). Tapping its edge worked, which is
+  the sort of thing you blame on yourself rather than the app.
+
+  Every control is a button wrapping a drawn glyph, and the three click handlers all
+  checked for an HTML element before doing anything. **An SVG is not an HTML element**,
+  so every tap that landed on the drawing — the middle half of a 36px control — was
+  dropped in silence. Copy and delete in Arrange were both affected.
+
+  It arrived with the design system, when the glyphs stopped being text and became
+  drawings, and nothing caught it: the unit suite has no browser, and no test had ever
+  clicked one of these controls. There is one now, and it clicks the glyph on purpose.
+
+### Notes
+
+- **`browser/arrange.spec.ts` is new**, because Arrange had no browser coverage at all
+  and `wipe.spec.ts` is already at the point where `scripts/browser-tests.sh` says a spec
+  file starts flaking. Twelve tests, including the one that would have caught #97.
+
 ## [0.6.2] — 2026-08-17
 
 The up and down arrows behave like a text editor's.
@@ -535,7 +581,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/danjamk/knag/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/danjamk/knag/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/danjamk/knag/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/danjamk/knag/compare/v0.5.0...v0.6.0

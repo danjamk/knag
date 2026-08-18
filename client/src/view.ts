@@ -108,6 +108,28 @@ export function removeAt<T>(items: T[], index: number): T[] {
   return items.filter((_, i) => i !== index);
 }
 
+/**
+ * Remove several blocks in one pass.
+ *
+ * 🔴 One pass, not a loop over `removeAt`. Removing index 2 and then index 5 removes
+ * the wrong second row, because the first removal shifted everything after it — the
+ * classic way a bulk delete eats a line nobody selected. Filtering against the whole
+ * set reads every index against the original array.
+ *
+ * Out-of-range indices are ignored rather than throwing, for the same reason as
+ * `removeAt`: the caller is reacting to a click on rows a repaint may already have
+ * replaced. Returns the input untouched when nothing is in range, so a caller can
+ * compare by identity.
+ */
+export function removeMany<T>(items: T[], indices: Iterable<number>): T[] {
+  const drop = new Set<number>();
+  for (const index of indices) {
+    if (Number.isInteger(index) && index >= 0 && index < items.length) drop.add(index);
+  }
+  if (drop.size === 0) return items;
+  return items.filter((_, i) => !drop.has(i));
+}
+
 // ── Linkify ──────────────────────────────────────────────────────────────────
 
 export type Segment = { link: boolean; value: string };

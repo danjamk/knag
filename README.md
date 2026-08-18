@@ -215,6 +215,7 @@ read.
 | [ADR-003](docs/adr/ADR-003-single-mode-editor.md) | Why there is one editing mode, reversing the spec's original two-view design. |
 | [ADR-004](docs/adr/ADR-004-display-matches-the-bytes.md) | The display never diverges from the bytes. Read before answering a formatting request. |
 | [ADR-005](docs/adr/ADR-005-mcp-oauth.md) | Why `/mcp` needs OAuth as well as a static bearer. |
+| [ADR-006](docs/adr/ADR-006-cross-row-selection.md) | Why selecting text across rows stays out of the editor, and what was measured to decide it. |
 
 The spec refers to a set of house standards — a private, personal collection covering
 Node, Cloudflare, MCP and release practice. Where one of its rules matters here it is
