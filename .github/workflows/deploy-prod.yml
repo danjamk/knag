@@ -194,5 +194,9 @@ jobs:
       # PWA shell, and that unrouted paths 404 — none of which the unit suite can see,
       # because Miniflare does not serve the assets binding. Running it only against
       # dev meant prod's asset routing had never been checked at all.
+      # 🔴 90s, and this is the step that needed it. The first production deploy failed
+      # here seventeen seconds after "Uploaded 17 of 17 assets", with `/` at 500 and half
+      # the fonts and icons still served as text/plain. Nothing was misconfigured; the
+      # rollout had not finished.
       - name: Smoke-test production
-        run: bash scripts/verify.sh knag.danjamkuhn.com
+        run: bash scripts/verify.sh knag.danjamkuhn.com 90

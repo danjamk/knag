@@ -13,6 +13,31 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-08-18
+
+### Fixed
+
+- **The smoke test failed the first production deploy, and production was fine**
+  ([#105](https://github.com/danjamk/knag/issues/105)). Backup, migrate, deploy and the
+  health check all succeeded. Seventeen seconds after `Uploaded 17 of 17 assets`, the
+  smoke test found `/` returning 500, one font served as `text/plain` and one icon too —
+  while the *other* font and the *other* icon were already correct.
+
+  Nothing was misconfigured. Every one of those checks passes now with no intervention.
+  Half an asset manifest resolving is what a rollout mid-flight looks like, and **no
+  configuration error produces per-file inconsistency** — which is the tell worth
+  remembering.
+
+  `scripts/verify.sh` now takes the same propagation budget `scripts/health.sh` got in
+  0.7.1, and both deploy workflows pass 90 seconds. The **whole** set is re-run rather
+  than the failures, because a partial pass during a rollout says nothing. `make verify`
+  still answers in one pass by default.
+
+  **This completes the fix 0.7.1 claimed to make.** That release gave the budget to the
+  health check alone, which was not enough: health asks the Worker one question and the
+  Worker is the first thing to come up, while the smoke test asks about assets, routes
+  and the OAuth layer, which are the last.
+
 ## [0.7.1] — 2026-08-18
 
 Two holes in the deploy pipeline, found by using it.
@@ -626,7 +651,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/danjamk/knag/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/danjamk/knag/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/danjamk/knag/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/danjamk/knag/compare/v0.6.1...v0.6.2

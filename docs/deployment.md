@@ -190,6 +190,7 @@ tells you most of what you need.
 | **health** | The deploy did not take, or `KNAG_ENV` is declared in only one wrangler env block | Compare `/health` against `<version>+<shortsha>` for the merge commit. A build-id match with an environment mismatch is always the missing `KNAG_ENV` |
 | **health**, reporting the *previous* build | Propagation. A deploy returns before the rollout finishes | **Handled** — both workflows pass a 90s budget to `scripts/health.sh`, which retries until the build id matches. A match returns immediately, so a healthy deploy pays nothing. If this fails now, 90s was genuinely not enough or the deploy did not take |
 | **verify** | The Worker is live but something around it is not — an asset that did not upload, a route not in `run_worker_first`, auth not switched on | Read which check failed. Font and icon checks assert **content type**, because a missing static file is answered with the PWA shell and a `200`, not a `404` |
+| **verify**, failing on a mixture of assets and routes | Propagation, not configuration. Both workflows pass a 90s budget and re-run the **whole** set until it is clean | 🔴 The tell is **inconsistency** — one font fine and another `text/plain`, `/` at 500 while `/manifest.json` is fine. No configuration error produces per-file inconsistency; a rollout mid-flight does. If it still fails after 90s, it is real |
 
 The two that need saying out loud:
 
