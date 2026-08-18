@@ -84,6 +84,39 @@ tell you it is dead is worse than no probe — the blank version looked like a C
 
 **Use `bash scripts/serve-spike.sh`** and open the printed URL in Safari on the phone.
 
+## First real iPhone run — 2026-08-18
+
+**The three things ADR-003 rejected this path over all worked.**
+
+| Drill | Result |
+|---|---|
+| **Dictation** | ✅ worked — this was flagged 🔴 as the likeliest killer |
+| **Autocorrect** | ✅ worked, once the probe stopped disabling it |
+| **Undo** | ✅ worked |
+| Touch selection | ✅ selects, and the iOS callout menu appears |
+| Copy from the callout | ✅ copied (the panel failing to show it was a probe defect) |
+
+That is the decision-grade result. The remaining feedback was about feel, and it sorted
+almost entirely into defects in this probe rather than in CodeMirror:
+
+| Reported | Cause | Status |
+|---|---|---|
+| Selection hard to see in dark mode | Probe CSS: `#3a4a2e`, a dark olive on a dark ground | fixed — amber at 32% |
+| Cursor invisible | Probe CSS: a hairline caret | fixed — brighter, and the product draws its own |
+| "Takes multiple tries to select" | Probe CSS: `max-height: 44vh` made a **nested scroller**, so long-press-drag competed with scrolling | fixed — removed; the page scrolls, the editor does not |
+| Copy never appeared in the panel | Probe bug: the panel repaints on document or selection change, and a copy is neither | fixed |
+| "Overall klunky" | Probe used 14px monospace with tight leading. **16px is also a floor** — iOS zooms the viewport for anything smaller, and that zoom is felt as klunk | fixed — 16px sans for prose, mono for fences |
+| 🔴 **Checkbox dead while the keyboard is up** | **Real.** With the editor focused, iOS routes the first touch to caret placement and the synthesized `click` never reaches the widget | fixed — `pointerdown` instead of `mousedown`+`click` |
+
+The last one is the only entry that would have shipped as a product defect, and it is the
+one that matters most: ADR-003's whole premise is that **checkboxes stay tappable while
+typing**. A checkbox that goes dead exactly when the keyboard is up fails that premise at
+the moment it is being relied on. Worth keeping as a browser test if this ships.
+
+None of these is evidence against CodeMirror. All of them are evidence that a probe styled
+as a diagnostic reads as a bad product, which is worth remembering before the next one is
+used to judge feel.
+
 ## Results — 18 of 20 in WebKit
 
 ### ✅ Cross-row selection, and everything that hangs off it

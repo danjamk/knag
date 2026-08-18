@@ -120,16 +120,26 @@ class Box extends WidgetType {
     input.type = "checkbox";
     input.className = "box";
     input.checked = this.checked;
-    // Without this the editor takes focus and the caret jumps into the line on tap.
-    input.addEventListener("mousedown", (event) => event.preventDefault());
-    input.addEventListener("click", (event) => {
+
+    // 🔴 `pointerdown`, not `mousedown` + `click`. Reported from the phone: "checkbox
+    // only works when the keyboard is not active." With the keyboard up and the editor
+    // focused, iOS routes the first touch to caret placement and the synthesized click
+    // never reaches the widget, so the box appears dead exactly when you are mid-edit -
+    // which is the moment it matters most, since the whole point of ADR-003 is that
+    // checkboxes stay tappable *while typing*.
+    //
+    // `pointerdown` fires for touch and mouse alike, before any of that arbitration.
+    // preventDefault stops the editor stealing focus and moving the caret.
+    const toggle = (event: Event): void => {
       event.preventDefault();
+      event.stopPropagation();
       const next = this.checked ? " " : this.boxChar === "X" ? "X" : "x";
-      view.dispatch({
-        changes: { from: this.boxPos, to: this.boxPos + 1, insert: next },
-      });
+      view.dispatch({ changes: { from: this.boxPos, to: this.boxPos + 1, insert: next } });
       report();
-    });
+    };
+    input.addEventListener("pointerdown", toggle);
+    // Belt and braces for anything that dispatches a bare click without pointer events.
+    input.addEventListener("click", (event) => event.preventDefault());
     return input;
   }
 
@@ -178,6 +188,7 @@ function decorate(view: EditorView): DecorationSet {
           line.from,
           line.from,
           Decoration.line({
+            class: "fence",
             attributes: { spellcheck: "false", autocorrect: "off", autocapitalize: "off" },
           }),
         );
@@ -462,6 +473,11 @@ view = new EditorView({
         copy: () => {
           const sel = view.state.selection.main;
           if (!sel.empty) seen.crossRowCopyText = view.state.sliceDoc(sel.from, sel.to);
+          // 🔴 Reported as "copy did not show up in the text box below" and it was a
+          // defect here, not in the editor: the panel only repaints on a document or
+          // selection change, and a copy is neither. The clipboard was captured
+          // correctly and simply never drawn.
+          report();
           return false;
         },
         paste: () => {
@@ -547,8 +563,14 @@ window.__probe = {
     report();
     return [...failed.keys()];
   },
+  /**
+   * 🔴 Dispatches `pointerdown`, not `.click()`. The widget stopped listening for click
+   * because on iOS the synthesized click never arrives while the keyboard is up. A
+   * harness that keeps calling `.click()` would then be exercising a path the phone
+   * does not use — green here, dead in the hand.
+   */
   toggleFirstBox: () => {
     const box = parent.querySelector<HTMLInputElement>("input.box");
-    box?.click();
+    box?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
   },
 };

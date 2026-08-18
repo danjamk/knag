@@ -41,24 +41,42 @@
         border-radius: 4px;
         background: #171b15;
       }
-      .cm-editor { max-height: 44vh; }
+      /* 🔴 No max-height, deliberately. A nested scroller inside the page made
+         long-press-and-drag compete with scrolling on iOS, which is most of why
+         selecting "took multiple tries". The page scrolls; the editor does not. */
       .cm-editor.cm-focused { outline: 1px solid var(--amber); }
       .cm-scroller {
+        /* 🔴 16px is a floor, not a preference: iOS zooms the viewport when a field
+           smaller than this takes focus, and that zoom is felt as klunk. Sans for
+           prose because this is a legal pad; fences get mono below. */
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 16px;
+        line-height: 1.75;
+      }
+      .cm-content {
+        padding: 12px 10px;
+        /* An amber hairline caret is invisible on a phone in daylight. Thicker and
+           brighter; the product would draw this from --amber at full strength. */
+        caret-color: #ffc633;
+      }
+      .cm-line { padding: 1px 0; }
+      .cm-line.fence {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 14px;
-        line-height: 1.6;
       }
-      .cm-content { padding: 10px 8px; caret-color: var(--amber); }
       .cm-line.done { color: var(--dim); text-decoration: line-through; }
       input.box {
         accent-color: var(--amber);
-        width: 15px;
-        height: 15px;
+        width: 20px;
+        height: 20px;
         margin: 0 8px 0 0;
-        vertical-align: -2px;
+        vertical-align: -4px;
       }
+      /* 🔴 Was #3a4a2e — a dark olive on a dark ground, reported as "not easy to see
+         in dark mode" and it was right: barely above the background. Native iOS
+         selection is kept (the handles are the whole prize), only its colour changes. */
       .cm-selectionBackground,
-      .cm-content ::selection { background: #3a4a2e !important; }
+      .cm-content ::selection { background: rgba(255, 176, 0, 0.32) !important; }
 
       /* ── verdicts ─────────────────────────────────────────────────────── */
       ul { list-style: none; margin: 0; padding: 0; }
