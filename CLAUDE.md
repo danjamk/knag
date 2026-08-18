@@ -128,6 +128,14 @@ a `vX.Y.Z` tag and a GitHub Release with curated notes, never a raw commit dump.
 
 Next feature starts `0.2.0`. Full doctrine lives in the house versioning guide.
 
+🔴 **The second half is the half that gets skipped.** The bump lands in the PR because it
+is part of the diff; the tag only happens if someone remembers, and twice it has not —
+`v0.4.0` through `v0.6.0` shipped untagged and were backfilled, then `v0.7.0` did the same
+three days later. Nothing fails when this happens: `git describe` quietly disagrees with
+`package.json` and every CHANGELOG compare link points at a tag that does not exist.
+`make info` now prints that disagreement, so the answer to "did I actually release that"
+is one command rather than an archaeology exercise.
+
 Every deployment reports `<version>+<shortsha>`, when it was deployed, and **which
 environment** — the last being the one people skip and then need, because a deploy
 that looks right and went to the wrong place is indistinguishable from one that
