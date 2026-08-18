@@ -138,12 +138,50 @@ class Box extends WidgetType {
   }
 }
 
+const FENCE = /^\s*(```|~~~)/;
+
+/**
+ * 🔴 Walks the WHOLE document, not just the viewport, because fence state is
+ * positional - whether line 40 is inside a fence depends on line 12. A viewport-only
+ * scan reports a fence as prose the moment you scroll past its opening marker. Fine at
+ * this document's size; a real integration needs this in a StateField that updates
+ * incrementally, and that is a known piece of work rather than a surprise.
+ */
+function fenceLines(view: EditorView): Set<number> {
+  const inside = new Set<number>();
+  let open = false;
+  for (let n = 1; n <= view.state.doc.lines; n += 1) {
+    const line = view.state.doc.line(n);
+    const marker = FENCE.test(line.text);
+    if (marker || open) inside.add(n);
+    if (marker) open = !open;
+  }
+  return inside;
+}
+
 function decorate(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
+  const fences = fenceLines(view);
   for (const { from, to } of view.visibleRanges) {
     let pos = from;
     while (pos <= to) {
       const line = view.state.doc.lineAt(pos);
+      // 🔴 ADR-003 §6 turns autocorrect ON for prose and OFF inside fences, and says
+      // plainly that one element per block is *what makes the distinction possible*.
+      // One editing surface has one contenteditable, so the document-level attribute
+      // cannot vary — the only route left is a per-line attribute on a child element,
+      // which is set here and which iOS may simply ignore. That is a drill, not a
+      // claim: if the phone autocapitalizes `const` into `Const`, ADR-003 §6 does not
+      // survive the change of mechanism and has to be re-decided.
+      if (fences.has(line.number)) {
+        builder.add(
+          line.from,
+          line.from,
+          Decoration.line({
+            attributes: { spellcheck: "false", autocorrect: "off", autocapitalize: "off" },
+          }),
+        );
+      }
       const match = CHECK.exec(line.text);
       if (match) {
         const indent = (match[1] ?? "").length;
@@ -193,50 +231,91 @@ const boxes = ViewPlugin.fromClass(
 // The drills below are all meant to leave every one of these lines untouched, so any
 // red here is the editor rewriting something nobody asked it to.
 
-type Check = { id: string; label: string; test: (doc: string) => boolean };
+/**
+ * 🔴 Every check has an `anchor` as well as a `test`, and that is the whole design.
+ *
+ * The drills on this page tell you to select four lines and delete them. Doing what the
+ * page asks then turned the hazard checks red, which is the instrument reporting on the
+ * drill rather than on the editor - and a red that means nothing is exactly how a real
+ * one gets ignored. ADR-006 recorded the mirror-image failure: a check that agreed with
+ * an incomplete read and reported false green.
+ *
+ * So there are three states, not two:
+ *
+ *   anchor present, test passes  ->  green   the bytes are intact
+ *   anchor present, test fails   ->  RED     the line is still here and was rewritten
+ *   anchor absent                ->  grey    you deleted it; not a defect
+ *
+ * Only RED is sticky.
+ */
+type Check = { id: string; label: string; anchor: string | null; test: (doc: string) => boolean };
 
 const CHECKS: Check[] = [
   {
     id: "crlf",
     label: "CRLF line keeps its carriage return",
+    anchor: "CRLF line",
     test: (doc) => doc.includes("CRLF line\r\n"),
   },
   {
     id: "trailing",
     label: "trailing spaces survive",
+    anchor: "trailing spaces here",
     test: (doc) => doc.includes("trailing spaces here   \n"),
   },
-  { id: "tab", label: "tab indent stays a tab", test: (doc) => doc.includes("\ttab indented line") },
+  {
+    id: "tab",
+    label: "tab indent stays a tab",
+    anchor: "tab indented line",
+    test: (doc) => doc.includes("\ttab indented line"),
+  },
   {
     id: "star",
     label: "* marker is never normalized to -",
+    anchor: "star bullet",
     test: (doc) => doc.includes("\n* star bullet\n") && !doc.includes("\n- star bullet\n"),
   },
   {
     id: "indent",
     label: "nested checkbox keeps its two spaces",
+    anchor: "and update the DNS record",
     test: (doc) => doc.includes("\n  - [ ] and update the DNS record"),
   },
   {
     id: "fence",
     label: "fenced block is untouched",
+    anchor: "const x = 1;",
     test: (doc) => doc.includes("```js\nconst x = 1;\n```"),
   },
   {
     id: "unterminated",
     label: "unclosed fence is untouched",
+    anchor: "inside an unclosed fence",
     test: (doc) => doc.includes("~~~\ninside an unclosed fence"),
   },
-  { id: "finalnl", label: "trailing newline survives", test: (doc) => doc.endsWith("\n") },
+  {
+    id: "finalnl",
+    label: "trailing newline survives",
+    anchor: null,
+    test: (doc) => doc.endsWith("\n"),
+  },
   {
     id: "nohtml",
     label: "no markup leaked into the document",
+    anchor: null,
     test: (doc) => !/<\/?[a-z][\s>]/i.test(doc) && !doc.includes("font-family"),
   },
 ];
 
-/** Sticky. Once false it stays false, with the document that broke it. */
+/** Sticky. Once RED it stays RED, with the document that broke it. */
 const failed = new Map<string, string>();
+
+/** null = the line is gone, so the check does not apply. */
+function stateOf(check: Check, doc: string): boolean | null {
+  if (failed.has(check.id)) return false;
+  if (check.anchor !== null && !doc.includes(check.anchor)) return null;
+  return check.test(doc);
+}
 
 // ── Capability observations ──────────────────────────────────────────────────
 //
@@ -257,7 +336,7 @@ let view: EditorView;
 function report(): void {
   const doc = view.state.doc.toString();
   for (const check of CHECKS) {
-    if (!failed.has(check.id) && !check.test(doc)) failed.set(check.id, doc);
+    if (stateOf(check, doc) === false) failed.set(check.id, doc);
   }
   paint();
 }
@@ -293,14 +372,19 @@ function paint(): void {
   const selLines =
     view.state.doc.lineAt(sel.to).number - view.state.doc.lineAt(sel.from).number + 1;
 
+  const doc = view.state.doc.toString();
+
   panel.innerHTML = [
-    "<h3>1. Round trip, before any view exists</h3><ul>",
-    row(RT_DEFAULT, "default line separator", RT_DEFAULT ? "" : "drops the CR"),
+    "<h3>1. Round trip, at load &mdash; this is a finding, not a fault</h3><ul>",
+    row(RT_DEFAULT, "default config keeps the CR", RT_DEFAULT ? "" : "expected red: it drops it"),
     row(RT_PINNED, "lineSeparator pinned to \\n", RT_PINNED ? "byte-exact" : "still lossy"),
     "</ul>",
 
-    "<h3>2. Integrity, live &mdash; sticky red</h3><ul>",
-    ...CHECKS.map((c) => row(!failed.has(c.id), c.label)),
+    "<h3>2. Integrity &mdash; red only if a line is still here and changed</h3><ul>",
+    ...CHECKS.map((c) => {
+      const state = stateOf(c, doc);
+      return row(state, c.label, state === null ? "line removed" : "");
+    }),
     "</ul>",
 
     "<h3>3. Capabilities &mdash; not exercised until you do it</h3><ul>",
@@ -335,6 +419,8 @@ function paint(): void {
 
 const parent = document.querySelector("[data-editor]");
 if (!parent) throw new Error("no editor mount");
+// Clears the "the script did not run" placeholder. Reaching this line is the proof.
+parent.innerHTML = "";
 
 view = new EditorView({
   parent,
@@ -347,6 +433,19 @@ view = new EditorView({
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
+
+      // 🔴 Not optional, and its absence made the first run of this probe report
+      // nothing. CodeMirror sets `spellcheck="false"` on its content by default, so
+      // autocorrect never fires and the drill that is supposed to exercise the single
+      // largest risk in #110 silently tests nothing. ADR-003 §6 turns these ON for
+      // prose; the probe has to match the product or it is measuring a different
+      // editor.
+      EditorView.contentAttributes.of({
+        autocorrect: "on",
+        autocapitalize: "sentences",
+        spellcheck: "true",
+      }),
+
       boxes,
       EditorView.updateListener.of((update) => {
         if (update.docChanged || update.selectionSet) {
@@ -398,6 +497,16 @@ document.addEventListener(
   },
   true,
 );
+
+// Back to a known document, and clear the sticky reds with it. Without this a single
+// destructive drill leaves the panel useless for every drill after it, and the only
+// recovery is reloading the page - which also throws away the capability results you
+// just earned.
+document.querySelector("[data-reset]")?.addEventListener("click", () => {
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: SOURCE } });
+  failed.clear();
+  report();
+});
 
 report();
 

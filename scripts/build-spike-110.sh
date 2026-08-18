@@ -22,8 +22,11 @@ echo "  ok"
 
 echo
 echo "── bundle ─────────────────────────────────────────────────"
+# 🔴 IIFE, not ESM. A `<script type="module">` does not execute from a `file://`
+# origin, which is exactly how this gets opened on a phone — the page rendered its
+# static markup and nothing else, and looked like a CSS bug. A classic script runs.
 pnpm exec esbuild "${SPIKE}/110-codemirror-probe.ts" \
-  --bundle --minify --format=esm --target=es2022 \
+  --bundle --minify --format=iife --target=es2022 \
   --outfile="${TMP}/probe.js" \
   --log-level=warning
 
@@ -61,4 +64,5 @@ writeFileSync('${OUT}', shell.replace(marker, bundle));
 "
 printf '  %s  %s bytes\n' "docs/spikes/110-codemirror-probe.html" "$(size "${OUT}")"
 echo
-echo "Open it directly, or AirDrop it to the phone. No server needed."
+echo "Desktop:  open docs/spikes/110-codemirror-probe.html"
+echo "Phone:    bash scripts/serve-spike.sh   (AirDrop does NOT work - see that script)"

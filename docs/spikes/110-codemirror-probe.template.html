@@ -99,6 +99,19 @@
       ol { padding-left: 20px; color: var(--dim); font-size: 13px; line-height: 1.7; }
       ol b { color: var(--ink); font-weight: 500; }
       .idle { color: var(--dim); }
+      .dead { margin: 0; padding: 14px; color: var(--amber); font-size: 13px; line-height: 1.6; }
+      .dead b { display: block; margin-bottom: 4px; }
+      .dead code { color: var(--ink); }
+      button[data-reset] {
+        font: 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: none;
+        color: var(--amber);
+        border: 1px solid var(--hair);
+        border-radius: 4px;
+        padding: 8px 12px;
+        margin-right: 10px;
+      }
+      button[data-reset]:active { opacity: 0.6; }
     </style>
   </head>
   <body>
@@ -108,9 +121,28 @@
       sticky red; capability checks stay grey until you actually do the thing.
     </p>
 
-    <section data-editor></section>
+    <!-- 🔴 The placeholder is the point. Opened from the iOS Files app the script did
+         not run at all, and the page reported that as an empty bordered box and three
+         empty panels - which looks like a styling problem and is not one. A probe that
+         cannot tell you it is dead is worse than no probe. The script removes this. -->
+    <section data-editor>
+      <p class="dead">
+        <b>The script did not run.</b> You are almost certainly viewing this in a
+        preview (the Files app, Quick Look, or an email client) rather than in a
+        browser. Open it in Safari, or serve it &mdash; <code>bash
+        scripts/serve-spike.sh</code> on the Mac, then use the URL it prints.
+      </p>
+    </section>
 
     <section data-verdicts></section>
+
+    <section>
+      <button type="button" data-reset>reset the document</button>
+      <span class="lede"
+        >Clears the sticky reds and puts the awkward document back. The capability
+        results below are kept.</span
+      >
+    </section>
 
     <section>
       <h3>Drills &mdash; run these on the phone</h3>
@@ -136,7 +168,7 @@
       <pre data-dump></pre>
     </section>
 
-    <script type="module">
+    <script>
       /*BUNDLE*/
     </script>
   </body>

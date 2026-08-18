@@ -12,7 +12,8 @@ finding, and what it costs.
 | | |
 |---|---|
 | `110-codemirror-probe.ts` | The probe. One CodeMirror 6 editor over a deliberately awkward document, with `- [ ] ` rendered as a real checkbox widget. |
-| `110-codemirror-probe.html` | Standalone, everything inlined. **Open it on the phone — no server, no deploy.** |
+| `110-codemirror-probe.html` | Standalone, everything inlined. Open in a **browser** — see the delivery note below. |
+| `scripts/serve-spike.sh` | Serves it over the LAN so the phone can reach it. **This, not AirDrop.** |
 | `110-headless.mjs` | Drives it in WebKit and grades 20 checks. `node docs/spikes/110-headless.mjs` |
 | `cm-only.ts` | Imports exactly the CodeMirror surface a real integration needs, so the size number is honest. |
 | `scripts/build-spike-110.sh` | Typecheck → bundle → measure → inline. |
@@ -22,12 +23,66 @@ nested checkbox, a `*` marker that must never become `-`, a tab indent, trailing
 **CRLF line in an otherwise LF document**, a closed fence, an unclosed fence, and a final
 newline.
 
-🔴 **The instrument produced two false reds before it was right**, both because a drill
-deleted or edited the very bytes the next check asserted were intact. ADR-006 recorded the
-opposite failure — a check that agreed with an incomplete read and reported false green.
-Both are the same defect: *a check that cannot distinguish the drill from the editor*.
-Fixed by asserting `source minus the selected range` as an exact identity rather than
-grading the hazard list during a destructive drill.
+🔴 **The instrument produced false reds three times before it was right**, twice in the
+headless harness and once on the page itself — where following the drills as written
+("delete four lines") turned the integrity checks red for doing exactly what was asked.
+ADR-006 recorded the opposite failure: a check that agreed with an incomplete read and
+reported false green. Both are the same defect — *a check that cannot distinguish the
+drill from the editor* — and a red that means nothing is how a real one gets ignored.
+
+The fix is a third state. Every check now carries an **anchor** identifying its line,
+separate from the **test** asserting its bytes:
+
+| | |
+|---|---|
+| anchor present, test passes | ✅ green — bytes intact |
+| anchor present, test fails | 🔴 **red** — the line is still here and was rewritten |
+| anchor absent | ⚪ grey — you deleted it; not a defect |
+
+Only red is sticky. There is also a **reset** control, because one destructive drill
+otherwise poisons the panel for every drill after it and the only recovery was a reload,
+which threw away the capability results just earned.
+
+## 🔴 Autocorrect is off by default, and that is a real finding
+
+The first phone run reported nothing about autocorrect, and it was not a testing mistake:
+**CodeMirror sets `spellcheck="false"` on its content by default**, so autocorrect never
+fired. The drill aimed at the single largest risk in #110 was silently testing an editor
+with the feature disabled — the exact shape of failure ADR-006 warned about, one layer up.
+
+Fixed with `EditorView.contentAttributes`, which now matches what
+[ADR-003](../adr/ADR-003-single-mode-editor.md) §6 specifies for the product:
+`autocorrect="on"`, `autocapitalize="sentences"`, `spellcheck="true"`.
+
+**But §6's other half does not survive the change of mechanism, and this is the finding
+that matters.** ADR-003 turns autocorrect *on* for prose and *off* inside fences, and says
+plainly why that is possible:
+
+> **This decision is only available because of decision 1.** With one textarea holding the
+> whole document there is no way to distinguish prose from a code fence, so the only safe
+> setting was off everywhere. With one element per block, it is on for text and checkbox
+> rows and off inside fences.
+
+One editing surface has **one** contenteditable, so the document-level attribute cannot
+vary by line. The only route left is a per-line attribute on a child element, which the
+probe now sets on every fence line — and **whether iOS honours a nested `autocorrect="off"`
+is unknown and untestable from a Mac.**
+
+So the risk ADR-003 §6 named is live again in its original form: autocapitalize turning
+`const` into `Const` inside a code fence. If the phone does that, §6 has to be re-decided
+rather than inherited — most likely as "off everywhere," which is where the MVP started.
+
+## Delivery: AirDrop does not work
+
+The probe reached the phone and rendered its static markup with **no script running at
+all** — empty editor, empty panels. It lands in the Files app, which previews HTML rather
+than executing it, and an ES module will not run from a `file://` origin regardless.
+
+Two changes: the bundle is now an **IIFE rather than ESM**, and the page carries a visible
+*"the script did not run"* placeholder that the script removes on boot. A probe that cannot
+tell you it is dead is worse than no probe — the blank version looked like a CSS bug.
+
+**Use `bash scripts/serve-spike.sh`** and open the printed URL in Safari on the phone.
 
 ## Results — 18 of 20 in WebKit
 
@@ -126,9 +181,11 @@ reason this could still fail:
 - **touch selection** — long-press, drag handles, the magnifier
 - **shake-to-undo** and the iOS undo affordances
 - what the on-screen keyboard does to an editor that owns its own scroller
+- 🔴 **whether a per-line `autocorrect="off"` is honoured inside a fence** — see above; if
+  it is not, ADR-003 §6 has to be re-decided
 
-`docs/spikes/110-codemirror-probe.html` is standalone for exactly this. AirDrop it and run
-the drills listed on the page; the verdict panel is live and sticky.
+Run `bash scripts/serve-spike.sh` and open the printed URL in Safari on the phone. The
+drills are listed on the page and the verdict panel is live.
 
 Also undecided, and a product question rather than a defect: **a cross-row copy carries the
 `- [ ] ` prefixes**, because it copies document text. knag's per-row copy strips them. The
