@@ -297,8 +297,11 @@
     target = target || doc;
     return Array.prototype.map.call(target.children, function (el) {
       if (!el.classList || !el.classList.contains("row")) return el.textContent;
-      var t = el.querySelector(".t");
-      return (el.dataset.prefix || "") + (t ? t.textContent : el.textContent);
+      var ts = el.querySelectorAll(".t");
+      if (!ts.length) return (el.dataset.prefix || "") + el.textContent;
+      var body = "";
+      for (var i = 0; i < ts.length; i++) body += ts[i].textContent;
+      return (el.dataset.prefix || "") + body;
     }).join("\n");
   }
 
@@ -328,6 +331,11 @@
       if (ts.length > 1) problems.push("child " + i + ": row has " + ts.length + " .t spans");
       if (node.dataset.kind === "check" && !node.querySelector(".pre")) problems.push("child " + i + ": checkbox row lost its island");
       if (ts[0] && ts[0].querySelector("div,p,br")) problems.push("child " + i + ": block element injected inside the line");
+      if (node.querySelector("[style]")) problems.push("child " + i + ": inline style injected -- the browser is storing formatting in the DOM");
+      var untagged = Array.prototype.filter.call(node.children, function (c) {
+        return !c.classList.contains("t") && !c.classList.contains("pre");
+      });
+      if (untagged.length) problems.push("child " + i + ": " + untagged.length + " element(s) outside the model");
     });
     return {
       ok: problems.length === 0,
@@ -341,6 +349,25 @@
     if (rebuilt.indexOf(NBSP) !== -1) problems.push("U+00A0 injected \u2014 a space was silently replaced");
     if (rebuilt.indexOf(ZWSP) !== -1) problems.push("zero-width space injected");
     if (rebuilt.indexOf("\r") !== -1) problems.push("carriage return injected");
+    var orphaned = [];
+    Array.prototype.forEach.call(doc.children, function (row, i) {
+      var onScreen = row.textContent;                       // .pre islands hold no text
+      var captured = "";
+      Array.prototype.forEach.call(row.querySelectorAll(".t"), function (t) { captured += t.textContent; });
+      if (onScreen !== captured) orphaned.push(i + " (" + JSON.stringify(onScreen.replace(captured, "")).slice(0, 30) + ")");
+    });
+    if (orphaned.length) problems.push("TEXT ON SCREEN THAT THE REBUILD CANNOT SEE, row " + orphaned.join(", ") + " -- it would be lost on save");
+    var lost = [];
+    Array.prototype.forEach.call(doc.children, function (row, i) {
+      Array.prototype.forEach.call(row.querySelectorAll(".t"), function (t) {
+        Array.prototype.forEach.call(t.querySelectorAll("br"), function (br) {
+          var n = br.nextSibling, after = "";
+          while (n) { after += n.textContent; n = n.nextSibling; }
+          if (after.length) lost.push(i);
+        });
+      });
+    });
+    if (lost.length) problems.push("line break inside row " + lost.join(", ") + " -- the rebuild cannot see it, so the break would be lost on save");
 
     // !! Round trip in a DETACHED node. Rendering into the live document would
     // destroy the caret and the selection on every keystroke, which would wreck
