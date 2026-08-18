@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  // Spike only. Deliberately NOT wired into `pnpm typecheck` — this branch is an
+  // experiment and must not be able to break the gate on main.
+  "include": ["*.ts"]
+}

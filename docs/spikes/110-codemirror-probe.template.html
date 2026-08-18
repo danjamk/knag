@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>knag spike 110 - CodeMirror 6</title>
+    <style>
+      :root {
+        --ground: #12150f;
+        --ink: #e8e6df;
+        --dim: #7b8074;
+        --amber: #ffb000;
+        --bad: #ff6b5e;
+        --ok: #8fbf6f;
+        --hair: #2a2f26;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
+        -webkit-text-size-adjust: 100%;
+      }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      h1 span { color: var(--amber); }
+      .lede { color: var(--dim); font-size: 13px; margin: 0 0 16px; }
+      h3 {
+        font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin: 18px 0 6px;
+      }
+      section { margin-bottom: 20px; }
+
+      /* ── the editor under test ───────────────────────────────────────── */
+      [data-editor] {
+        border: 1px solid var(--hair);
+        border-radius: 4px;
+        background: #171b15;
+      }
+      .cm-editor { max-height: 44vh; }
+      .cm-editor.cm-focused { outline: 1px solid var(--amber); }
+      .cm-scroller {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .cm-content { padding: 10px 8px; caret-color: var(--amber); }
+      .cm-line.done { color: var(--dim); text-decoration: line-through; }
+      input.box {
+        accent-color: var(--amber);
+        width: 15px;
+        height: 15px;
+        margin: 0 8px 0 0;
+        vertical-align: -2px;
+      }
+      .cm-selectionBackground,
+      .cm-content ::selection { background: #3a4a2e !important; }
+
+      /* ── verdicts ─────────────────────────────────────────────────────── */
+      ul { list-style: none; margin: 0; padding: 0; }
+      li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        padding: 3px 0;
+        font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        border-bottom: 1px solid var(--hair);
+      }
+      .mark { width: 1em; flex: none; }
+      li.ok .mark { color: var(--ok); }
+      li.bad .mark, li.bad span { color: var(--bad); }
+      li.idle, li.idle .mark { color: var(--dim); }
+      .note { margin-left: auto; color: var(--amber); font-size: 12px; }
+
+      pre {
+        margin: 0;
+        padding: 10px;
+        border: 1px solid var(--hair);
+        border-radius: 4px;
+        background: #171b15;
+        font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-x: auto;
+      }
+      i.ctl {
+        font-style: normal;
+        background: var(--amber);
+        color: #12150f;
+        border-radius: 2px;
+        padding: 0 3px;
+        font-size: 10px;
+        letter-spacing: 0.04em;
+      }
+      ol { padding-left: 20px; color: var(--dim); font-size: 13px; line-height: 1.7; }
+      ol b { color: var(--ink); font-weight: 500; }
+      .idle { color: var(--dim); }
+    </style>
+  </head>
+  <body>
+    <h1>knag spike <span>110</span> &mdash; CodeMirror 6</h1>
+    <p class="lede">
+      One editing surface. Checkboxes are widgets over the bytes. Integrity checks are
+      sticky red; capability checks stay grey until you actually do the thing.
+    </p>
+
+    <section data-editor></section>
+
+    <section data-verdicts></section>
+
+    <section>
+      <h3>Drills &mdash; run these on the phone</h3>
+      <ol>
+        <li><b>Drag across four lines</b>, including a checkbox row. Does it select?</li>
+        <li><b>Long-press and use the handles</b> to extend the selection.</li>
+        <li><b>Copy it.</b> Check what landed, below.</li>
+        <li><b>Type a word with autocorrect</b> and let it correct. Any red above?</li>
+        <li><b>Dictate a sentence.</b> Same question.</li>
+        <li><b>Paste rich text</b> from a web page. Watch the "no markup" check.</li>
+        <li><b>Undo</b> with the keyboard, or shake to undo.</li>
+        <li><b>Tap a checkbox</b> mid-line. Does the caret stay out of the marker?</li>
+      </ol>
+    </section>
+
+    <section>
+      <h3>What copy actually put on the clipboard</h3>
+      <pre data-copied></pre>
+    </section>
+
+    <section>
+      <h3>The document, bytes made visible</h3>
+      <pre data-dump></pre>
+    </section>
+
+    <script type="module">
+      /*BUNDLE*/
+    </script>
+  </body>
+</html>
