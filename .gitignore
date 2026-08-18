@@ -1,7 +1,13 @@
 node_modules/
 dist/
 .env
-.env.local
+# 🔴 Every variant, not a list of the ones we happened to think of. `.env.prod`
+# was not covered and came within one `git commit` of putting the real hosts and
+# Cloudflare account ids into a public repo — the exact leak closed on 2026-08-16.
+# An account id is not a credential, but it names a real account, and the dev host
+# is a live login form the WAF rate-limit rule cannot cover.
+.env.*
+!.env.example
 .DS_Store
 .idea/
 .wrangler/
