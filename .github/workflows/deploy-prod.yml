@@ -44,6 +44,12 @@ jobs:
   # which is the right order to ask a human anything.
   browser:
     runs-on: ubuntu-latest
+    # The Playwright image, matching ci.yml — WebKit and its system libraries are already
+    # installed, so there is no download and no apt-get in front of a production deploy.
+    # Keep this tag and the assertion below in step with ci.yml's.
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
+    env:
+      PLAYWRIGHT_IMAGE_VERSION: "1.62.1"
     steps:
       - uses: actions/checkout@v5
 
@@ -56,10 +62,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
-      # right; testing Chromium would report on a browser knag never runs on.
-      - run: pnpm exec playwright install --with-deps webkit
+      - name: Assert the image ships the Playwright this repo installs
+        run: |
+          installed="$(node -p "require('@playwright/test/package.json').version")"
+          if [ "$installed" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "::error::Playwright ${installed} is installed but the container ships ${PLAYWRIGHT_IMAGE_VERSION}."
+            echo "::error::Update the container tag and PLAYWRIGHT_IMAGE_VERSION in ci.yml and deploy-prod.yml."
+            exit 1
+          fi
+          echo "✓ Playwright ${installed} matches the image"
 
+      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
+      # right; testing Chromium would report on a browser knag never runs on. No install
+      # step — the image already has it.
       - run: pnpm test:browser
 
       # The trace is worth most on the run that blocked a production deploy.
