@@ -36,6 +36,23 @@ GIT_DIRTY   := $(shell git diff --quiet 2>/dev/null || echo "-dirty")
 BUILD_ID    := $(VERSION)+$(GIT_COMMIT)$(GIT_DIRTY)
 DEPLOYED_AT := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# 🔴 Has the version in package.json actually been released?
+#
+# knag is in release mode, which splits the job in two: the version bump and the
+# CHANGELOG entry land in the feature PR, and the tag is cut after the merge. The first
+# half happens on its own because it is part of the diff. The second half only happens if
+# someone remembers — and twice now it has not. v0.4.0 through v0.6.0 shipped untagged and
+# had to be backfilled, then v0.7.0 did the same thing three days later.
+#
+# Nothing failed either time. `git describe` just quietly disagreed with package.json and
+# every CHANGELOG compare link pointed at a tag that did not exist. This is that
+# disagreement, printed somewhere it will be seen.
+#
+# TAGS_FETCHED distinguishes "not released" from "tags not fetched into this clone",
+# because a fresh shallow clone would otherwise report every version as unreleased.
+TAGS_FETCHED := $(shell git tag -l 2>/dev/null | head -1)
+RELEASED     := $(shell git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null 2>&1 && echo yes || echo no)
+
 BLUE   := \033[34m
 GREEN  := \033[32m
 YELLOW := \033[33m
@@ -164,6 +181,13 @@ info: ## Show what this checkout is configured for
 	@echo "d1        $(D1_NAME)"
 	@echo "host      $(if $(HOST),$(HOST),<workers.dev>)"
 	@echo "node      $$(node -v)"
+ifeq ($(TAGS_FETCHED),)
+	@echo "release   v$(VERSION) — no tags in this clone (git fetch --tags)"
+else ifeq ($(RELEASED),yes)
+	@echo "release   v$(VERSION) $(GREEN)tagged$(RESET)"
+else
+	@echo "release   v$(VERSION) $(YELLOW)NOT TAGGED$(RESET) — bumped but no release cut; run /release"
+endif
 
 destroy: ## Delete the Worker and its D1 (CAUTION: deletes the document)
 	@echo "$(YELLOW)WARNING: deletes the $(ENV) Worker AND the $(D1_NAME) database.$(RESET)"
