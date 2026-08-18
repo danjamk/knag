@@ -23,7 +23,71 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 🔴 The browser suite gates production, and this is a deliberate divergence from
+  # deploy-dev.yml — the one place the two files are not mirrors. See the divergence
+  # table in docs/deployment.md.
+  #
+  # Why it exists: `pnpm check` is a typecheck and a unit suite, and there are three
+  # bugs on record that 263 unit tests could not see — a CSS specificity conflict, a
+  # toolbar that reflowed, and rows clipped to zero height. All three were found by a
+  # human on an iPhone. Without this job, the only thing standing between those and
+  # production is remembering to look at a different workflow's result first.
+  #
+  # Why prod and not dev: dev tracks `main` and is the rehearsal, so a bad dev deploy
+  # is information and self-corrects on the next merge. A bad prod deploy is the thing
+  # this whole pipeline exists to prevent, and prod is manual — you already clicked
+  # Run, so you can wait four minutes.
+  #
+  # 🔴 No `environment:` on this job, on purpose. It needs no credential, and keeping
+  # it outside `production` means it cannot read the prod token and does not consume
+  # the reviewer approval. The approval is then asked *after* the tests are green,
+  # which is the right order to ask a human anything.
+  browser:
+    runs-on: ubuntu-latest
+    # The Playwright image, matching ci.yml — WebKit and its system libraries are already
+    # installed, so there is no download and no apt-get in front of a production deploy.
+    # Keep this tag and the assertion below in step with ci.yml's.
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
+    env:
+      PLAYWRIGHT_IMAGE_VERSION: "1.62.1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Assert the image ships the Playwright this repo installs
+        run: |
+          installed="$(node -p "require('@playwright/test/package.json').version")"
+          if [ "$installed" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "::error::Playwright ${installed} is installed but the container ships ${PLAYWRIGHT_IMAGE_VERSION}."
+            echo "::error::Update the container tag and PLAYWRIGHT_IMAGE_VERSION in ci.yml and deploy-prod.yml."
+            exit 1
+          fi
+          echo "✓ Playwright ${installed} matches the image"
+
+      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
+      # right; testing Chromium would report on a browser knag never runs on. No install
+      # step — the image already has it.
+      - run: pnpm test:browser
+
+      # The trace is worth most on the run that blocked a production deploy.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-trace-prod-gate
+          path: test-results/
+          retention-days: 7
+
   deploy:
+    # Nothing touches the prod account until the browser suite is green.
+    needs: browser
     runs-on: ubuntu-latest
     # Scopes the secrets below to THIS job — ci.yml and deploy-dev.yml cannot read
     # them — and is where an optional required-reviewer gate lives.
@@ -120,8 +184,10 @@ jobs:
       # block — which the build id alone cannot see, because it is identical either
       # way. No credential needed: /health is public and says nothing about the
       # document.
+      # The same propagation budget as deploy-dev — see the note there. Not a
+      # divergence; the two files stay mirrors.
       - name: Verify the deployed build
-        run: bash scripts/health.sh knag.danjamkuhn.com "${{ steps.build.outputs.id }}" prod
+        run: bash scripts/health.sh knag.danjamkuhn.com "${{ steps.build.outputs.id }}" prod 90
 
       # 🔴 The smoke test, which health.sh is not. It asserts that authentication is
       # switched on, that the OAuth metadata is served rather than answered with the

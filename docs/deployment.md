@@ -54,7 +54,8 @@ make verify ENV=dev
 ```
 
 In CI it is the step list in `deploy-dev.yml` and `deploy-prod.yml`, which mirror each
-other deliberately. **A change to one belongs in both unless it is a deliberate
+other deliberately — with one job in front of prod's, the browser suite, which is the
+single listed divergence between them. **A change to one belongs in both unless it is a deliberate
 divergence** — the divergences are listed at the end of this document.
 
 ## Provisioning the dev pipeline
@@ -181,12 +182,13 @@ tells you most of what you need.
 
 | Fails at | Means | Do |
 |---|---|---|
+| **browser** (prod only) | The Playwright suite is red on this commit. Nothing has touched the prod account — the gate runs before the deploy job and holds no credential | Read the uploaded trace artifact. This job existing is the point: `pnpm check` cannot see rendering, geometry, visibility or focus |
 | `pnpm check` | Something merged red, or a flake. CI runs the same gate on the same commit | Look at the `ci.yml` run for the same SHA. Nothing has touched the account yet |
 | **Back up D1** | Almost always the credential: missing, wrong account, or missing `D1: Edit` | Check the token's permissions and account scope. Nothing has changed yet — this is the safe place to fail |
 | **Apply migrations** | A migration is bad, or partially applied | 🔴 The backup artifact from this run is your restore point. Do not retry blindly: read the migration, and check `d1_migrations` for what actually applied |
 | **Deploy** | 🔴 **The dangerous one.** Migrations are in and the old Worker is now running against the new schema | If the migration was additive, the old Worker is fine and you can fix forward calmly. If it was not, that is the two-release rule being broken — restore from the artifact |
 | **health** | The deploy did not take, or `KNAG_ENV` is declared in only one wrangler env block | Compare `/health` against `<version>+<shortsha>` for the merge commit. A build-id match with an environment mismatch is always the missing `KNAG_ENV` |
-| **health**, reporting the *previous* build | Propagation, not a failure. There is no wait between the deploy and this check, in either workflow | Re-run the job. If dev starts doing this more than rarely, add a bounded retry to `scripts/health.sh` rather than a `sleep` to a workflow — it fixes both environments at once, and local `make health` should keep answering immediately |
+| **health**, reporting the *previous* build | Propagation. A deploy returns before the rollout finishes | **Handled** — both workflows pass a 90s budget to `scripts/health.sh`, which retries until the build id matches. A match returns immediately, so a healthy deploy pays nothing. If this fails now, 90s was genuinely not enough or the deploy did not take |
 | **verify** | The Worker is live but something around it is not — an asset that did not upload, a route not in `run_worker_first`, auth not switched on | Read which check failed. Font and icon checks assert **content type**, because a missing static file is answered with the PWA shell and a `200`, not a `404` |
 
 The two that need saying out loud:
@@ -217,6 +219,7 @@ decision rather than drift.
 
 | | dev | prod | Why |
 |---|---|---|---|
+| **Browser suite gates the deploy** | no | **yes** | `pnpm check` is a typecheck and a unit suite. Three bugs are on record that 263 unit tests could not see, all three found by a human on an iPhone. Dev is the rehearsal and self-corrects on the next merge; a bad prod deploy is what this pipeline exists to prevent, and prod is manual so you can wait four minutes |
 | Trigger | `push` to `main` | `workflow_dispatch` | Dev tracking `main` is the point. A release names code; deploying prod is a decision to adopt it |
 | Required reviewer | none | yes (optional but intended) | Dev is not a decision |
 | `skip_migrations` input | **absent** | present | Dev is where the migration path gets exercised. An input that lets you skip it defeats the rehearsal |

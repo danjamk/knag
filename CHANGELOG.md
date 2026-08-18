@@ -13,6 +13,51 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-08-18
+
+Two holes in the deploy pipeline, found by using it.
+
+### Changed
+
+- **The browser suite now gates a production deploy**
+  ([#101](https://github.com/danjamk/knag/issues/101)). It gated nothing before:
+  `pnpm check` is a typecheck and a unit suite, and a prod deploy ran only that. Since
+  the deploy workflow and CI fire independently, a production deploy could ship code
+  whose browser job was red — or still running.
+
+  That matters because of what the browser suite is *for*. Three bugs are on record that
+  263 unit tests could not see — a CSS specificity conflict, a toolbar that reflowed, and
+  rows clipped to zero height — and all three were found by a human on an iPhone.
+
+  It runs as its own job in front of the deploy, holding no credential, so nothing
+  touches the prod account until it is green — and the reviewer approval is asked after
+  the tests pass rather than before, which is the right order to ask a human anything.
+
+  **Dev deliberately does not have this gate.** Dev tracks `main` and is the rehearsal, so
+  a bad dev deploy is information and self-corrects on the next merge. It is the one
+  listed divergence between the two workflows.
+
+### Fixed
+
+- **A successful dev deploy reported itself as a failure**
+  ([#99](https://github.com/danjamk/knag/issues/99)). `make health` asserts that what is
+  live is the code that was just deployed. It was asking too soon: a deploy returns
+  before the new Worker has finished rolling out, so the check read the *previous* build
+  and called drift.
+
+  Seen on the first run that could produce it — the deploy landed `0.7.0` at `12:05:25Z`,
+  health asked nine seconds later and was served `0.6.2`. Nothing was wrong except the
+  timing of the question, and the red run said the opposite.
+
+  `scripts/health.sh` now takes a propagation budget and retries until the build id
+  matches. Both deploy workflows pass 90 seconds. **A match returns immediately**, so a
+  healthy deploy pays nothing, and `make health` still answers instantly by default —
+  locally the question is "is what is live the code I am standing in", and a command that
+  waits before answering that is a worse command.
+
+  A wrong *environment* is never retried. That is `KNAG_ENV` declared in one wrangler
+  block and not the other, and waiting does not fix a config error.
+
 ## [0.7.0] — 2026-08-18
 
 Pick several rows in Arrange and copy or delete them together. And a control that had
@@ -581,7 +626,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/danjamk/knag/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/danjamk/knag/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/danjamk/knag/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/danjamk/knag/compare/v0.6.0...v0.6.1
