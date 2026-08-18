@@ -58,6 +58,40 @@ test.describe("picking rows in Arrange", () => {
     expect(await knag.rows().nth(0).getAttribute("class")).toContain("picked");
   });
 
+  test("🔴 a picked row is visibly different, not just class-different", async ({ knag }) => {
+    // The defect this pins. The first version tinted the ground and nothing else:
+    // `--press-tint` against `--arrange-tint` is a contrast ratio of **1.14**, where 3.0
+    // is the floor for a non-text UI element. Multi-select worked the whole time and read
+    // as broken, because you could not see that a row had been picked.
+    //
+    // Every other test here asserts the `picked` class, which is why none of them caught
+    // it. This one asserts something a person could actually perceive.
+    await knag.seed("alpha\nbravo");
+    await knag.page.locator("[data-reorder]").click();
+
+    // Typed structurally: browser/tsconfig.json carries no DOM lib, because client/src
+    // is the only place in the tree where DOM exists. Same trick as the fixtures.
+    const shadow = (i: number) =>
+      knag.rows().nth(i).evaluate((el: unknown) => {
+        const g = globalThis as unknown as {
+          getComputedStyle: (e: unknown) => { boxShadow: string };
+        };
+        return g.getComputedStyle(el).boxShadow;
+      });
+
+    expect(await shadow(0)).toBe("none");
+    await knag.rows().nth(0).click();
+
+    const picked = await shadow(0);
+    expect(picked).not.toBe("none");
+    // Amber, the one colour in the interface, and the only thing certain to be visible
+    // on a phone in daylight. Either board's amber counts: WebKit here reports a light
+    // colour scheme, so this renders Whiteboard's #b07100 rather than Slate's #ffb000 —
+    // and pinning one of them would make this a test of the runner's theme.
+    expect(picked).toMatch(/rgb\(255, 176, 0\)|rgb\(176, 113, 0\)/);
+    expect(await shadow(1)).toBe("none");
+  });
+
   test("a second tap puts it back", async ({ knag }) => {
     await knag.seed(DOC);
     await knag.page.locator("[data-reorder]").click();
