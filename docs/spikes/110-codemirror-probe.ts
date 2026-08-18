@@ -264,50 +264,49 @@ const boxes = ViewPlugin.fromClass(
  *
  * Only RED is sticky.
  */
-type Check = { id: string; label: string; anchor: string | null; test: (doc: string) => boolean };
+type Check = {
+  id: string;
+  label: string;
+  /** Identifies the line. If no line contains it, you deleted it and the check is grey. */
+  anchor: string | null;
+  /** The line, byte-exact. Compared in full, so a single lost space is a red. */
+  expected?: string;
+  /** Document-level checks that are not about one line. */
+  test?: (doc: string) => boolean;
+};
 
 const CHECKS: Check[] = [
   {
     id: "crlf",
     label: "CRLF line keeps its carriage return",
     anchor: "CRLF line",
-    test: (doc) => doc.includes("CRLF line\r\n"),
+    expected: "CRLF line\r",
   },
   {
     id: "trailing",
     label: "trailing spaces survive",
     anchor: "trailing spaces here",
-    test: (doc) => doc.includes("trailing spaces here   \n"),
+    expected: "trailing spaces here   ",
   },
   {
     id: "tab",
     label: "tab indent stays a tab",
     anchor: "tab indented line",
-    test: (doc) => doc.includes("\ttab indented line"),
+    expected: "\ttab indented line",
   },
-  {
-    id: "star",
-    label: "* marker is never normalized to -",
-    anchor: "star bullet",
-    test: (doc) => doc.includes("\n* star bullet\n") && !doc.includes("\n- star bullet\n"),
-  },
+  { id: "star", label: "* marker is never normalized to -", anchor: "star bullet", expected: "* star bullet" },
   {
     id: "indent",
     label: "nested checkbox keeps its two spaces",
     anchor: "and update the DNS record",
-    test: (doc) => doc.includes("\n  - [ ] and update the DNS record"),
+    expected: "  - [ ] and update the DNS record",
   },
-  {
-    id: "fence",
-    label: "fenced block is untouched",
-    anchor: "const x = 1;",
-    test: (doc) => doc.includes("```js\nconst x = 1;\n```"),
-  },
+  { id: "fence", label: "fence body is untouched", anchor: "const x = 1;", expected: "const x = 1;" },
   {
     id: "unterminated",
     label: "unclosed fence is untouched",
     anchor: "inside an unclosed fence",
-    test: (doc) => doc.includes("~~~\ninside an unclosed fence"),
+    expected: "inside an unclosed fence",
   },
   {
     id: "finalnl",
@@ -326,11 +325,19 @@ const CHECKS: Check[] = [
 /** Sticky. Once RED it stays RED, with the document that broke it. */
 const failed = new Map<string, string>();
 
+/** The line the anchor identifies, or null if it is gone. */
+function anchoredLine(check: Check, doc: string): string | null {
+  if (check.anchor === null) return null;
+  return doc.split("\n").find((line) => line.includes(check.anchor as string)) ?? null;
+}
+
 /** null = the line is gone, so the check does not apply. */
 function stateOf(check: Check, doc: string): boolean | null {
   if (failed.has(check.id)) return false;
-  if (check.anchor !== null && !doc.includes(check.anchor)) return null;
-  return check.test(doc);
+  if (check.test) return check.test(doc);
+  const line = anchoredLine(check, doc);
+  if (line === null) return null;
+  return line === check.expected;
 }
 
 // ── Capability observations ──────────────────────────────────────────────────
@@ -409,9 +416,23 @@ function paint(): void {
     "</ul>",
 
     "<h3>2. Integrity &mdash; red only if a line is still here and changed</h3><ul>",
+    // 🔴 A red now carries its evidence. Three reds were reported from a phone with no
+    // way to tell which were the drills editing the lines the checks assert and which
+    // were real, and answering that took a round trip. Expected-vs-found on the row
+    // makes it self-evident: if "found" is what you just typed, it was you.
     ...CHECKS.map((c) => {
       const state = stateOf(c, doc);
-      return row(state, c.label, state === null ? "line removed" : "");
+      if (state !== false || !c.expected) {
+        return row(state, c.label, state === null ? "line removed" : "");
+      }
+      const found = failed.get(c.id) ? anchoredLine(c, failed.get(c.id) as string) : anchoredLine(c, doc);
+      return (
+        row(false, c.label) +
+        `<li class="bad evidence"><span class="mark"></span><span>` +
+        `expected <code>${visible(c.expected)}</code><br>` +
+        `found&nbsp;&nbsp;&nbsp; <code>${found === null ? "(gone)" : visible(found)}</code>` +
+        `</span></li>`
+      );
     }),
     "</ul>",
 

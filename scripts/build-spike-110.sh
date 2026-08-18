@@ -60,7 +60,24 @@ const bundle = readFileSync('${TMP}/probe.js', 'utf8');
 const marker = '/*BUNDLE*/';
 if (!shell.includes(marker)) { console.error('marker missing'); process.exit(1); }
 if (bundle.includes('</script')) { console.error('bundle would close the script tag'); process.exit(1); }
-writeFileSync('${OUT}', shell.replace(marker, bundle));
+
+// 🔴 A replacement FUNCTION, not a string. String.replace interprets \\$& in the
+// replacement as 'the matched text', and esbuild's minifier is perfectly happy to name a
+// variable \\$ — so 'n instanceof \\$&&(...)' became 'n instanceof /*BUNDLE*/&(...)' and
+// the page died with 'Unexpected token &'. A function argument disables all \\$
+// interpretation. This was latent for four builds and fired only when an edit shifted
+// which identifier got the name.
+const html = shell.replace(marker, () => bundle);
+writeFileSync('${OUT}', html);
+
+// 🔴 And verify what was actually emitted, rather than trusting the substitution. The
+// bundle parsed fine on its own every time; it was the inlining that broke it, which is
+// exactly the seam no earlier check covered.
+const script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
+try { new Function(script); } catch (error) {
+  console.error('inlined script does not parse: ' + error.message);
+  process.exit(1);
+}
 "
 printf '  %s  %s bytes\n' "docs/spikes/110-codemirror-probe.html" "$(size "${OUT}")"
 echo

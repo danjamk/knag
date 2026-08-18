@@ -121,11 +121,11 @@ await page.evaluate((p) => window.__probe.select(p, p), tabPos);
 await page.keyboard.type("XYZ");
 const afterType = await P();
 check("typing inserted exactly what was typed", afterType.includes("\ttab indented lineXYZ"));
-check(
-  "the tab beside it is still a tab",
-  (await page.evaluate(() => window.__probe.failures())).length === 0,
-  (await page.evaluate(() => window.__probe.failures())).join(", ") || "none",
-);
+// 🔴 Asserted on the bytes, not on the failure list. The integrity checks compare whole
+// lines now, so this drill — which deliberately appends to the tab line — is *supposed*
+// to turn that check red. Asking "are there any failures?" right after editing the line
+// a check asserts is the same self-contradiction that produced three false reds already.
+check("the tab beside it is still a tab", afterType.includes("\n\ttab indented lineXYZ\n"));
 await page.keyboard.press("Meta+z");
 check("undo after typing restores the source byte-exactly", (await P()) === source);
 
