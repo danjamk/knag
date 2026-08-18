@@ -225,13 +225,32 @@ must be explicit, and the round-trip property test must run across it.
 
 ### 💰 Size — the largest single cost
 
-```
-                                       min      gzip
-public/app.js (today)                62,601    21,581
-CodeMirror only                     267,811    86,979
-```
+Measured per scope, because "CodeMirror is big" is not a number and an outside review
+estimated this at **35–50 KB gzipped**, which is not close:
 
-**+87 KB gzipped, roughly 5× the current client.** That is the number to argue about.
+| Scope | min | gzip |
+|---|---|---|
+| `public/app.js` today | 62,601 | **21,581** |
+| `@codemirror/state` alone | 49,423 | 16,464 |
+| `+ @codemirror/view` | 202,772 | **65,726** |
+| `+ history` / `historyKeymap` | 227,802 | **73,903** |
+| `+ standardKeymap` | 257,305 | 83,651 |
+| `+ defaultKeymap` (what the probe ships) | 267,811 | **86,979** |
+
+Three things follow:
+
+- **The floor is ~66 KB gzipped, and it is `@codemirror/view`.** No scoping decision moves
+  it; it is the editing surface itself. The 35–50 KB estimate is below the floor.
+- **`defaultKeymap` costs 13 KB gzipped** and knag would replace most of it anyway — Enter,
+  Backspace and the shorthand all need knag's own bindings. Dropping it for `history` alone
+  lands at **73.9 KB**, which is the realistic figure to plan against.
+- The review's own stated threshold was *"more than ~75 KB gzipped added means the scoping
+  was wrong."* At 73.9 KB the scoping passes its own test, but only just, and only by
+  declining the standard editing keymap.
+
+**So: +74 to +87 KB gzipped, against a 21.6 KB client.** Service-worker cached, so it is a
+per-release cost rather than per-load. It is still the largest dependency the project would
+take, and it is the number to argue about.
 
 Context, not excuses: the client is service-worker cached, so it is a one-time cost per
 release rather than per load; spec §14.4 makes the free tier a design input, and the last
@@ -253,9 +272,31 @@ reason this could still fail:
 - what the on-screen keyboard does to an editor that owns its own scroller
 - 🔴 **whether a per-line `autocorrect="off"` is honoured inside a fence** — see above; if
   it is not, ADR-003 §6 has to be re-decided
+- 🔴 **composition adjacent to the checkbox widget** — see below
 
 Run `bash scripts/serve-spike.sh` and open the printed URL in Safari on the phone. The
 drills are listed on the page and the verdict panel is live.
+
+### The one risk this spike had missed
+
+Raised by an outside review with sources: CodeMirror has a known issue where **IME
+composition adjacent to a widget can break**, because `cm-widgetBuffer` nodes are
+reconstructed mid-composition
+([discuss thread](https://discuss.codemirror.net/t/ime-input-may-break-when-cursor-is-adjacent-to-widget-due-to-cm-widgetbuffer-reconstruction/9799)).
+knag's checkbox widgets sit at the **head of the most-edited lines in the document**, which
+is the worst possible placement for it.
+
+Headless now covers the boundary itself — typing immediately after the prefix lands after
+it, the prefix stays byte-intact, all widgets survive. **That is not the same as
+composition**, which is a device concern; the page carries a drill for it and it is the
+highest-value thing left to run on the phone.
+
+The same review flagged a maintainer statement that **OS-level spellcheck stays off on iOS
+when the editable DOM is changed programmatically**, which decorations do
+([discuss thread](https://discuss.codemirror.net/t/os-level-spellcheck-is-disabled-on-ios-even-after-adding-contentattribute/4128)).
+Partly settled already: autocorrect was confirmed working on the phone, and squiggle
+spellcheck and keyboard autocorrect are separate iOS systems. The likely residual loss is
+the red underline, not the correction — worth confirming, not worth blocking on.
 
 Also undecided, and a product question rather than a defect: **a cross-row copy carries the
 `- [ ] ` prefixes**, because it copies document text. knag's per-row copy strips them. The

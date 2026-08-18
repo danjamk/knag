@@ -195,6 +195,15 @@
         <li><b>Paste rich text</b> from a web page. Watch the "no markup" check.</li>
         <li><b>Undo</b> with the keyboard, or shake to undo.</li>
         <li><b>Tap a checkbox</b> mid-line. Does the caret stay out of the marker?</li>
+        <li>
+          <b>Type at the very start of a checkbox line</b> &mdash; caret immediately after
+          the box &mdash; and let autocorrect replace a word. This is the one drill aimed
+          at a known CodeMirror issue: composition next to a widget can break when the
+          widget buffer is rebuilt mid-composition, and knag&rsquo;s widgets sit at the
+          head of the most-edited lines.
+        </li>
+        <li><b>Type inside the ```js fence.</b> Does <code>const</code> become
+          <code>Const</code>? If it does, ADR-003 &sect;6 does not survive.</li>
       </ol>
     </section>
 

@@ -200,7 +200,29 @@ check(
   reordered.includes("```js\nconst x = 1;\n```"),
 );
 
-console.log("\n── 10. Page errors ──────────────────────");
+await page.locator("[data-reset]").click();
+
+console.log("\n── 10. Input at the widget boundary ───────");
+// 🔴 Raised by an outside review: CodeMirror has a known issue where IME composition
+// adjacent to a widget can break, because `cm-widgetBuffer` nodes are reconstructed
+// mid-composition — and knag's checkbox widgets sit at the head of the most-edited
+// lines in the document. Real composition is a device concern and the page carries a
+// drill for it; what is testable here is the boundary itself.
+const cbLine = "- [ ] call the accountant";
+const boundary = source.indexOf(cbLine) + "- [ ] ".length;
+await page.evaluate((p) => window.__probe.select(p, p), boundary);
+await page.keyboard.type("NOW ");
+const afterBoundary = await P();
+check("text lands after the prefix, not inside it", afterBoundary.includes("- [ ] NOW call the accountant"));
+check("the prefix is byte-intact", !afterBoundary.includes("- [ ]NOW") && !afterBoundary.includes("-[ ]"));
+check("all three checkboxes still render", (await page.evaluate(() => window.__probe.boxCount())) === 3);
+check(
+  "no integrity check went red",
+  (await page.evaluate(() => window.__probe.failures())).length === 0,
+  (await page.evaluate(() => window.__probe.failures())).join(", ") || "none",
+);
+
+console.log("\n── 11. Page errors ──────────────────────");
 check("no uncaught errors", errors.length === 0, errors.join(" | ") || "none");
 
 await browser.close();
