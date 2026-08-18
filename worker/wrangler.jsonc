@@ -130,23 +130,33 @@
       // name unless the block sets its own.
       "name": "knag",
 
-      // Against the PROD account, once:
-      //   pnpm exec wrangler d1 create knag
+      // Created on the PROD account 2026-08-18, in the dashboard rather than with
+      // `wrangler d1 create knag`: this machine holds no prod credential, so the CLI
+      // cannot reach that account from here at all. That is the guarantee working, not
+      // a limitation. The id is not a secret for the same reason the dev one above is
+      // not — it names a resource only a credentialed request can reach.
+      //
+      // 🔴 The prod ACCOUNT id is a different thing and is NOT in this file. It lives
+      // on the `production` GitHub Environment as the CLOUDFLARE_ACCOUNT_ID variable.
+      // This repo is public and .gitignore stopped enumerating .env variants (#95)
+      // because that id got into a commit once already.
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "knag",
-          "database_id": "REPLACE_WITH_PROD_D1_DATABASE_ID",
+          "database_id": "96241dce-0aa0-48e1-9248-9cf7d2aa0a2c",
           "migrations_dir": "migrations"
         }
       ],
 
-      // Against the PROD account, once:
-      //   pnpm exec wrangler kv namespace create knag-oauth --env prod
+      // Created on the PROD account 2026-08-18, titled `knag-oauth` — per-project and
+      // per-environment. Never the generic `OAUTH_KV`: that is the BINDING name the
+      // library requires, and a namespace wearing it is how a second project on the
+      // same account ends up issuing tokens out of this store.
       "kv_namespaces": [
         {
           "binding": "OAUTH_KV",
-          "id": "REPLACE_WITH_PROD_OAUTH_KV_ID"
+          "id": "ada2cee066c94278b35df0ea957cf666"
         }
       ],
 
@@ -166,9 +176,16 @@
         "KNAG_TZ": "America/Chicago"
       },
 
-      // Added after DNS. Until then prod has no hostname and, with workers_dev off,
-      // no way in at all — which is the correct state for an unprovisioned prod.
-      //   "routes": [{ "pattern": "knag.danjamkuhn.com", "custom_domain": true }]
+      // Prod's only hostname. `custom_domain: true` means WRANGLER creates the custom
+      // domain and its DNS record during the deploy — there is no separate DNS step,
+      // and this line is what performs it.
+      //
+      // 🔴 It is also why the prod API token needs two ZONE-scoped permissions the dev
+      // token deliberately lacks — Workers Routes: Edit and Zone: Read on
+      // danjamkuhn.com. Dev is a *.workers.dev hostname and was minted with Zone
+      // Resources: none, correctly. Copying that recipe for prod fails here, after the
+      // migrations in the step before have already run. See docs/deployment.md.
+      "routes": [{ "pattern": "knag.danjamkuhn.com", "custom_domain": true }],
 
       // Both off. Each is an alternate hostname reaching the same Worker, and every
       // alternate hostname is one more surface the login rate-limit rule does not
