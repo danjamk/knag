@@ -15,6 +15,16 @@ on:
         required: false
         type: string
 
+# 🔴 Supersede, don't accumulate. Pushing three times while iterating started three full
+# WebKit suites and left the earlier two running to completion.
+#
+# `cancel-in-progress: true` here is the OPPOSITE of the deploy workflows, and both are
+# correct: cancelling a test run loses nothing, while cancelling a deploy mid-flight can
+# leave a half-applied migration against the only copy of the document.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -51,6 +61,21 @@ jobs:
   # stops the next one costing that.
   browser:
     runs-on: ubuntu-latest
+    # 🔴 The official Playwright image, which ships WebKit **and** its system libraries
+    # already installed. What it replaces is `playwright install --with-deps webkit`,
+    # which downloaded ~80MB and then ran `apt-get` against Ubuntu mirrors on a fresh VM
+    # every single run — the largest and by far the most variable part of this job. It
+    # was measured stalling for over ten minutes with the suite not yet started, which is
+    # what prompted this.
+    #
+    # 🔴 The tag must match the Playwright version in the lockfile. The step below
+    # asserts it rather than trusting it, because the failure mode otherwise is silent:
+    # a mismatched image makes Playwright re-download the browser at run time, which is
+    # slow, green, and looks exactly like this optimisation still working.
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
+    env:
+      # The version this image ships. Bump alongside the tag above.
+      PLAYWRIGHT_IMAGE_VERSION: "1.62.1"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -70,10 +95,21 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
-      # right; testing Chromium would report on a browser knag never runs on.
-      - run: pnpm exec playwright install --with-deps webkit
+      - name: Assert the image ships the Playwright this repo installs
+        run: |
+          installed="$(node -p "require('@playwright/test/package.json').version")"
+          if [ "$installed" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "::error::Playwright ${installed} is installed but the container ships ${PLAYWRIGHT_IMAGE_VERSION}."
+            echo "::error::Update both in .github/workflows/ci.yml and deploy-prod.yml:"
+            echo "::error::  container: mcr.microsoft.com/playwright:v${installed}-noble"
+            echo "::error::  PLAYWRIGHT_IMAGE_VERSION: \"${installed}\""
+            exit 1
+          fi
+          echo "✓ Playwright ${installed} matches the image"
 
+      # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
+      # right; testing Chromium would report on a browser knag never runs on. No install
+      # step — the image already has it, which is the whole point of the container.
       - run: pnpm test:browser
 
       # 🔴 Also node20 on v4, and it never appeared in a deprecation warning because it
