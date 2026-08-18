@@ -541,11 +541,22 @@
       /* The row under the finger. Kept subtle — the movement is the feedback. */
       li.dragging { opacity: 0.4; background: var(--row-drag); }
 
-      /* 🔴 Picked in Arrange (#96, ADR-006). `--press-tint` is ink at 10%, one step
-         above `--row-drag`, so a picked row and the row under the finger stay
-         distinguishable while you drag one out of a selection. No new colour enters
-         the palette — amber is still the only one, and this is a ground, not a voice. */
-      [data-rows].reorder li.picked { background: var(--press-tint); }
+      /* 🔴 Picked in Arrange (#96). The ground shift alone was invisible: `--press-tint`
+         against `--arrange-tint` is a contrast ratio of **1.14**, where 3.0 is the floor
+         for a non-text UI element. It read as "multi-select does not work" because you
+         could not see that it had.
+         
+         The rail is the state; the tint is a secondary cue that costs nothing. Amber
+         because it is the only colour in the interface and this IS the machine speaking
+         about itself — the same voice as `wiped 6` — and because it is the one thing on
+         this board guaranteed to be visible on a phone in daylight.
+         
+         `box-shadow: inset` rather than `border-left`, so a picked row does not shift
+         its own text sideways by 3px the moment you tap it. */
+      [data-rows].reorder li.picked {
+        background: var(--press-tint);
+        box-shadow: inset 3px 0 0 var(--amber);
+      }
 
       /* ── The wipe ──────────────────────────────────────────────────────────
          🔴 The only animation in the product, and it is two stages on purpose. The

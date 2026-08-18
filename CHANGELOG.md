@@ -13,6 +13,32 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-08-18
+
+### Fixed
+
+- **You could not see which rows you had picked**
+  ([#108](https://github.com/danjamk/knag/issues/108)). Multi-select in Arrange has worked
+  since 0.7.0. It just did not look like it.
+
+  A picked row was marked by a ground shift alone — a **contrast ratio of 1.14**, where
+  3.0 is the floor for a non-text interface element. On a phone in daylight that is
+  nothing. Tapping rows did exactly what it was supposed to and gave back no evidence, so
+  the feature read as broken.
+
+  A picked row now carries an **amber rail** down its leading edge. Amber because it is
+  the only colour in the interface and this is the machine speaking about itself — the
+  same voice as `wiped 6` — and because it is the one thing on either board certain to be
+  visible outdoors. Contrast goes from 1.14 to **9.5 on Slate and 3.3 on Whiteboard**.
+
+  The ground shift stays as a secondary cue. No new colour enters the palette.
+
+### Notes
+
+- **Every existing test asserted the `picked` class**, which is why none of them caught
+  this. There is now one that asserts the computed style, so a state that cannot be seen
+  fails the suite rather than shipping.
+
 ## [0.7.2] — 2026-08-18
 
 ### Fixed
@@ -651,7 +677,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/danjamk/knag/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/danjamk/knag/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/danjamk/knag/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/danjamk/knag/compare/v0.6.2...v0.7.0
