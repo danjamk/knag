@@ -1,7 +1,9 @@
 # Spike 110 — CodeMirror 6 as knag's editing surface
 
-**Branch:** `spike/110-codemirror` · **Date:** 2026-08-18 · **Status:** complete on desktop
-WebKit, **iOS drills outstanding**
+**Branch:** `spike/110-codemirror` · **Date:** 2026-08-18 · **Status:** complete. 32/34
+headless in WebKit, and every risk exercised on a real iPhone. One control test outstanding
+(ADR-003 §6, below); the two headless reds are the CRLF findings, which are a known design
+task rather than an open question.
 
 Ran against the three questions [ADR-006](../adr/ADR-006-cross-row-selection.md) and
 [#110](https://github.com/danjamk/knag/issues/110) left open. Not a recommendation — the
@@ -14,7 +16,7 @@ finding, and what it costs.
 | `110-codemirror-probe.ts` | The probe. One CodeMirror 6 editor over a deliberately awkward document, with `- [ ] ` rendered as a real checkbox widget. |
 | `110-codemirror-probe.html` | Standalone, everything inlined. Open in a **browser** — see the delivery note below. |
 | `scripts/serve-spike.sh` | Serves it over the LAN so the phone can reach it. **This, not AirDrop.** |
-| `110-headless.mjs` | Drives it in WebKit and grades 20 checks. `node docs/spikes/110-headless.mjs` |
+| `110-headless.mjs` | Drives it in WebKit and grades 34 checks. `node docs/spikes/110-headless.mjs` |
 | `cm-only.ts` | Imports exactly the CodeMirror surface a real integration needs, so the size number is honest. |
 | `scripts/build-spike-110.sh` | Typecheck → bundle → measure → inline. |
 
@@ -54,9 +56,8 @@ Fixed with `EditorView.contentAttributes`, which now matches what
 [ADR-003](../adr/ADR-003-single-mode-editor.md) §6 specifies for the product:
 `autocorrect="on"`, `autocapitalize="sentences"`, `spellcheck="true"`.
 
-**But §6's other half does not survive the change of mechanism, and this is the finding
-that matters.** ADR-003 turns autocorrect *on* for prose and *off* inside fences, and says
-plainly why that is possible:
+**§6's other half is the part at risk — and it provisionally held.** ADR-003 turns
+autocorrect *on* for prose and *off* inside fences, and says plainly why that is possible:
 
 > **This decision is only available because of decision 1.** With one textarea holding the
 > whole document there is no way to distinguish prose from a code fence, so the only safe
@@ -65,12 +66,17 @@ plainly why that is possible:
 
 One editing surface has **one** contenteditable, so the document-level attribute cannot
 vary by line. The only route left is a per-line attribute on a child element, which the
-probe now sets on every fence line — and **whether iOS honours a nested `autocorrect="off"`
-is unknown and untestable from a Mac.**
+probe sets on every fence line.
 
-So the risk ADR-003 §6 named is live again in its original form: autocapitalize turning
-`const` into `Const` inside a code fence. If the phone does that, §6 has to be re-decided
-rather than inherited — most likely as "off everywhere," which is where the MVP started.
+**Run on the phone: `const` typed inside the fence stayed lowercase.** That is what §6
+requires, and it is consistent with the per-line attribute being honoured — but it is also
+consistent with iOS not treating that position as a sentence start, so it is not yet proof.
+
+🔴 **The control test.** Type `const` at the start of a plain **prose** line. Capitalised
+there and lowercase in the fence proves the attribute works and §6 survives whole. Lowercase
+in both means the drill demonstrated nothing and §6 is still open — in which case it is
+re-decided rather than inherited, most likely as "off everywhere," which is where the MVP
+started.
 
 ## Delivery: AirDrop does not work
 
@@ -270,12 +276,25 @@ reason this could still fail:
 - **touch selection** — long-press, drag handles, the magnifier
 - **shake-to-undo** and the iOS undo affordances
 - what the on-screen keyboard does to an editor that owns its own scroller
-- 🔴 **whether a per-line `autocorrect="off"` is honoured inside a fence** — see above; if
-  it is not, ADR-003 §6 has to be re-decided
-- 🔴 **composition adjacent to the checkbox widget** — see below
+- 🟡 **whether a per-line `autocorrect="off"` is honoured inside a fence.** Run on the
+  phone: `const` typed inside the fence **stayed lowercase**. Consistent with the per-line
+  attribute working — and also consistent with iOS not treating that position as a sentence
+  start, so it is not yet proof. **The control test** is typing `const` at the start of a
+  plain prose line: capitalised there and lowercase in the fence proves the attribute;
+  lowercase in both proves nothing. Until then ADR-003 §6 is provisionally intact
 
 Run `bash scripts/serve-spike.sh` and open the printed URL in Safari on the phone. The
 drills are listed on the page and the verdict panel is live.
+
+### 🟢 Composition next to the widget — run, and it held
+
+The risk below was run on a real iPhone: typing at the head of a checkbox line, immediately
+after the widget, through autocorrect replacement and dictation. **Behaviour was as
+expected**, the prefix survived, and the widget did not come apart.
+
+Combined with the earlier run, every risk ADR-003 named — undo, IME, paste — plus the two
+this spike had missed have now been exercised on the device. Nothing outstanding is a
+blocker; what remains is cost and two product decisions.
 
 ### The one risk this spike had missed
 
