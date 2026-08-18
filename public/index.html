@@ -541,6 +541,12 @@
       /* The row under the finger. Kept subtle — the movement is the feedback. */
       li.dragging { opacity: 0.4; background: var(--row-drag); }
 
+      /* 🔴 Picked in Arrange (#96, ADR-006). `--press-tint` is ink at 10%, one step
+         above `--row-drag`, so a picked row and the row under the finger stay
+         distinguishable while you drag one out of a selection. No new colour enters
+         the palette — amber is still the only one, and this is a ground, not a voice. */
+      [data-rows].reorder li.picked { background: var(--press-tint); }
+
       /* ── The wipe ──────────────────────────────────────────────────────────
          🔴 The only animation in the product, and it is two stages on purpose. The
          rows go transparent **in place, holding their height**, and only then does a

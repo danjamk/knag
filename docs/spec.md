@@ -475,7 +475,10 @@ Parse `body` into blocks (§14.1). Render each block by kind:
 3. **Copy button** — reorder mode only. Strips the `- [ ] ` prefix, and copies a
    fenced block whole. Those two are what it adds over the OS: long-press,
    Select All, Copy already works in any text field, so a permanent control on
-   every row bought density and nothing else.
+   every row bought density and nothing else. On a **picked** row it copies the
+   whole selection instead — see *Picking several rows* below.
+4. **Delete control** — reorder mode only, and likewise acts on the selection when
+   the row it sits on is picked.
 
 At 380px this is two targets in one row: the checkbox and the text, which takes
 everything else. Copy moved into reorder mode (below) — it is a whole-row
@@ -606,6 +609,33 @@ which is what principle 4 built it for.
 
 SortableJS bound to the row container, `handle: '.grip'`. On drop, reorder the
 **block** array, serialize, save. Fenced blocks move as one unit.
+
+#### Picking several rows
+
+**Tapping a row's body picks it**; tapping again puts it back. The gesture is free
+because drag is grip-only and the row's input is `pointer-events: none` in the mode, so
+nothing else wanted the tap. Picked rows take `--press-tint` — ink at 10%, one step above
+the row under the finger, so the two stay distinguishable mid-drag. No new colour: amber
+is still the only one, and this is a ground rather than a voice.
+
+**Copy and delete then act on the selection** when the control belongs to a picked row,
+and on that row alone when it does not. Nothing new appears on screen to announce it —
+the picked rows are already tinted, which is what makes the size of the action readable
+before it is taken, the same argument as the count inside `wipe 3`.
+
+- **Copy** joins the picked rows in document order with `\n`, stripping `- [ ] ` prefixes
+  exactly as single-row copy does. Copying what the row *displays* is the rule already
+  set above, and a bulk copy that suddenly carried the markers would make the two
+  controls disagree.
+- **Delete** is one edit for the whole set, so it is one save and one revision entry —
+  and it does not confirm, at any count, for the same reason single-row delete does not.
+- The selection is **UI state**: cleared entering and leaving the mode, and on any edit
+  that moves indices. Never persisted, the same as the mode itself.
+
+🔴 This is the answer to cross-row selection, and it is deliberately *not* the same
+thing. It works on whole rows, so it cannot select half of one line through half of
+another. [ADR-006](adr/ADR-006-cross-row-selection.md) records why that gap is accepted
+rather than closed in the editor.
 
 **A pinned npm dependency, bundled by esbuild** — not a CDN, and not a committed
 `public/vendor/sortable.min.js` as an earlier draft of this section said.

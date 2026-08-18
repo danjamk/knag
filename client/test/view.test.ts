@@ -12,6 +12,7 @@ import {
   readTheme,
   readView,
   removeAt,
+  removeMany,
   rows,
   themeColor,
   writeTheme,
@@ -363,6 +364,64 @@ describe("move (spec §7, §14.1)", () => {
         },
       ),
       { numRuns: 1000 },
+    );
+  });
+});
+
+describe("removeMany (#96)", () => {
+  it("drops every index in one pass", () => {
+    expect(removeMany(["a", "b", "c", "d"], [1, 3])).toEqual(["a", "c"]);
+  });
+
+  it("🔴 reads every index against the ORIGINAL array", () => {
+    // The bug this exists to prevent. Looping removeAt would drop index 1 ("b"),
+    // shifting everything left, and then drop the *new* index 3 -- which is "e", not
+    // the "d" that was picked. A bulk delete that eats a line nobody selected is the
+    // worst possible outcome for a control with no confirm behind it.
+    expect(removeMany(["a", "b", "c", "d", "e"], [1, 3])).toEqual(["a", "c", "e"]);
+
+    // The naive version, spelled out so the reason is not just an assertion: removing
+    // index 1 leaves ["a","c","d","e"], and index 3 of *that* is "e".
+    const naive = [1, 3].reduce(
+      (acc: string[], i) => removeAt(acc, i),
+      ["a", "b", "c", "d", "e"],
+    );
+    expect(naive).toEqual(["a", "c", "d"]);
+    expect(naive).not.toEqual(["a", "c", "e"]);
+  });
+
+  it("does not care what order the indices arrive in", () => {
+    expect(removeMany(["a", "b", "c", "d"], [3, 1])).toEqual(["a", "c"]);
+    expect(removeMany(["a", "b", "c", "d"], new Set([3, 1]))).toEqual(["a", "c"]);
+  });
+
+  it("ignores duplicates", () => {
+    expect(removeMany(["a", "b", "c"], [1, 1, 1])).toEqual(["a", "c"]);
+  });
+
+  it("ignores out-of-range indices rather than throwing", () => {
+    expect(removeMany(["a", "b"], [-1, 5, 1.5, 0])).toEqual(["b"]);
+  });
+
+  it("returns the input untouched when nothing is in range", () => {
+    const items = ["a", "b"];
+    expect(removeMany(items, [])).toBe(items);
+    expect(removeMany(items, [-1, 9])).toBe(items);
+  });
+
+  it("removes whole fences, the same as removeAt", () => {
+    const blocks = parse("one\n```\ncode\n```\ntwo");
+    const kept = removeMany(blocks, [1]);
+    expect(serialize(kept)).toBe("one\ntwo");
+  });
+
+  it("agrees with removeAt for a single index", () => {
+    fc.assert(
+      fc.property(fc.array(fc.string(), { minLength: 1, maxLength: 12 }), (items) => {
+        for (let i = 0; i < items.length; i++) {
+          expect(removeMany(items, [i])).toEqual(removeAt(items, i));
+        }
+      }),
     );
   });
 });

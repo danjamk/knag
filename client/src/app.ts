@@ -55,7 +55,7 @@ import {
   move,
   readTheme,
   readView,
-  removeAt,
+  removeMany,
   rows,
   themeColor,
   writeTheme,
@@ -102,6 +102,29 @@ let view: ViewMode = "list";
  * mode after a reload would be the mode problem ADR-003 removed, reintroduced.
  */
 let reordering = false;
+
+/**
+ * Rows picked in Arrange, by block index.
+ *
+ * 🔴 UI state, never document state, and never persisted — the same rule as the mode
+ * itself (ADR-003 §5). It is cleared entering and leaving Arrange, and on any edit that
+ * moves indices, because a picked index means nothing once the rows underneath it have
+ * shifted. `paintRows` prunes out-of-range as a backstop for a remote change arriving
+ * mid-selection.
+ *
+ * Called `picked` rather than `selected` on purpose: `--selection` and `::selection`
+ * already mean the text selection inside a row, which is a different thing entirely and
+ * the thing ADR-006 decided not to build.
+ */
+const picked = new Set<number>();
+
+/** The display text of every picked row, in document order. */
+function pickedText(): string {
+  return rows(parse(body))
+    .filter((row) => picked.has(row.index))
+    .map((row) => row.text)
+    .join("\n");
+}
 
 /** Persisted, unlike the mode — this is a preference, not something you are doing. */
 let theme: Theme = "system";
@@ -299,6 +322,9 @@ function paint(): void {
 function paintRows(): void {
   if (!rowsEl) return;
   const blocks = parse(body);
+  // A row that no longer exists cannot stay picked. This is the backstop for a remote
+  // change arriving mid-selection; the mode and every structural edit clear the set.
+  for (const index of picked) if (index >= blocks.length) picked.delete(index);
   rowsEl.replaceChildren(...rows(blocks).map(rowElement));
 
   // After they are in the document: `scrollHeight` is 0 on a detached element, so
@@ -468,6 +494,7 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   const li = document.createElement("li");
   li.className = row.kind;
   li.dataset.index = String(row.index);
+  if (reordering && picked.has(row.index)) li.classList.add("picked");
 
   if (reordering) li.append(gripElement());
 
@@ -1565,7 +1592,13 @@ restoreButton?.addEventListener("click", async () => {
 // Delegated, so it survives every repaint.
 rowsEl?.addEventListener("click", (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLElement)) return;
+  // 🔴 `Element`, not `HTMLElement`. Every control in here is a button wrapping an
+  // **SVG glyph**, and an SVG element is not an HTMLElement — so a tap that landed on
+  // the drawing rather than the padding around it failed this guard and was dropped
+  // silently. The controls are 36px holding a 17px glyph, which means copy and delete
+  // in Arrange worked only if you hit the edge and did nothing if you hit the middle.
+  // `closest()` is defined on Element, so nothing downstream changes.
+  if (!(target instanceof Element)) return;
 
   // A link is a link. Tapping one navigates rather than opening the editor — which
   // does mean a row that is nothing but a URL can only be edited from raw view, and
@@ -1574,10 +1607,34 @@ rowsEl?.addEventListener("click", (event) => {
 
   const copy = target.closest<HTMLElement>("[data-copy]");
   if (copy) {
-    void copyToClipboard(copy.dataset.copy ?? "", copy);
+    // 🔴 Copying a picked row copies the whole selection, not that one row. The rule is
+    // the same for delete below: a control on a picked row acts on the selection, a
+    // control on any other row acts on itself. Nothing new appears on screen to say so —
+    // the picked rows are already tinted, which is what makes the size of the action
+    // readable before it is taken (the same argument as the count inside `wipe 3`).
+    const index = Number(copy.closest<HTMLElement>("li")?.dataset.index);
+    const text = picked.has(index) ? pickedText() : (copy.dataset.copy ?? "");
+    void copyToClipboard(text, copy);
     return;
   }
 
+  // 🔴 Tapping a row's body picks it. The gesture is free: drag is grip-only
+  // (`handle: ".grip"`) and Arrange sets `pointer-events: none` on the row's textarea,
+  // so a tap here reaches the `li` and nothing else wanted it. Outside Arrange the row
+  // is a live input and a tap belongs to the caret.
+  if (!reordering) return;
+  // The controls are not the row. Without this, deleting a row would also pick it on the
+  // way past, and the grip would toggle a selection every time a drag failed to start.
+  if (target.closest(".grip, [data-copy], [data-remove], a, button")) return;
+
+  const li = target.closest<HTMLElement>("li[data-index]");
+  if (!li) return;
+  const rowIndex = Number(li.dataset.index);
+  if (!Number.isInteger(rowIndex)) return;
+
+  if (picked.has(rowIndex)) picked.delete(rowIndex);
+  else picked.add(rowIndex);
+  paintRows();
 });
 
 /**
@@ -1640,6 +1697,8 @@ if (rowsEl) {
       }
 
       body = next;
+      // The drag moved rows out from under every picked index.
+      picked.clear();
       paintRows();
 
       // Immediately, like a toggle and a clear — a drop is a complete intent (spec §6).
@@ -1661,6 +1720,9 @@ if (rowsEl) {
  */
 function setReordering(on: boolean): void {
   reordering = on;
+  // Both directions. Leaving with rows still picked would put the selection back the
+  // next time the mode opened, which is state the page gives no way to see or undo.
+  picked.clear();
   rowsEl?.classList.toggle("reorder", on);
   // 🔴 The glyph never changes — only its state does. An earlier version swapped the
   // drawing for a tick on the way in, which is how the control silently changed shape
@@ -1713,7 +1775,9 @@ function markChoices(selector: string, key: string, active: string): void {
 
 settingsDialog?.addEventListener("click", (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLElement)) return;
+  // Same reason as the row handlers: any control in here that carries a glyph would
+  // otherwise ignore a tap on the glyph itself.
+  if (!(target instanceof Element)) return;
 
   const chosenTheme = target.closest<HTMLElement>("[data-theme-set]")?.dataset.themeSet;
   if (chosenTheme) {
@@ -1757,7 +1821,9 @@ reorderButton?.addEventListener("click", () => {
 
 rowsEl?.addEventListener("click", (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLElement)) return;
+  // See the note on the handler above: the glyph is an SVG, and an SVG is not an
+  // HTMLElement. This is the handler where that dropped a **delete**.
+  if (!(target instanceof Element)) return;
 
   const remove = target.closest<HTMLElement>("[data-remove]");
   if (!remove) return;
@@ -1769,9 +1835,16 @@ rowsEl?.addEventListener("click", (event) => {
     return;
   }
 
-  // 🔴 No confirm. The revision log is the undo — principle 4 finally paying for
-  // itself, and the reason #7 had to land before this could.
-  body = serialize(removeAt(blocks, index));
+  // 🔴 No confirm, at any count. The revision log is the undo — principle 4 finally
+  // paying for itself, and the reason #7 had to land before this could. A bulk delete
+  // inherits that rather than growing a dialog, for the same reason wiping completed
+  // stopped asking: the count is already legible from the page.
+  //
+  // One edit for the whole set, so it is one save and one revision entry. Deleting a
+  // picked row deletes the selection; deleting any other row deletes only itself.
+  const doomed = picked.has(index) ? [...picked] : [index];
+  picked.clear();
+  body = serialize(removeMany(blocks, doomed));
   paintRows();
   dirty = true;
   lastActivityAt = Date.now();
