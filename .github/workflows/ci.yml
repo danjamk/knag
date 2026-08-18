@@ -51,15 +51,34 @@ jobs:
       # checks something `check` does not, the local gate is a lie.
       - run: pnpm check
 
-  # 🔴 Separate from `check`, deliberately. The WebKit download is ~80MB and adds
-  # about a minute, so making every typecheck pay for it would make the fast gate
-  # slow — and a slow gate is one people stop running.
+  # 🔴 Separate from `check`, deliberately. This job is ~3 minutes against `check`'s
+  # ~50 seconds, so making every typecheck pay for it would make the fast gate slow —
+  # and a slow gate is one people stop running.
   #
   # It is not optional either. Three bugs have shipped that 263 unit tests could not
   # see: a CSS specificity conflict, a toolbar that reflowed, and rows clipped to
   # zero height. All three were found by a human on an iPhone. This job is what
   # stops the next one costing that.
+  #
+  # 🔴 **Not on `push`.** A merge to `main` runs `check` and nothing else here. The pull
+  # request already ran this suite against the same tree, so running it again on the
+  # squash commit was paying twice for one answer — and this is the single most expensive
+  # thing in the repo's CI.
+  #
+  # What that costs, stated plainly rather than discovered later: **nothing browser-tests
+  # `main`'s actual tree.** The PR run tested the merge of head into base, which is the
+  # same content unless another PR landed in between — a real gap, and the one this used
+  # to cover. Two things stand behind it:
+  #
+  #   - a production deploy runs the suite itself, before anything touches the account
+  #     (deploy-prod.yml)
+  #   - `workflow_dispatch` still runs it, with a `ref` input — so a full run against
+  #     `main` before a release is one click, and that is the moment to want one
+  #
+  # So "CI is green on main" now means typecheck and unit tests. If that stops being
+  # enough, put this back rather than inventing something cleverer.
   browser:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     # 🔴 The official Playwright image, which ships WebKit **and** its system libraries
     # already installed. What it replaces is `playwright install --with-deps webkit`,
