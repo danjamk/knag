@@ -41,30 +41,21 @@
         border-radius: 4px;
         background: #171b15;
       }
-      /* 🔴 No max-height, deliberately. A nested scroller inside the page made
-         long-press-and-drag compete with scrolling on iOS, which is most of why
-         selecting "took multiple tries". The page scrolls; the editor does not. */
-      .cm-editor.cm-focused { outline: 1px solid var(--amber); }
-      .cm-scroller {
-        /* 🔴 16px is a floor, not a preference: iOS zooms the viewport when a field
-           smaller than this takes focus, and that zoom is felt as klunk. Sans for
-           prose because this is a legal pad; fences get mono below. */
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        font-size: 16px;
-        line-height: 1.75;
-      }
-      .cm-content {
-        padding: 12px 10px;
-        /* An amber hairline caret is invisible on a phone in daylight. Thicker and
-           brighter; the product would draw this from --amber at full strength. */
-        caret-color: #ffc633;
-      }
-      .cm-line { padding: 1px 0; }
-      .cm-line.fence {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 14px;
-      }
-      .cm-line.done { color: var(--dim); text-decoration: line-through; }
+      /* 🔴 Only layout lives here now. Everything about type, caret and colour inside
+         the editor moved into EditorView.theme() in the probe source, because
+         CodeMirror's base theme is emitted under a generated class and outranks any
+         plain `.cm-content` rule written here. A black caret on a black board is what
+         that cost, twice.
+
+         🔴 No max-height. A nested scroller made long-press-and-drag compete with
+         scrolling on iOS, which is most of why selecting "took multiple tries". The
+         page scrolls; the editor does not.
+
+         🔴 And NO ::selection override. Overriding it painted a translucent amber over
+         the native highlight and made the selection fainter than the platform's own,
+         which is what "not easy to see in dark mode" was. iOS draws a selection that is
+         visible by design and carries the drag handles - the entire reason this
+         approach is worth having. Do not fight it. */
       input.box {
         accent-color: var(--amber);
         width: 20px;
@@ -72,11 +63,6 @@
         margin: 0 8px 0 0;
         vertical-align: -4px;
       }
-      /* 🔴 Was #3a4a2e — a dark olive on a dark ground, reported as "not easy to see
-         in dark mode" and it was right: barely above the background. Native iOS
-         selection is kept (the handles are the whole prize), only its colour changes. */
-      .cm-selectionBackground,
-      .cm-content ::selection { background: rgba(255, 176, 0, 0.32) !important; }
 
       /* ── verdicts ─────────────────────────────────────────────────────── */
       ul { list-style: none; margin: 0; padding: 0; }
@@ -120,6 +106,41 @@
       .dead { margin: 0; padding: 14px; color: var(--amber); font-size: 13px; line-height: 1.6; }
       .dead b { display: block; margin-bottom: 4px; }
       .dead code { color: var(--ink); }
+      /* ── Arrange: the sort mode, rendered separately ──────────────────────
+         The two modes never share an element. Each builds itself from the document
+         string and hands a string back, which is why per-row drag and cross-row
+         selection can both exist without arguing. */
+      ul.arrange { padding: 6px; }
+      ul.arrange li {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        min-height: 40px;
+        padding: 4px 6px;
+        background: #171b15;
+        border-bottom: 1px solid var(--hair);
+      }
+      ul.arrange .grip {
+        flex: none;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        color: var(--dim);
+        letter-spacing: -1px;
+        cursor: grab;
+        touch-action: none;
+      }
+      ul.arrange .rowtext {
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--ink);
+      }
+      ul.arrange .sortable-ghost { opacity: 0.35; }
+      body.arranging [data-arrange] { color: var(--ground); background: var(--amber); }
+
+      button[data-arrange],
       button[data-reset] {
         font: 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
         background: none;
@@ -155,6 +176,7 @@
     <section data-verdicts></section>
 
     <section>
+      <button type="button" data-arrange>arrange</button>
       <button type="button" data-reset>reset the document</button>
       <span class="lede"
         >Clears the sticky reds and puts the awkward document back. The capability

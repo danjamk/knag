@@ -32,6 +32,11 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import Sortable from "sortablejs";
+// 🔴 The REAL parser, not a copy. The whole question Arrange raises is whether the two
+// renderings agree about the document, and importing knag's own `blocks.ts` is the only
+// version of this test that means anything.
+import { parse, serialize } from "../../worker/src/blocks.js";
 
 // ── The awkward document ─────────────────────────────────────────────────────
 //
@@ -340,12 +345,21 @@ const seen = {
   redo: false,
   paste: false,
   composition: false,
+  arrangeRoundTrip: false,
 };
+
+/** Sticky. Set if a no-op trip through Arrange changed a single byte. */
+let arrangeBroken = false;
 
 let view: EditorView;
 
+/** The document, from whichever mode currently owns it. */
+function currentDoc(): string {
+  return arranging ? arrangeSource : view.state.doc.toString();
+}
+
 function report(): void {
-  const doc = view.state.doc.toString();
+  const doc = currentDoc();
   for (const check of CHECKS) {
     if (stateOf(check, doc) === false) failed.set(check.id, doc);
   }
@@ -379,11 +393,14 @@ function paint(): void {
   const dump = document.querySelector("[data-dump]");
   if (!panel || !dump) return;
 
-  const sel = view.state.selection.main;
+  // In Arrange there is no editor and therefore no selection to report on.
+  const sel = arranging ? null : view.state.selection.main;
   const selLines =
-    view.state.doc.lineAt(sel.to).number - view.state.doc.lineAt(sel.from).number + 1;
+    sel === null
+      ? 0
+      : view.state.doc.lineAt(sel.to).number - view.state.doc.lineAt(sel.from).number + 1;
 
-  const doc = view.state.doc.toString();
+  const doc = currentDoc();
 
   panel.innerHTML = [
     "<h3>1. Round trip, at load &mdash; this is a finding, not a fault</h3><ul>",
@@ -413,10 +430,15 @@ function paint(): void {
     row(seen.redo ? true : null, "redo replayed it"),
     row(seen.paste ? true : null, "paste applied"),
     row(seen.composition ? true : null, "IME / autocorrect composition seen"),
+    row(
+      arrangeBroken ? false : seen.arrangeRoundTrip ? true : null,
+      "Arrange round-trips the document byte-for-byte",
+      arrangeBroken ? "CHANGED BYTES" : "",
+    ),
     "</ul>",
   ].join("");
 
-  dump.innerHTML = visible(view.state.doc.toString());
+  dump.innerHTML = visible(currentDoc());
 
   const copied = document.querySelector("[data-copied]");
   if (copied) {
@@ -428,15 +450,24 @@ function paint(): void {
 
 // ── Wire it up ───────────────────────────────────────────────────────────────
 
-const parent = document.querySelector("[data-editor]");
-if (!parent) throw new Error("no editor mount");
+// An IIFE so the type is `Element`, not `Element | null`. A `throw` after the query
+// narrows at the top level but not inside the hoisted function declarations below, and
+// the alternative is a non-null assertion on every use.
+const parent = ((): Element => {
+  const element = document.querySelector("[data-editor]");
+  if (!element) throw new Error("no editor mount");
+  return element;
+})();
 // Clears the "the script did not run" placeholder. Reaching this line is the proof.
 parent.innerHTML = "";
 
-view = new EditorView({
-  parent,
-  state: EditorState.create({
-    doc: SOURCE,
+/**
+ * Builds the editor over `text`. Called on boot and again every time Arrange hands the
+ * document back, which is what makes the two modes swappable at all.
+ */
+function editorState(text: string) {
+  return EditorState.create({
+    doc: text,
     extensions: [
       // The finding from question 1 applied. If RT_PINNED is false this is theatre and
       // the page says so at the top.
@@ -444,6 +475,36 @@ view = new EditorView({
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
+
+      // 🔴 A theme, not a stylesheet rule, and this is not a style preference.
+      //
+      // CodeMirror injects its base theme under a generated class - `.cx1 .cm-content` -
+      // which is TWO classes, so every plain `.cm-content` rule in the page's <style>
+      // loses the cascade no matter where it sits. The caret was computing to
+      // `rgb(0, 0, 0)`: black, on a near-black board, reported twice as "cannot see the
+      // cursor" and correct both times. `EditorView.theme` emits at the same specificity
+      // as the base theme, so it actually wins.
+      //
+      // `{ dark: true }` is load-bearing too - it selects the base theme's dark variant
+      // rather than leaving light-mode defaults underneath.
+      EditorView.theme(
+        {
+          "&": { fontSize: "16px" },
+          ".cm-scroller": {
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            lineHeight: "1.75",
+          },
+          ".cm-content": { padding: "12px 10px", caretColor: "#ffc633" },
+          ".cm-line": { padding: "1px 0" },
+          ".cm-line.fence": {
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontSize: "14px",
+          },
+          ".cm-line.done": { color: "#7b8074", textDecoration: "line-through" },
+          "&.cm-focused": { outline: "1px solid #ffb000" },
+        },
+        { dark: true },
+      ),
 
       // 🔴 Not optional, and its absence made the first run of this probe report
       // nothing. CodeMirror sets `spellcheck="false"` on its content by default, so
@@ -490,8 +551,116 @@ view = new EditorView({
         },
       }),
     ],
-  }),
+  });
+}
+
+function mountEditor(text: string): void {
+  parent.innerHTML = "";
+  view = new EditorView({ parent, state: editorState(text) });
+  report();
+}
+
+mountEditor(SOURCE);
+
+// ── Arrange: keeping the sort mode ───────────────────────────────────────────
+//
+// 🔴 This is the answer to "can we keep sort mode and still use this control?", and it
+// is yes, for a reason that is structural rather than lucky: **Arrange is already a
+// separate mode with its own rendering.** Today it swaps every row to readOnly and
+// binds SortableJS. It does not have to share an element with the editor, and once it
+// does not, the conflict that produced ADR-006 simply is not there.
+//
+// The two renderings never coexist. The document is a string; each mode builds itself
+// from that string and hands a string back:
+//
+//     text --parse--> blocks --drag--> blocks --serialize--> text --> CodeMirror
+//
+// So per-row drag keeps working exactly as it does now, at whole-block granularity,
+// with fences moving as one unit - and the editor gets native cross-row selection.
+// Neither pays for the other.
+//
+// The check that matters is not that dragging works. It is that a trip through Arrange
+// **with no drag at all** returns the identical bytes. If that ever goes red, the two
+// renderings disagree about the document and nothing else here is worth reading.
+
+let arranging = false;
+let arrangeSource = "";
+let arrangeDragged = false;
+let sortable: Sortable | null = null;
+
+function enterArrange(): void {
+  arrangeSource = view.state.doc.toString();
+  arrangeDragged = false;
+  // Destroyed, not hidden. Two live editing surfaces over one document is the bug this
+  // whole design exists to avoid.
+  view.destroy();
+  parent.innerHTML = "";
+
+  const list = document.createElement("ul");
+  list.className = "arrange";
+  for (const [index, block] of parse(arrangeSource).entries()) {
+    const li = document.createElement("li");
+    li.dataset.index = String(index);
+    const grip = document.createElement("span");
+    grip.className = "grip";
+    grip.textContent = ":::";
+    const text = document.createElement("span");
+    text.className = "rowtext";
+    // `raw`, deliberately - the whole block, fences included, exactly as stored. A blank
+    // block is an empty row and still occupies a position, which is what keeps spacing
+    // where you put it through a reorder.
+    text.textContent = block.raw;
+    li.append(grip, text);
+    list.append(li);
+  }
+  parent.append(list);
+
+  sortable = Sortable.create(list, {
+    handle: ".grip",
+    animation: 120,
+    onEnd: () => {
+      arrangeDragged = true;
+    },
+  });
+
+  arranging = true;
+  paintMode();
+  report();
+}
+
+function exitArrange(): void {
+  const blocks = parse(arrangeSource);
+  const order = [...parent.querySelectorAll<HTMLLIElement>("li[data-index]")].map((li) =>
+    Number(li.dataset.index),
+  );
+  const reordered = order
+    .map((index) => blocks[index])
+    .filter((block): block is NonNullable<typeof block> => block !== undefined);
+  const next = serialize(reordered);
+
+  if (!arrangeDragged) {
+    if (next === arrangeSource) seen.arrangeRoundTrip = true;
+    else arrangeBroken = true;
+  }
+
+  sortable?.destroy();
+  sortable = null;
+  arranging = false;
+  mountEditor(next);
+  paintMode();
+}
+
+function paintMode(): void {
+  const button = document.querySelector("[data-arrange]");
+  if (button) button.textContent = arranging ? "done arranging" : "arrange";
+  document.body.classList.toggle("arranging", arranging);
+}
+
+document.querySelector("[data-arrange]")?.addEventListener("click", () => {
+  if (arranging) exitArrange();
+  else enterArrange();
 });
+
 
 // Undo and redo are observed by watching the document actually move, not by trusting
 // that a keystroke was handled.
@@ -519,8 +688,19 @@ document.addEventListener(
 // recovery is reloading the page - which also throws away the capability results you
 // just earned.
 document.querySelector("[data-reset]")?.addEventListener("click", () => {
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: SOURCE } });
   failed.clear();
+  arrangeBroken = false;
+  if (arranging) {
+    // Leave the mode rather than resetting underneath it — a row list built from one
+    // document with a different one behind it is the exact disagreement being tested for.
+    sortable?.destroy();
+    sortable = null;
+    arranging = false;
+    paintMode();
+    mountEditor(SOURCE);
+    return;
+  }
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: SOURCE } });
   report();
 });
 
@@ -552,13 +732,19 @@ window.__probe = {
   /**
    * Clears the sticky failures and re-evaluates against the document as it stands.
    *
+   * 🔴 Named for what it does. It was called `reset`, and the harness then used it
+   * where it meant "put the document back" — so a later drill compared a document
+   * still carrying a paste and three typed characters against the pristine source and
+   * reported the mode swap as lossy. Restoring the document is the `[data-reset]`
+   * button; this only forgives past reds.
+   *
    * 🔴 Only for the headless harness, and only after a drill that *deliberately*
    * deleted a hazard line. Sticky is the right default - the failure being hunted
    * renders correctly and only shows up on save - but a drill that removes the very
    * bytes a check asserts produces a red that means nothing, and a red that means
    * nothing is how a real one gets ignored. The page itself never calls this.
    */
-  reset: () => {
+  clearFailures: () => {
     failed.clear();
     report();
     return [...failed.keys()];

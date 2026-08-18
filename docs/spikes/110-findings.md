@@ -117,6 +117,43 @@ None of these is evidence against CodeMirror. All of them are evidence that a pr
 as a diagnostic reads as a bad product, which is worth remembering before the next one is
 used to judge feel.
 
+## 🟢 The sort mode survives, and the reason is structural
+
+The question from real use was *"is there any chance we could keep the sort mode and still
+use this control?"* **Yes**, and not by luck — **Arrange is already a separate mode with its
+own rendering.** Today it swaps every row to `readOnly` and binds SortableJS. It has never
+needed to share an element with the editor, and once it does not, the conflict that
+produced ADR-006 is simply absent.
+
+The two renderings never coexist. The document is a string; each mode builds itself from
+that string and hands a string back:
+
+```
+text --parse--> blocks --drag--> blocks --serialize--> text --> CodeMirror
+```
+
+Built into the probe, using **knag's real `blocks.ts`** rather than a mock — a copy of the
+parser would have tested a copy of the agreement.
+
+| Check | Result |
+|---|---|
+| One row per **block** (fences group, blanks hold their place) | ✅ |
+| The editor is destroyed while arranging, not hidden | ✅ |
+| **A trip through Arrange with no drag is byte-identical** | ✅ |
+| A reorder preserves every byte | ✅ 234 → 234 |
+| The fenced block moved as one unit | ✅ |
+
+🔴 The no-op trip is the check that matters. Dragging working is visible in five seconds
+and was never the risk; **two renderings quietly disagreeing about the document** is. If
+that row ever goes red, nothing else on the page is worth reading.
+
+So the trade offered from use — *"I would let go of the drag and move, or accept a mode
+change to do it"* — **does not have to be taken.** Per-row drag keeps working exactly as it
+does now, at whole-block granularity, behind the mode it already lives behind. The editor
+gets native cross-row selection. Neither pays for the other.
+
+What this costs is one extra render path, and both halves already exist in the codebase.
+
 ## Results — 18 of 20 in WebKit
 
 ### ✅ Cross-row selection, and everything that hangs off it

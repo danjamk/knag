@@ -106,7 +106,7 @@ await page.keyboard.press("Meta+z");
 check("undo restored the document byte-exactly", (await P()) === source);
 // Safe now, and only now: the document is identical to source again, so anything red
 // after this point is the editor's doing rather than the drill's.
-const stillRed = await page.evaluate(() => window.__probe.reset());
+const stillRed = await page.evaluate(() => window.__probe.clearFailures());
 check("every integrity check green once the document is back", stillRed.length === 0, stillRed.join(", ") || "none");
 
 console.log("\n── 6. Typing ────────────────────────────");
@@ -144,7 +144,7 @@ const afterPaste = await P();
 check("paste inserted the plain-text form", afterPaste.startsWith("pasted line one\npasted line two\n"));
 check("no HTML or font styling entered the document", !/<[a-z]|font-family|Comic/i.test(afterPaste));
 
-await page.evaluate(() => window.__probe.reset());
+await page.evaluate(() => window.__probe.clearFailures());
 
 console.log("\n── 8. Editing the CRLF line ───────────────");
 // 🔴 Pinning `lineSeparator` makes a pristine document round-trip, which is NOT the
@@ -163,7 +163,44 @@ check(
   afterCr.includes("CRLF line\rXYZ") ? "CR is now MID-LINE" : "",
 );
 
-console.log("\n── 9. Page errors ───────────────────────");
+// The BUTTON, which restores the document. Sections 7 and 8 left a paste and three
+// typed characters in place, and Arrange must be judged against a known document.
+await page.locator("[data-reset]").click();
+check("reset restored the source before the mode test", (await P()) === source);
+
+console.log("\n── 9. Arrange, the sort mode ──────────────");
+// 🔴 The check that matters is the NO-OP trip. Dragging working is visible in seconds
+// and was never the risk; two renderings quietly disagreeing about the document is.
+await page.locator("[data-arrange]").click();
+const rowCount = await page.locator("ul.arrange li").count();
+check("Arrange rendered one row per block", rowCount > 0, `${rowCount} rows`);
+check("the editor is gone while arranging", (await page.locator(".cm-content").count()) === 0);
+
+await page.locator("[data-arrange]").click();
+check("a trip through Arrange with no drag is byte-identical", (await P()) === source);
+check(
+  "the probe agrees it round-tripped",
+  (await page.evaluate(() => window.__probe.seen())).arrangeRoundTrip === true,
+);
+check("the editor came back", (await page.locator(".cm-content").count()) === 1);
+
+// Now actually reorder: move the first block to the end, the way a drag would.
+await page.locator("[data-arrange]").click();
+await page.evaluate(() => {
+  const list = document.querySelector("ul.arrange");
+  list.append(list.querySelector("li"));
+});
+await page.locator("[data-arrange]").click();
+const reordered = await P();
+check("reorder preserved every byte", reordered.length === source.length, `${reordered.length} vs ${source.length}`);
+check("the moved block is no longer first", !reordered.startsWith("Thursday"));
+check("the moved block is still present", reordered.includes("Thursday"));
+check(
+  "the fence did not come apart",
+  reordered.includes("```js\nconst x = 1;\n```"),
+);
+
+console.log("\n── 10. Page errors ──────────────────────");
 check("no uncaught errors", errors.length === 0, errors.join(" | ") || "none");
 
 await browser.close();
