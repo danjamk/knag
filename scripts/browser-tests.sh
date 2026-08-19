@@ -103,6 +103,34 @@ probe() {
     "${trace:-0}MB" "${d1:-0}MB" "$mem"
 }
 
+# 🔴 Reap the workerd processes wrangler leaves behind (#107).
+#
+# This is the mechanism, found by the probe on its first CI run. Playwright stops the
+# `wrangler dev` it started, but wrangler's two `workerd` children survive it, and the CI
+# container has no init to reap them. The count climbed exactly +2 per spec file —
+# 0, 2, 4, 6, 8, 10, 12, 14, 16, 18 — so `sync.spec.ts`, second-to-last, ran against a
+# runner carrying sixteen orphans. That is why the flake lands late in the run, and why
+# it never reproduced locally: macOS reaps them and the probe reads 0 after every file
+# there.
+#
+# Orphans only, identified by PPID 1, so a `make dev` running in another terminal is
+# never touched — a live server's workerd is parented to its wrangler process, not to
+# init.
+reap_orphans() {
+  local pids
+  pids=$(ps -eo pid=,ppid=,comm= 2>/dev/null | awk '$2 == 1 && $3 ~ /workerd/ { print $1 }')
+  [ -z "$pids" ] && return 0
+
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  sleep 1
+  pids=$(ps -eo pid=,ppid=,comm= 2>/dev/null | awk '$2 == 1 && $3 ~ /workerd/ { print $1 }')
+  if [ -n "$pids" ]; then
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+  fi
+}
+
 shopt -s nullglob
 SPECS=(browser/*.spec.ts)
 shopt -u nullglob
@@ -156,6 +184,7 @@ for spec in "${SPECS[@]}"; do
   fi
   rm -f "$log"
 
+  reap_orphans
   probe "after ${spec}"
   echo ""
 done
