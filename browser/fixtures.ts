@@ -182,6 +182,20 @@ export class Knag {
     return this.page.locator("[data-surface] input.cm-box");
   }
 
+  /**
+   * Put the caret at the end of line `n`, one-based.
+   *
+   * 🔴 Not `ControlOrMeta+End`. Every seeded document here ends with a newline, so the
+   * document ends on an *empty* line — and eight tests asserted checkbox continuation
+   * while the caret sat on a blank line below it, then reported the feature broken.
+   */
+  async caretAtEndOfLine(n: number): Promise<void> {
+    await this.surface().click();
+    await this.page.keyboard.press("ControlOrMeta+Home");
+    for (let i = 1; i < n; i += 1) await this.page.keyboard.press("ArrowDown");
+    await this.page.keyboard.press("End");
+  }
+
   /** What the browser reports as selected — the only honest answer to "does it span". */
   async selection(): Promise<string> {
     // Structurally typed: this tsconfig has no DOM lib on purpose, and adding one to

@@ -1,4 +1,4 @@
-import { type Block, eolOf, lineFor, parse, serialize } from "../../worker/src/blocks.js";
+import { CHECKBOX, type Block, eolOf, parse, serialize } from "../../worker/src/blocks.js";
 import { displayText, stripCR } from "./view.js";
 
 /**
@@ -26,11 +26,6 @@ export type EditResult = {
 /** Nothing changed. Returned rather than throwing, so callers stay branch-free. */
 function unchanged(blocks: Block[], index: number, offset: number): EditResult {
   return { body: serialize(blocks), focusIndex: index, focusOffset: offset };
-}
-
-/** A new checkbox line at the same indent and marker, unchecked and empty of text. */
-function newCheckboxLine(from: Block, text: string): string {
-  return `${from.indent}${from.marker} [ ] ${text}`;
 }
 
 /**
@@ -83,68 +78,120 @@ function bulletPrefix(text: string): string | null {
  * Fences are never split here: they are a `<textarea>`, and `Enter` inside one
  * inserts a newline natively, which is the correct behaviour for a code block.
  */
+/**
+ * What `Enter` does to one line, expressed on the raw line and nothing else.
+ *
+ * 🔴 **The single statement of the split policy.** `splitAt` adapts it for the row
+ * model and the CodeMirror surface calls it directly, because the alternative is two
+ * expressions of the same rules that agree until the day they do not — which is the
+ * argument `blocks.ts` already settles for parsing, and it applies here for the same
+ * reason.
+ *
+ * Offsets are into the **raw** line, marker included. That is the natural unit for one
+ * editing surface, and the row model converts on the way in and out.
+ */
+export type LineSplit =
+  /** One line becomes two. `caret` is an offset into `tail`. */
+  | { kind: "split"; head: string; tail: string; caret: number }
+  /** Enter on an empty marker: the line survives, the marker does not. */
+  | { kind: "clear" };
+
+/**
+ * The `- [ ] ` a line starts with, or "" — the caret may never sit inside it.
+ *
+ * 🔴 Derived from what the grammar captured as *text*, never assumed to be six
+ * characters. `CHECKBOX` separates with `\s`, so a tab is legal in both positions and
+ * `indent.length + 6` is wrong for a line nobody would think to test.
+ */
+function checkPrefix(line: string): string {
+  const match = CHECKBOX.exec(line);
+  if (!match) return "";
+  return line.slice(0, line.length - (match[4] ?? "").length);
+}
+
+export function splitLine(line: string, offset: number): LineSplit {
+  const check = CHECKBOX.exec(line);
+
+  if (check) {
+    const prefix = checkPrefix(line);
+    // Splitting a checkbox produces two checkboxes, unchecked: a line that has just
+    // been typed is not already done.
+    if (line.length === prefix.length) return { kind: "clear" };
+    // 🔴 Clamped past the marker. The marker is an atomic widget, so the caret can sit
+    // at the very start of the line — before the indent — and splitting *inside* six
+    // characters that are drawn as one control is not a thing anyone asked for. At the
+    // start you get an empty checkbox above and your text below, which is what the row
+    // model did and what every list app does.
+    const at = Math.max(offset, prefix.length);
+    const indent = check[1] ?? "";
+    const marker = check[2] ?? "-";
+    const fresh = `${indent}${marker} [ ] `;
+    return {
+      kind: "split",
+      head: line.slice(0, at),
+      tail: fresh + line.slice(at),
+      caret: fresh.length,
+    };
+  }
+
+  const bullet = bulletPrefix(line);
+  if (bullet !== null) {
+    if (line === bullet) return { kind: "clear" };
+    const at = Math.max(0, Math.min(offset, line.length));
+    return {
+      kind: "split",
+      head: line.slice(0, at),
+      // 🔴 The tail keeps what came after the caret **minus the prefix it is about to
+      // be given again** — otherwise splitting `- milk and eggs` mid-line produces `- `
+      // followed by ` and eggs` with the marker duplicated on a line that has one.
+      tail: bullet + line.slice(at).replace(BULLET, ""),
+      caret: bullet.length,
+    };
+  }
+
+  const at = Math.max(0, Math.min(offset, line.length));
+  return { kind: "split", head: line.slice(0, at), tail: line.slice(at), caret: 0 };
+}
+
 export function splitAt(body: string, index: number, offset: number): EditResult {
   const blocks = parse(body);
   const block = blocks[index];
   if (!block || block.kind === "fence") return unchanged(blocks, index, offset);
 
-  const text = displayText(block);
-  const at = Math.max(0, Math.min(offset, text.length));
-  const before = text.slice(0, at);
-  const after = text.slice(at);
-
-  // Enter on an empty checkbox: stop making checkboxes.
-  if (block.kind === "checkbox" && text.length === 0) {
-    const next = blocks.map((b, i) => (i === index ? { ...b, raw: b.eol ?? "" } : b));
-    return { body: serialize(next), focusIndex: index, focusOffset: 0 };
-  }
-
-  const bullet = block.kind === "text" ? bulletPrefix(text) : null;
-
-  // 🔴 Enter on an **empty** bullet leaves the list, exactly as an empty checkbox does.
-  // Without it there is no way to stop making bullets except reaching for raw view —
-  // the mode-switch ADR-003 removed. The caret stays put; only the marker goes.
-  if (bullet !== null && text === bullet) {
-    const next = blocks.map((b, i) => (i === index ? { ...b, raw: b.eol ?? "" } : b));
-    return { body: serialize(next), focusIndex: index, focusOffset: 0 };
-  }
-
-  // 🔴 The line ending moves to the *second* half. A split turns one line into two,
-  // and the ending belonged to the end of the original — which is now the end of the
-  // tail. Leaving it on the head produces `hello\r\n world`, a stray carriage return
-  // mid-document that survives every round trip because `raw` is honoured verbatim.
+  // 🔴 The adapter, and all this function is now. Offsets in the row model are into
+  // `displayText` — which strips a checkbox's marker — while the policy speaks in raw
+  // lines. Converting here is what lets both surfaces share one statement of the rules.
+  const raw = stripCR(block.raw);
+  const prefix = raw.length - displayText(block).length;
+  const split = splitLine(raw, Math.max(0, Math.min(offset, displayText(block).length)) + prefix);
   const eol = eolOf(block);
-  const head = { ...block, raw: lineFor(block, before) };
-  const continued =
-    block.kind === "checkbox"
-      ? newCheckboxLine(block, after)
-      : bullet !== null
-        ? // 🔴 The tail keeps whatever came after the caret, minus the prefix it is
-          // about to be given again — otherwise splitting `- milk and eggs` mid-line
-          // produces `- ` followed by ` and eggs` with the marker duplicated on a
-          // line that already carried one.
-          bullet + after.replace(BULLET, "")
-        : after;
-  const tailRaw = continued + eol;
+
+  if (split.kind === "clear") {
+    // The line survives and the marker does not, so the caret has nowhere to go but 0.
+    const next = blocks.map((b, i) => (i === index ? { ...b, raw: eol } : b));
+    return { body: serialize(next), focusIndex: index, focusOffset: 0 };
+  }
 
   const next = [
     ...blocks.slice(0, index),
-    head,
-    // startLine/endLine are stale on both halves until the reparse. Nothing reads
-    // them between here and there — `serialize` only touches `raw`.
-    { ...block, raw: tailRaw },
+    // 🔴 The line ending moves to the *second* half. A split turns one line into two and
+    // the ending belonged to the end of the original, which is now the end of the tail.
+    // Leaving it on the head produces `hello\r\n world` — a stray carriage return
+    // mid-document that survives every round trip, because `raw` is honoured verbatim.
+    { ...block, raw: split.head },
+    // startLine/endLine are stale on both halves until the reparse. Nothing reads them
+    // between here and there — `serialize` only touches `raw`.
+    { ...block, raw: split.tail + eol },
     ...blocks.slice(index + 1),
   ];
 
-  // 🔴 The caret goes **after** a bullet's marker, and at 0 for everything else.
-  //
-  // A checkbox's `- [ ] ` prefix is not in its editor — `displayText` strips it, and
-  // offset 0 is already past it. A bullet has no parsed prefix: it is a plain text
-  // block whose first two characters happen to be `- `, so they *are* in the editor and
-  // offset 0 lands in front of them. Typing then produced `eggs- ` rather than
-  // `- eggs`, which the unit tests could not see because they assert on the body.
-  const focusOffset = bullet !== null ? bullet.length : 0;
-  return { body: serialize(next), focusIndex: index + 1, focusOffset };
+  return {
+    body: serialize(next),
+    focusIndex: index + 1,
+    // Back into `displayText` terms: past a checkbox's marker is offset 0, while a
+    // bullet's marker is ordinary text and the caret really does sit after it.
+    focusOffset: split.caret - checkPrefix(split.tail).length,
+  };
 }
 
 /**

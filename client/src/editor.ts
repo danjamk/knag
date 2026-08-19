@@ -27,10 +27,12 @@ import {
   ViewPlugin,
   WidgetType,
   keymap,
+  type Command,
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
 import { history, historyKeymap, standardKeymap } from "@codemirror/commands";
+import { applyShorthand, revertShorthand, splitLine } from "./edit.js";
 import { inherit, joinEndings, remapEndings, splitEndings, type Endings } from "./eol.js";
 import { GLYPH, glyph } from "./glyphs.js";
 import { linkify } from "./view.js";
@@ -296,6 +298,146 @@ const decorations = ViewPlugin.fromClass(
   },
 );
 
+
+// ── Typing (spec §7, ADR-003 §4) ─────────────────────────────────────────────
+//
+// 🔴 These are adapters, not rules. Every decision about what `Enter` and `--` do lives
+// in `edit.ts` as `splitLine`, `applyShorthand` and `revertShorthand` — the same
+// functions the row list calls — because two statements of the same behaviour agree
+// right up until someone fixes one of them.
+
+/** Set on the transaction that converted `-- ` to `- [ ] `, so Backspace can undo it. */
+const Shorthanded = Annotation.define<boolean>();
+
+/**
+ * Whether the *previous* transaction was a shorthand conversion.
+ *
+ * 🔴 Cleared by anything else at all. An undo that stays available indefinitely stops
+ * being an undo and becomes a rule nobody can predict — backspacing at the start of a
+ * checkbox typed ten minutes ago should merge lines, not resurrect two dashes.
+ */
+const shorthandField = StateField.define<boolean>({
+  create: () => false,
+  update: (was, tr) => tr.annotation(Shorthanded) ?? (tr.docChanged || tr.selection ? false : was),
+});
+
+/** An ordinary newline: no marker continued, no indentation invented. */
+function plainSplit(line: string, offset: number): { kind: "split"; head: string; tail: string; caret: number } {
+  const at = Math.max(0, Math.min(offset, line.length));
+  return { kind: "split", head: line.slice(0, at), tail: line.slice(at), caret: 0 };
+}
+
+/** A fence is code. Nothing in it continues a list, however much it looks like one. */
+function inFence(state: EditorState, lineNumber: number): boolean {
+  return fenceLines(state).has(lineNumber);
+}
+
+/**
+ * `Enter` — split, continue a marker, or leave the list.
+ *
+ * Returns false for a non-empty selection so CodeMirror's own handling replaces it,
+ * which is what every editor does and what the row model could not express at all.
+ */
+const enterCommand: Command = (view) => {
+  const range = view.state.selection.main;
+  if (!range.empty || view.state.readOnly) return false;
+
+  const line = view.state.doc.lineAt(range.head);
+
+  // 🔴 Every Enter is handled here, including the ordinary ones, rather than handing a
+  // plain line back to `standardKeymap`. Its binding is `insertNewlineAndIndent`, which
+  // consults an indentation service — and knag has no language configured, so what that
+  // inserts is a detail of somebody else's default rather than a decision. A page whose
+  // whole premise is bytes in, bytes out cannot have leading whitespace arrive from a
+  // library. This inserts exactly one `\n` and whatever the policy says.
+  const split = inFence(view.state, line.number)
+    ? // Inside a fence Enter is a newline and nothing else. A YAML list or a diff pasted
+      // into a code block starts lines with `- `, and continuing it there would edit code.
+      plainSplit(line.text, range.head - line.from)
+    : splitLine(line.text, range.head - line.from);
+
+  if (split.kind === "clear") {
+    view.dispatch({
+      changes: { from: line.from, to: line.to, insert: "" },
+      selection: { anchor: line.from },
+      scrollIntoView: true,
+    });
+    return true;
+  }
+
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: `${split.head}\n${split.tail}` },
+    selection: { anchor: line.from + split.head.length + 1 + split.caret },
+    scrollIntoView: true,
+  });
+  return true;
+};
+
+/**
+ * The space that turns `--` into a checkbox.
+ *
+ * 🔴 Bound to the key rather than watched for afterwards, so the conversion and the
+ * space are **one transaction** — which makes it one undo step. Two steps would mean
+ * `⌘Z` gives you back `-- ` and leaves you to press it again, and the row model's
+ * version has that flaw because it reacts to `input` after the fact.
+ */
+const spaceCommand: Command = (view) => {
+  const range = view.state.selection.main;
+  if (!range.empty || view.state.readOnly) return false;
+
+  const line = view.state.doc.lineAt(range.head);
+
+  const caret = range.head - line.from;
+  const typed = `${line.text.slice(0, caret)} ${line.text.slice(caret)}`;
+  const converted = applyShorthand(typed, caret + 1);
+  // 🔴 The cheap test first. Almost every space in the document is an ordinary space, and
+  // `inFence` scans the whole document — running it before this made every keystroke pay
+  // for a check that matters on roughly one of them.
+  if (!converted) return false;
+  if (inFence(view.state, line.number)) return false;
+
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: converted.text },
+    selection: { anchor: line.from + converted.caret },
+    annotations: Shorthanded.of(true),
+    scrollIntoView: true,
+  });
+  return true;
+};
+
+/** `Backspace` immediately after a conversion puts the two dashes back. */
+const backspaceCommand: Command = (view) => {
+  if (!view.state.field(shorthandField) || view.state.readOnly) return false;
+
+  const range = view.state.selection.main;
+  if (!range.empty) return false;
+
+  const line = view.state.doc.lineAt(range.head);
+  const reverted = revertShorthand(line.text, range.head - line.from);
+  if (!reverted) return false;
+
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: reverted.text },
+    selection: { anchor: line.from + reverted.caret },
+  });
+  return true;
+};
+
+/**
+ * 🔴 `Mod-a` selects the **document**, and that is a deliberate reversal.
+ *
+ * ADR-006 listed "⌘A keeps meaning this row" among its reasons for rejecting a single
+ * surface. That requirement was a description of the row model rather than a product
+ * decision — each row was its own field, so ⌘A could not mean anything else. With one
+ * document, every text editor a person has ever used selects all of it, and selecting
+ * the whole page is the thing they came here for. Left to `standardKeymap`.
+ */
+const knagKeymap = [
+  { key: "Enter", run: enterCommand },
+  { key: " ", run: spaceCommand },
+  { key: "Backspace", run: backspaceCommand },
+];
+
 // ── Theme ────────────────────────────────────────────────────────────────────
 
 /**
@@ -360,6 +502,11 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
         endingsField.init(() => start.endings),
         editable.of(EditorState.readOnly.of(false)),
         history(),
+        shorthandField,
+        // 🔴 Before `standardKeymap`, which binds Enter and Backspace itself. A keymap
+        // registered later loses; these have to see the key first and hand it back by
+        // returning false when they have nothing to say.
+        keymap.of(knagKeymap),
         keymap.of([...standardKeymap, ...historyKeymap]),
         EditorView.lineWrapping,
         theme,

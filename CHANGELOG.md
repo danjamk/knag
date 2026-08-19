@@ -27,6 +27,18 @@ summarises the phase rather than pretending it was written as it happened.
   and works from either surface: it renders its own rows, and a trip through it without
   dragging returns the document byte for byte.
 
+  Typing behaves as it does in the row list, because it is the same code: `Enter`
+  continues a checkbox or a bullet with the marker copied rather than normalised and the
+  indentation carried, `Enter` on an empty marker leaves the list, and `--` plus a space
+  becomes a checkbox that an immediate `Backspace` puts back. Inside a fence none of it
+  applies — a YAML list pasted into a code block starts lines with `- `, and continuing
+  it there would have knag editing code.
+
+  **`⌘A` now selects the whole page**, where the row list made it mean one row.
+  [ADR-006](docs/adr/ADR-006-cross-row-selection.md) listed keeping the old meaning as a
+  reason to reject a single surface — but that was a description of the row model, not a
+  decision: each row was its own field, so `⌘A` could not have meant anything else.
+
   **It sits beside the row list rather than replacing it**, and that is temporary. Every
   defect this project has shipped was found by a person on a phone rather than by the
   suite, so the replacement gets used against the real page before the row list is
