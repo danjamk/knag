@@ -847,7 +847,8 @@
       }
       /* The whole-page wipe. It carries its own count and confirms **by repetition** —
          a second tap within a few seconds, not a browser dialog. See `app.ts`. */
-      .choices button[data-wipe-all] { flex: 1 1 100%; }
+      .choices button[data-wipe-all],
+      .choices button[data-copy-page] { flex: 1 1 100%; }
       .choices button[data-wipe-all][data-armed] {
         border-color: var(--amber);
         background: var(--amber-field);
@@ -1111,6 +1112,16 @@
              control people tap without looking. -->
         <section>
           <h3>Page</h3>
+          <div class="choices">
+            <!-- 🔴 Above the destructive one, and not sharing its row. Both are
+                 whole-page verbs and one of them throws the page away; a reader
+                 reaching for this must never be one mis-tap from that. -->
+            <button type="button" data-copy-page>copy the page</button>
+          </div>
+          <p class="note">
+            The bytes, exactly as they are — no header, no metadata. Pasting them back
+            into raw view restores the page.
+          </p>
           <div class="choices">
             <button type="button" data-wipe-all>
               <span data-wipe-all-label>wipe the page</span>

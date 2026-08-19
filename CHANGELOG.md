@@ -13,6 +13,40 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-08-19
+
+One tap to get the page out.
+
+### Added
+
+- **`copy the page`, in Settings under Page**
+  ([#118](https://github.com/danjamk/knag/issues/118)). It copies `body` verbatim — no
+  header, no metadata, no front matter. Anything knag adds is a byte you did not type, and
+  the round trip back through raw view (spec §8) only holds because there is nothing to
+  strip on the way in.
+
+  🔴 **This is not a new capability.** In the editing surface, `⌘A` then copy has returned
+  the page byte-exact since 0.8.0, and there was never a format problem to solve: the page
+  is plain text, the bytes on screen are the bytes in the database
+  ([ADR-004](docs/adr/ADR-004-display-matches-the-bytes.md)). What it replaces is four
+  gestures and two menu waits on a phone, where the selection callout is fiddly on a long
+  page.
+
+  In Settings rather than the footer, because the footer's budget is what sits permanently
+  above the keyboard (spec §7) and copying the whole page is a rare act. Above the
+  whole-page wipe and not sharing its row: both are whole-page verbs, one of them throws
+  the page away, and a reader reaching for one must never be a mis-tap from the other.
+
+  The result lands on the control itself rather than the save-status line, because the
+  sheet is modal and covers the footer — `copied`, or `not copied` when the clipboard
+  refuses, which it does outside a secure context or on an untrusted gesture. A copy that
+  silently does nothing is worse than one that admits it; you find out when you paste.
+
+  Download and the iOS share sheet stay out, recorded on the issue with the reasons. This
+  is now knag's **third** copy path and the only one with no room for interpretation —
+  [#115](https://github.com/danjamk/knag/issues/115) decides for all three once there is a
+  week of use to decide from.
+
 ## [0.9.1] — 2026-08-19
 
 The wipe works in the editing surface. Both halves of it.
@@ -839,7 +873,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/danjamk/knag/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/danjamk/knag/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/danjamk/knag/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/danjamk/knag/compare/v0.8.0...v0.8.1
