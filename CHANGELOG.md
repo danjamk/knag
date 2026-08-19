@@ -13,6 +13,31 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **Line endings can now survive an editor that does not believe in them**
+  ([#110](https://github.com/danjamk/knag/issues/110)). `client/src/eol.ts` splits a
+  document into LF-only text plus the set of lines whose break was CRLF, maps that set
+  through each edit, and rejoins on the way out.
+
+  Nothing on screen changes. This is the first piece of the editor replacement, and it is
+  first because it is the only part that can corrupt the page rather than merely look
+  wrong.
+
+  The reason it is needed: CodeMirror's document is LF-only. Pinning its line separator
+  makes a *pristine* document round-trip and looks like the fix — but a lone `\r` then
+  becomes ordinary line content that the caret can sit past, so typing at what looks like
+  the end of a CRLF line strands the carriage return mid-line. It renders perfectly and
+  corrupts on save. Measured on the
+  [`spike/110-codemirror`](https://github.com/danjamk/knag/blob/spike/110-codemirror/docs/spikes/110-findings.md)
+  branch.
+
+  Held to the same bar as the block parser: `joinEndings(...splitEndings(x)) === x` over
+  2,000 arbitrary **binary** strings, not merely document-shaped ones, plus a property
+  that an edit confined to one line cannot disturb any other line's ending. A mixed-ending
+  document — which knag has an example test for — survives editing rather than being
+  normalised to whichever ending won.
+
 ## [0.7.3] — 2026-08-18
 
 ### Fixed
