@@ -13,6 +13,10 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-18
+
+Editing works the way editing works everywhere else.
+
 ### Added
 
 - **Select and copy across lines, the way you can everywhere else**
@@ -738,7 +742,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/danjamk/knag/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/danjamk/knag/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/danjamk/knag/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/danjamk/knag/compare/v0.7.0...v0.7.1
