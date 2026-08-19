@@ -66,7 +66,7 @@ DEAD_SERVER='Could not connect to|socket hang up|ECONNREFUSED|Connection refused
 # Bash builtins and pgrep only — the CI container is a Playwright image, not a box with
 # lsof or ss installed, and this has to keep working on a Mac too.
 probe() {
-  local when="$1" workerd wrangler port mem trace d1
+  local when="$1" workerd wrangler port mem trace d1 zombie
 
   # 🔴 `pgrep -c` is procps-only and does not exist on macOS, where it fails usage
   # and the probe would report 0 forever — a false negative that would have quietly
@@ -75,6 +75,13 @@ probe() {
   # and a single leaked server reads as workerd=2.
   workerd=$(pgrep -x workerd 2>/dev/null | wc -l | tr -d ' ')
   wrangler=$(pgrep -f 'wrangler dev' 2>/dev/null | wc -l | tr -d ' ')
+
+  # 🔴 Split live from defunct, because the difference decides whether the count
+  # means anything. A zombie holds a PID table slot and nothing else — no CPU, no memory,
+  # and `kill -9` cannot remove one; only its parent reaping it can. If the survivors are
+  # zombies then this column is a real leak and an irrelevant one, and the flake is
+  # elsewhere.
+  zombie=$(ps -eo stat=,comm= 2>/dev/null | awk '$2 ~ /workerd/ && $1 ~ /^Z/ { n++ } END { print n+0 }')
 
   if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
     port=bound
@@ -98,14 +105,14 @@ probe() {
   trace=$(du -sm worker/.wrangler/state/v3/observability 2>/dev/null | cut -f1)
   d1=$(du -sm worker/.wrangler/state/v3/d1 2>/dev/null | cut -f1)
 
-  printf '   probe %-34s workerd=%-3s wrangler=%-3s port=%-5s trace=%-5s d1=%-5s mem=%s\n' \
-    "$when" "${workerd:-0}" "${wrangler:-0}" "$port" \
+  printf '   probe %-34s workerd=%-3s (zombie=%-3s) wrangler=%-3s port=%-5s trace=%-5s d1=%-5s mem=%s\n' \
+    "$when" "${workerd:-0}" "${zombie:-0}" "${wrangler:-0}" "$port" \
     "${trace:-0}MB" "${d1:-0}MB" "$mem"
 
   # pid<-ppid for every workerd alive. Printed because the first reaper guessed at this
   # and was wrong; a guess about parentage is not worth making twice.
   local detail
-  detail=$(ps -eo pid=,ppid=,comm= 2>/dev/null | awk '$3 ~ /workerd/ { printf "%s<-%s ", $1, $2 }')
+  detail=$(ps -eo pid=,ppid=,stat=,comm= 2>/dev/null | awk '$4 ~ /workerd/ { printf "%s<-%s(%s) ", $1, $2, $3 }')
   [ -n "$detail" ] && printf '         workerd parents: %s\n' "$detail"
   return 0
 }
