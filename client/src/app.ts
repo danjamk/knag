@@ -76,6 +76,7 @@ const editor = document.querySelector<HTMLTextAreaElement>("[data-body]");
 const statusEl = document.querySelector<HTMLElement>("[data-save-status]");
 const settingsDialog = document.querySelector<HTMLDialogElement>("[data-settings]");
 const settingsOpen = document.querySelector<HTMLButtonElement>("[data-settings-open]");
+const copyPageButton = document.querySelector<HTMLButtonElement>("[data-copy-page]");
 const sessionsList = document.querySelector<HTMLUListElement>("[data-sessions]");
 const logoutButton = document.querySelector<HTMLButtonElement>("[data-logout]");
 const revokeOthersButton = document.querySelector<HTMLButtonElement>("[data-revoke-others]");
@@ -2004,6 +2005,40 @@ async function revoke(path: string, method: string): Promise<void> {
 
   await loadSessions();
 }
+
+/**
+ * Copy the whole page (#118).
+ *
+ * 🔴 `body` verbatim — no header, no metadata, no front matter. Anything knag adds is a
+ * byte the user did not type, and the round trip back through raw view (spec §8) only
+ * holds because there is nothing to strip on the way in.
+ *
+ * This capability already existed: in the editing surface `⌘A` then copy returns the page
+ * byte-exact, and has since v0.8.0. What this replaces is four gestures and two menu waits
+ * on a phone, where the selection callout is fiddly on a long page.
+ *
+ * The label carries the result rather than the save-status line, because the sheet is
+ * modal and covers the footer — a confirmation the reader cannot see is not one.
+ */
+copyPageButton?.addEventListener("click", () => {
+  void (async () => {
+    let said = "copied";
+    try {
+      // Not the document from the last poll: `body` is what the surface holds, which is
+      // what the reader is looking at.
+      await navigator.clipboard.writeText(body);
+    } catch {
+      // Rejects outside a secure context or on an untrusted gesture. A copy that silently
+      // does nothing is worse than one that says so — you find out when you paste.
+      said = "not copied";
+    }
+
+    copyPageButton.textContent = said;
+    setTimeout(() => {
+      copyPageButton.textContent = "copy the page";
+    }, 1200);
+  })();
+});
 
 logoutButton?.addEventListener("click", () => {
   // Flush first, for the same reason switching views does: an edit still on the
