@@ -238,7 +238,11 @@ function noteConnectivity(responded: boolean): void {
     if (dirty) void save();
   }
 
-  paintRows();
+  // 🔴 `paint`, not `paintRows`. This repainted the row list and nothing else, so the
+  // editing surface never learned the connection had dropped and went on accepting
+  // typing that could not be saved — which is precisely the "looks live, discards
+  // everything" failure #57 exists to prevent, reintroduced on a new surface.
+  paint();
   paintConnectivity();
 }
 
@@ -780,6 +784,17 @@ function applyRemote(doc: Doc): void {
   }
 
   if (disposition === "apply") {
+    render(doc);
+    setStatus("updated elsewhere");
+    return;
+  }
+
+  // 🔴 The editing surface needs none of what follows. It maps its own selection through
+  // the change, and `captureCaret` queries `[data-rows]` — so in the editor view it finds
+  // nothing, concludes focus was lost, and sets `focused = false` while CodeMirror still
+  // has it. A stale `false` there lets the *next* remote update apply mid-keystroke,
+  // which is the bug this whole function exists to prevent, reintroduced sideways.
+  if (surface) {
     render(doc);
     setStatus("updated elsewhere");
     return;

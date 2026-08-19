@@ -486,6 +486,50 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
   // the sort of thing nobody notices until a tunnel.
   const editable = new Compartment();
 
+  /**
+   * 🔴 **Both** facets, and the second one is the point.
+   *
+   * `EditorState.readOnly` rejects changes but leaves `contenteditable="true"`, so iOS
+   * raises the keyboard, accepts taps, and silently swallows every keystroke — which is
+   * the "looks live, discards everything" failure #57 exists to prevent, wearing a
+   * different hat. `EditorView.editable` is what actually tells the platform.
+   *
+   * Selection survives either way, which is the half that must not be lost: offline has
+   * to leave the page readable and copyable, not merely uneditable (spec §9).
+   */
+  const editState = (readOnly: boolean) => [
+    EditorState.readOnly.of(readOnly),
+    EditorView.editable.of(!readOnly),
+  ];
+
+  /**
+   * The smallest single replacement turning `a` into `b`, or null if they match.
+   *
+   * 🔴 Not a nicety. `setBody` used to replace the whole document, and CodeMirror maps
+   * the selection through whatever change it is given — so a full replace collapsed the
+   * caret to position 0 on **every remote update**, which is exactly the bug #62 was
+   * about and the thing this surface was supposed to be better at. A remote append now
+   * leaves every position before it untouched, so the caret does not move because it did
+   * not need to.
+   *
+   * A common-prefix/common-suffix trim, not a real diff: knag's remote updates are
+   * someone appending or editing a line, and one contiguous replacement describes that
+   * exactly. A word-level diff would buy nothing a caret can feel.
+   */
+  function minimalChange(a: string, b: string): { from: number; to: number; insert: string } | null {
+    if (a === b) return null;
+    const shortest = Math.min(a.length, b.length);
+    let start = 0;
+    while (start < shortest && a[start] === b[start]) start += 1;
+    let endA = a.length;
+    let endB = b.length;
+    while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+      endA -= 1;
+      endB -= 1;
+    }
+    return { from: start, to: endA, insert: b.slice(start, endB) };
+  }
+
   function bodyOf(state: EditorState): string {
     return joinEndings(state.doc.toString(), state.field(endingsField));
   }
@@ -500,7 +544,7 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
         // its own enough — see `eol.ts` — but without it the wrapper is bypassed.
         EditorState.lineSeparator.of("\n"),
         endingsField.init(() => start.endings),
-        editable.of(EditorState.readOnly.of(false)),
+        editable.of(editState(false)),
         history(),
         shorthandField,
         // 🔴 Before `standardKeymap`, which binds Enter and Backspace itself. A keymap
@@ -558,24 +602,22 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
 
     setBody(next: string): void {
       const { text, endings } = splitEndings(next);
-      if (text === view.state.doc.toString()) {
+      const change = minimalChange(view.state.doc.toString(), text);
+      if (!change) {
         // Same text, possibly different endings. Dispatching a no-op change would clear
         // the selection for nothing.
         view.dispatch({ annotations: SetEndings.of(endings) });
         return;
       }
-      // 🔴 A change rather than a fresh state: CodeMirror maps the live selection through
-      // it, so a remote update arriving while the caret is in the document leaves the
-      // caret where the text moved to. The row model had to capture an index and an
-      // offset by hand and lost the caret whenever the row did not survive the repaint.
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: text },
-        annotations: SetEndings.of(endings),
-      });
+      // 🔴 The smallest change, not a fresh state and not a whole-document replace.
+      // CodeMirror maps the live selection through whatever it is handed, so the size of
+      // the change decides whether the caret survives a remote update.
+      view.dispatch({ changes: change, annotations: SetEndings.of(endings) });
     },
 
     setReadOnly(next: boolean): void {
-      view.dispatch({ effects: editable.reconfigure(EditorState.readOnly.of(next)) });
+      if (next === view.state.readOnly) return;
+      view.dispatch({ effects: editable.reconfigure(editState(next)) });
     },
 
     focus: () => view.focus(),
