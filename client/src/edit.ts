@@ -1,4 +1,11 @@
-import { CHECKBOX, type Block, eolOf, parse, serialize } from "../../worker/src/blocks.js";
+import {
+  CHECKBOX,
+  type Block,
+  eolOf,
+  isCompleted,
+  parse,
+  serialize,
+} from "../../worker/src/blocks.js";
 import { displayText, stripCR } from "./view.js";
 
 /**
@@ -324,4 +331,39 @@ export function neighbor(body: string, index: number, direction: -1 | 1, offset:
     // is not — the same thing every text editor does.
     focusOffset: Math.min(offset, text.length),
   };
+}
+
+
+/**
+ * The line numbers a wipe of this scope is about to remove, zero-based (#119).
+ *
+ * 🔴 Lines, not block indices, and the difference is the whole reason this exists. One
+ * block renders as one `<li>` in the row list, so there the two are interchangeable —
+ * but a `fence` block's `raw` spans several lines, and in one editing surface those are
+ * several lines. Animating by block index there would fade the first line of a fenced
+ * block and leave the rest sitting there until the repaint.
+ *
+ * It does not bite for `completed`, where `isCompleted` is a checked checkbox and always
+ * one line. It bites for the whole-page wipe, where every block leaves.
+ *
+ * Nothing here decides *what* gets wiped — the server owns that, and this runs against
+ * the same predicate purely for the picture. If the two ever disagree, the repaint from
+ * the server's answer is what lands, so the worst case is a line that faded and came
+ * back rather than one that vanished from the page without leaving the document.
+ */
+export function leavingLines(body: string, scope: "completed" | "all"): number[] {
+  const lines: number[] = [];
+  let line = 0;
+
+  for (const block of parse(body)) {
+    // `raw` is a verbatim slice, so counting its newlines is the same arithmetic the
+    // serializer does in reverse — a fence of four lines advances the counter by four.
+    const height = block.raw.split("\n").length;
+    if (scope === "all" || isCompleted(block)) {
+      for (let n = 0; n < height; n++) lines.push(line + n);
+    }
+    line += height;
+  }
+
+  return lines;
 }

@@ -629,6 +629,23 @@
           min-height var(--wipe-collapse) var(--wipe-ease);
       }
 
+      /* The same two stages in the editing surface (#119). `.cm-line` is what has a
+         height to collapse, and it is the element the line decoration lands on. Same
+         keyframes, same tokens, same `--i` expression — so `prefers-reduced-motion`
+         still collapses both surfaces from one place, and neither can drift. */
+      .cm-line.cm-wiping {
+        animation: knag-wipe var(--wipe-duration) var(--wipe-ease) forwards;
+        animation-delay: calc(var(--i) * var(--wipe-stagger));
+      }
+      .cm-line.cm-wiping.cm-closing {
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        overflow: hidden;
+        transition: max-height var(--wipe-collapse) var(--wipe-ease),
+          padding var(--wipe-collapse) var(--wipe-ease);
+      }
+
       /* ── The recovery line ─────────────────────────────────────────────────
          🔴 Chrome, never a line in the document. Writing "wiped 6 · bring back" into
          the page would put the app's words in the user's file and break byte
