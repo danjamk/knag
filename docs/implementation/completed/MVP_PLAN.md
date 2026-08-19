@@ -1,8 +1,17 @@
 # knag MVP — implementation plan
 
-**Status:** Active
+**Status:** Superseded — complete, kept for the record
 **Created:** 2026-08-14
-**Spec:** [../spec.md](../spec.md) — this plan does not restate it
+**Retired:** 2026-08-19
+**Spec:** [spec.md](../../spec.md) — this plan does not restate it
+
+> 🔴 **This plan is finished and is no longer the sequence.** It ran the build
+> phase, issues [#2](https://github.com/danjamk/knag/issues/2)–[#15](https://github.com/danjamk/knag/issues/15),
+> all of which are closed. It is kept because its reasoning — particularly the
+> scheduling constraint below, which is still the only irreducible delay in the
+> project — explains why the early issues are shaped the way they are.
+>
+> **The live sequence is [docs/roadmap.md](../../roadmap.md).**
 
 ## What this adds that the spec does not
 
@@ -124,7 +133,7 @@ on it carrying enough to re-apply intent without a second round trip.
 
 ## Phase 2 — Auth: passphrase, cookie, bearer
 
-**Spec:** §4, §4.1, §4.2 · **ADR:** [ADR-001](../adr/ADR-001-passphrase-auth.md)
+**Spec:** §4, §4.1, §4.2 · **ADR:** [ADR-001](../../adr/ADR-001-passphrase-auth.md)
 **Size:** 1–2 days · **Depends:** P1 · **Local only**
 
 **Done when:**
@@ -165,7 +174,7 @@ test.
 
 ## Phase 3 — Provision dev, deploy, start the clock
 
-**Spec:** §15 · **ADR:** [ADR-002](../adr/ADR-002-two-accounts-and-migrations.md)
+**Spec:** §15 · **ADR:** [ADR-002](../../adr/ADR-002-two-accounts-and-migrations.md)
 **Size:** half a day, then 7 days of waiting that block nothing
 **Depends:** P2 · **First phase that touches Cloudflare**
 
@@ -713,7 +722,7 @@ lives. `buildHistory` is pure and takes rows, so the tool is a thin call.
 # UX revision — after using the MVP
 
 **Added 2026-08-15**, after the UI was complete and used for real. Driven by
-feedback, not by the build order. **ADR:** [ADR-003](../adr/ADR-003-single-mode-editor.md).
+feedback, not by the build order. **ADR:** [ADR-003](../../adr/ADR-003-single-mode-editor.md).
 
 The headline finding: **raw vs list is the product's worst UX problem.** Not
 because either view is bad, but because the product is a legal pad and a legal

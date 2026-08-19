@@ -63,7 +63,7 @@ also said, in *Consequences*, is the door this walks through:
 
 The answer is that a maintained library already did it. `spike/110-codemirror` measured
 CodeMirror 6 against the same instrument, on a real iPhone
-([`docs/spikes/110-findings.md`](../spikes/110-findings.md) on that branch):
+([`docs/spikes/110-findings.md`](https://github.com/danjamk/knag/blob/spike/110-codemirror/docs/spikes/110-findings.md), which lives on that branch and not on `main`):
 
 | | |
 |---|---|
@@ -231,3 +231,16 @@ about 10 KB.
 **The row list has not been deleted six months from now.** Keeping both surfaces was
 justified as a transition. A transition that does not end is two things to maintain and a
 mode question in Settings, which is what ADR-003 removed on evidence.
+
+## References
+
+The deliberation behind this decision is kept rather than summarised, because the
+reasoning is why the decision is shaped the way it is:
+
+- [reviews/state-of-play.md](../reviews/state-of-play.md) — the standalone brief written
+  for outside review, including the causal chain arguing the row model could not do
+  cross-row selection.
+- [reviews/state-of-play-response.md](../reviews/state-of-play-response.md) — the review
+  that came back. It named CodeMirror 6, set the probe's kill criteria, and identified
+  the iOS autocorrect risk the brief had missed — still open as
+  [#114](https://github.com/danjamk/knag/issues/114).

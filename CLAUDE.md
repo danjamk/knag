@@ -182,3 +182,8 @@ formatting. If a weekend turns into two, something from that list came back.
 
 §17 records what a larger future would break and what was done about it — read it
 before making an architectural decision, not after.
+
+**What is being built next, and why in that order, is
+[docs/roadmap.md](docs/roadmap.md).** The board holds the cards and their status;
+the roadmap holds the sequence and the reasoning. Spec §13's build order is
+history — it ran the build phase and stops well before the present.
