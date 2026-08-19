@@ -174,6 +174,18 @@ Real D1 through `@cloudflare/vitest-pool-workers`, with the real migrations
 applied. Mocking a binding tests the mock. `pnpm test:security` runs the auth
 suite alone.
 
+**One runtime, and `wrangler` is pinned exact to keep it that way** (#74). miniflare
+is the local Workers runtime, and it arrives twice — once via the test pool and once
+via wrangler. When those resolve to different versions the unit suite and the browser
+suite execute on **different runtimes**, and a bug that reproduces in one and not the
+other costs an afternoon before anyone suspects the tooling. `^4.110.0` did exactly
+that: a caret on a tool that ships a runtime is looser than it looks, and 4.117.0
+swapped it silently.
+
+There is no stable miniflare 5 — every 5.x release is an alpha and Cloudflare points
+`latest` at one — so this is not a choice between alpha and stable. It is a choice
+between one runtime and two, and `package.json` carries the reason in `//pins`.
+
 ## Scope
 
 The **Out** list in [docs/spec.md](docs/spec.md) §12 is load-bearing: search,

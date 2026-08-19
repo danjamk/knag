@@ -32,7 +32,7 @@
     ]
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.18.4",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260714.1",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.2.0",
@@ -41,8 +41,9 @@
     "fast-check": "^4.9.0",
     "typescript": "^5.7.0",
     "vitest": "^4.1.0",
-    "wrangler": "^4.110.0"
+    "wrangler": "4.124.0"
   },
+  "//pins": "wrangler is pinned exact, not caret, and that is the point of #74. @cloudflare/vitest-pool-workers depends on wrangler 4.124.0 exactly, so matching it is what keeps ONE wrangler and ONE miniflare in the tree — the unit suite and the browser suite must not execute on different runtimes. A caret here is looser than it looks: ^4.110.0 silently swapped the local runtime at 4.117.0. Revisit when @cloudflare/vitest-pool-workers publishes a minor that moves off wrangler 4.124.0, and bump both together.",
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.10.3",
     "@codemirror/commands": "^6.11.0",
