@@ -842,6 +842,43 @@
         color: var(--dim);
         line-height: 1.45;
       }
+      /* The device list (#125). Machine voice — every value in it is something the
+         server knows and the user did not type, so it is mono and dim, and the only
+         colour is the amber that marks which row is you. */
+      .sessions {
+        list-style: none;
+        margin: 0 0 var(--space-3);
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+      .sessions li {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-3);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        color: var(--dim);
+      }
+      .sessions .label { color: var(--ink); flex: 1 1 auto; }
+      .sessions li[data-current] .label { color: var(--amber); }
+      /* A revoke control per row, sized to the same target as everything else here —
+         this is a destructive action reached with a thumb. */
+      .sessions button {
+        min-height: var(--target);
+        min-width: var(--target);
+        padding: 0 var(--space-3);
+        border: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-sm);
+        background: none;
+        color: var(--amber);
+        font-family: var(--font-mono);
+        font-size: var(--size-micro);
+        cursor: pointer;
+      }
+      .sessions button[disabled] { opacity: 0.4; cursor: default; }
+
       /* Build info: one tap from anywhere, because "is my change live" cost a round
          trip once already. Moved off the footer, not buried. The values are the
          machine speaking, so they are amber. */
@@ -1066,6 +1103,25 @@
           <p class="note">
             Everything on the page, finished or not. Recoverable from the line at the
             bottom of the page.
+          </p>
+        </section>
+
+        <!-- 🔴 Devices, not Account. There is one owner (ADR-001) and no account to
+             manage — what this lists is the set of live credentials, which is a
+             different and more honest thing. It sits below Page because revoking is
+             rarer than wiping, and above Build because Build is the only section
+             nobody acts on. -->
+        <section>
+          <h3>Devices</h3>
+          <ul data-sessions class="sessions"><li class="note">—</li></ul>
+          <div class="choices">
+            <button type="button" data-logout>log out</button>
+            <button type="button" data-revoke-others>sign out everywhere else</button>
+          </div>
+          <p class="note">
+            A session lasts a year, so it survives the weeks between logins. Revoking one
+            takes effect on that device's next request. Changing the passphrase does not
+            — this is the only thing that ends a session.
           </p>
         </section>
 

@@ -487,13 +487,19 @@ export async function sweepExpiredSessions(env: Env, now: Date = new Date()): Pr
  */
 export async function createSession(
   env: Env,
-  input: { tokenHash: string; deviceLabel: string | null; expiresAt: Date },
+  input: { tokenHash: string; publicId: string; deviceLabel: string | null; expiresAt: Date },
   now: Date = new Date(),
 ): Promise<void> {
   await env.DB.prepare(
-    "INSERT INTO sessions (token_hash, created_at, expires_at, device_label) VALUES (?, ?, ?, ?)",
+    "INSERT INTO sessions (token_hash, public_id, created_at, expires_at, device_label) VALUES (?, ?, ?, ?, ?)",
   )
-    .bind(input.tokenHash, now.toISOString(), input.expiresAt.toISOString(), input.deviceLabel)
+    .bind(
+      input.tokenHash,
+      input.publicId,
+      now.toISOString(),
+      input.expiresAt.toISOString(),
+      input.deviceLabel,
+    )
     .run();
 }
 
@@ -509,10 +515,90 @@ export async function findLiveSession(
   env: Env,
   tokenHash: string,
   now: Date = new Date(),
-): Promise<{ device_label: string | null } | null> {
+): Promise<{ device_label: string | null; public_id: string | null } | null> {
   return await env.DB.prepare(
-    "SELECT device_label FROM sessions WHERE token_hash = ? AND expires_at > ?",
+    "SELECT device_label, public_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
   )
     .bind(tokenHash, now.toISOString())
-    .first<{ device_label: string | null }>();
+    .first<{ device_label: string | null; public_id: string | null }>();
+}
+
+/** One row of the device list. Never carries `token_hash` — see the migration. */
+export type SessionRecord = {
+  public_id: string;
+  device_label: string | null;
+  created_at: string;
+  expires_at: string;
+};
+
+/**
+ * Every session that is still live, newest first.
+ *
+ * 🔴 `token_hash` is not selected, and that is not an oversight to be tidied up later:
+ * it is the SHA-256 of a live credential and this result reaches a response body.
+ * Expired rows are excluded here for the same reason `findLiveSession` does it — the
+ * sweep only runs on login, so a dead row can sit in the table for a year and listing
+ * it would offer the operator a device to revoke that already cannot log in.
+ */
+export async function listLiveSessions(
+  env: Env,
+  now: Date = new Date(),
+): Promise<SessionRecord[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT public_id, device_label, created_at, expires_at
+       FROM sessions
+      WHERE expires_at > ?
+      ORDER BY created_at DESC`,
+  )
+    .bind(now.toISOString())
+    .all<SessionRecord>();
+
+  return results;
+}
+
+/**
+ * Revoke one session by its surrogate id. Returns whether a row actually went.
+ *
+ * The boolean is what lets the handler answer 404 for an id that never existed rather
+ * than 204 for everything, which would make a typo indistinguishable from a revocation.
+ */
+export async function deleteSession(env: Env, publicId: string): Promise<boolean> {
+  const result = await env.DB.prepare("DELETE FROM sessions WHERE public_id = ?")
+    .bind(publicId)
+    .run();
+
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Revoke the session holding this token hash — log out, as opposed to revoking some
+ * other device. Takes the hash rather than the public id because the caller is proving
+ * possession of the credential, not naming a row.
+ */
+export async function deleteSessionByToken(env: Env, tokenHash: string): Promise<boolean> {
+  const result = await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?")
+    .bind(tokenHash)
+    .run();
+
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Sign out everywhere. `keepPublicId` spares the caller's own row so the operator is
+ * not logged out by the act of securing everything else — the panic button is for a
+ * lost phone, and being ejected from the device you are holding while using it is a
+ * worse experience than the problem.
+ *
+ * Pass null to take everything, which is what a bearer caller gets: it holds no
+ * session, so there is nothing of its own to spare.
+ */
+export async function deleteOtherSessions(
+  env: Env,
+  keepPublicId: string | null,
+): Promise<number> {
+  const result = keepPublicId
+    ? await env.DB.prepare("DELETE FROM sessions WHERE public_id IS NOT ?").bind(keepPublicId).run()
+    : await env.DB.prepare("DELETE FROM sessions").run();
+
+  return result.meta.changes ?? 0;
 }

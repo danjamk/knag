@@ -75,6 +75,9 @@ const editor = document.querySelector<HTMLTextAreaElement>("[data-body]");
 const statusEl = document.querySelector<HTMLElement>("[data-save-status]");
 const settingsDialog = document.querySelector<HTMLDialogElement>("[data-settings]");
 const settingsOpen = document.querySelector<HTMLButtonElement>("[data-settings-open]");
+const sessionsList = document.querySelector<HTMLUListElement>("[data-sessions]");
+const logoutButton = document.querySelector<HTMLButtonElement>("[data-logout]");
+const revokeOthersButton = document.querySelector<HTMLButtonElement>("[data-revoke-others]");
 const clearCountEl = document.querySelector<HTMLElement>("[data-clear-count]");
 const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
 const surfaceEl = document.querySelector<HTMLElement>("[data-surface]");
@@ -1858,10 +1861,154 @@ settingsDialog?.addEventListener("click", (event) => {
   }
 });
 
+// ── Devices (#125) ───────────────────────────────────────────────────────────
+//
+// 🔴 Fetched when the sheet opens, never cached. A device list that is stale is worse
+// than no device list: the whole point is answering "what still has access", and an
+// answer from ten minutes ago is exactly the answer you cannot act on.
+
+type SessionRow = {
+  id: string;
+  label: string | null;
+  created_at: string;
+  expires_at: string;
+  is_current: boolean;
+};
+
+/** A date the way the rest of the machine voice says them — short, local, no time. */
+function shortDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function sessionRow(session: SessionRow): HTMLLIElement {
+  const row = document.createElement("li");
+  if (session.is_current) row.setAttribute("data-current", "");
+
+  const label = document.createElement("span");
+  label.className = "label";
+  // An unlabelled session is still a session with access, so it gets a row and a name
+  // rather than being hidden for want of a label.
+  label.textContent = session.label || "unnamed";
+
+  const since = document.createElement("span");
+  since.textContent = shortDate(session.created_at);
+
+  row.append(label, since);
+
+  // 🔴 No revoke control on your own row. Logging out is the button below, and it also
+  // clears the cookie — a revoke here would work but would leave the sheet open over a
+  // page the browser can no longer load.
+  if (!session.is_current) {
+    const revoke = document.createElement("button");
+    revoke.type = "button";
+    revoke.textContent = "revoke";
+    revoke.dataset.revoke = session.id;
+    row.append(revoke);
+  } else {
+    const current = document.createElement("span");
+    current.textContent = "this device";
+    row.append(current);
+  }
+
+  return row;
+}
+
+function paintSessions(sessions: SessionRow[] | null): void {
+  if (!sessionsList) return;
+
+  if (!sessions) {
+    sessionsList.replaceChildren(machineLine("could not read devices"));
+    return;
+  }
+  if (sessions.length === 0) {
+    sessionsList.replaceChildren(machineLine("no live sessions"));
+    return;
+  }
+  sessionsList.replaceChildren(...sessions.map(sessionRow));
+}
+
+function machineLine(text: string): HTMLLIElement {
+  const item = document.createElement("li");
+  item.className = "note";
+  item.textContent = text;
+  return item;
+}
+
+async function loadSessions(): Promise<void> {
+  sessionsList?.replaceChildren(machineLine("…"));
+
+  try {
+    const res = await fetch("/api/sessions", { credentials: "same-origin" });
+    if (!res.ok) {
+      paintSessions(null);
+      return;
+    }
+    const body = (await res.json()) as { sessions: SessionRow[] };
+    paintSessions(body.sessions);
+  } catch {
+    // Offline is a normal state here (spec §9), not an error worth a dialog.
+    paintSessions(null);
+  }
+}
+
+/**
+ * Everything here ends at the login screen or with a shorter list, so a failure must
+ * not look like a success. On anything other than the expected status the list is
+ * re-read rather than patched locally — the server is the only thing that knows what
+ * is still live.
+ */
+async function revoke(path: string, method: string): Promise<void> {
+  try {
+    const res = await fetch(path, { method, credentials: "same-origin" });
+
+    // 401 means this device's own session went with it. Reloading lands on the login
+    // screen, which is the honest outcome rather than a page that quietly 401s
+    // everything from here on.
+    if (res.status === 401) {
+      globalThis.location.reload();
+      return;
+    }
+    if (!res.ok) {
+      setStatus("could not revoke");
+      return;
+    }
+  } catch {
+    setStatus("offline");
+    return;
+  }
+
+  await loadSessions();
+}
+
+logoutButton?.addEventListener("click", () => {
+  // Flush first, for the same reason switching views does: an edit still on the
+  // debounce would otherwise be saved by a request whose cookie has just been deleted.
+  void saveNow().then(() => {
+    void fetch("/api/logout", { method: "POST", credentials: "same-origin" }).finally(() => {
+      globalThis.location.reload();
+    });
+  });
+});
+
+revokeOthersButton?.addEventListener("click", () => {
+  void revoke("/api/sessions", "DELETE");
+});
+
+sessionsList?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+
+  const id = target.closest<HTMLElement>("[data-revoke]")?.dataset.revoke;
+  if (id) void revoke(`/api/sessions/${encodeURIComponent(id)}`, "DELETE");
+});
+
 settingsOpen?.addEventListener("click", () => {
   markChoices("[data-theme-set]", "themeSet", theme);
   markChoices("[data-view-set]", "viewSet", view);
   settingsDialog?.showModal();
+  void loadSessions();
 });
 
 // Following the system means following it as it changes, not as it was at boot.

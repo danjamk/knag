@@ -13,6 +13,37 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **Log out, and a device list you can revoke from**
+  ([#125](https://github.com/danjamk/knag/issues/125)). Settings gains a **Devices**
+  section listing every live session by its label and the day it started, with the
+  device you are holding marked. Revoke another device and it is refused on its next
+  request. `sign out everywhere else` is the panic button, and it spares the device in
+  your hand on purpose.
+
+  🔴 **Before this there was no way to end a session at all.** A session lasts a year
+  deliberately — re-auth is what kills daily use ([ADR-001](docs/adr/ADR-001-passphrase-auth.md),
+  spec §4) — but a session had no relationship to the passphrase that created it, so
+  **changing `KNAG_PASSPHRASE` left every existing cookie live for its full year**. A lost
+  phone was a year of access, and the only remedy was `DELETE FROM sessions` typed by hand
+  against the only copy of the document.
+
+  Bearer access is unchanged and stays first-class: a bearer can list and revoke, because
+  `/api/*` does not do cookie-only. It cannot *log out*, having no session to end, and is
+  told so with a 400 rather than a 401 — it is authenticated fine, and re-authenticating
+  would not help. `KNAG_BEARER_TOKEN` is still revoked by rotating the secret.
+
+  🔴 Sessions are named in the API by a **surrogate id, never `token_hash`**, which is the
+  SHA-256 of a live credential and must not reach a response body. A test asserts the hash
+  never appears, and it was checked by deliberately leaking one.
+
+  The migration is worth recording, because the obvious version of it is impossible.
+  SQLite's `ALTER TABLE` refuses to add a `PRIMARY KEY` or a `UNIQUE` column, and
+  migrations here are additive-only ([ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md) §3),
+  so the surrogate arrives as a plain column, a `randomblob` backfill, and a unique index
+  created separately. The same trap sits in front of `documents` and its `CHECK (id = 1)`.
+
 ## [0.8.1] — 2026-08-18
 
 ### Fixed
