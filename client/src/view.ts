@@ -188,7 +188,17 @@ export function linkify(text: string): Segment[] {
 
 // ── View preference ──────────────────────────────────────────────────────────
 
-export type ViewMode = "list" | "raw";
+/**
+ * 🔴 `editor` is transitional. It is the CodeMirror surface from #110, offered beside the
+ * row list so the replacement can be used against the real page before the row list is
+ * deleted — every defect this project has shipped was found by a person on a phone, not
+ * by the suite. When the row list goes, so does this value and the Settings control with
+ * it, and the product is back to one editing surface with raw as the escape hatch.
+ */
+export type ViewMode = "list" | "editor" | "raw";
+
+/** Everything a stored preference is allowed to be. Anything else falls back to list. */
+const VIEWS: readonly ViewMode[] = ["list", "editor", "raw"];
 
 /** UI state, not document state — per device, never synced (spec §8). */
 export const VIEW_KEY = "knag.view";
@@ -206,7 +216,11 @@ export type KeyValueStore = Pick<Storage, "getItem" | "setItem">;
  */
 export function readView(storage: KeyValueStore | undefined): ViewMode {
   try {
-    return storage?.getItem(VIEW_KEY) === "raw" ? "raw" : "list";
+    const stored = storage?.getItem(VIEW_KEY);
+    // 🔴 Checked against the list rather than trusted. A value written by a newer build
+    // and read by an older one is a real case on a device that has been offline, and
+    // `as ViewMode` would let it through to a `paint()` that has no branch for it.
+    return VIEWS.find((view) => view === stored) ?? "list";
   } catch {
     return "list";
   }

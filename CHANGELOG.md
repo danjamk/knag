@@ -13,7 +13,47 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-18
+
+Editing works the way editing works everywhere else.
+
 ### Added
+
+- **Select and copy across lines, the way you can everywhere else**
+  ([#110](https://github.com/danjamk/knag/issues/110)). Settings → View → **editor** is a
+  new editing surface: one document rather than one text field per row, so dragging
+  across four lines selects four lines, and copy, cut and delete act on the selection.
+
+  Checkboxes are still real controls, still tappable while the keyboard is up, and
+  toggling one still rewrites exactly the character between the brackets. Indentation is
+  now literal document text rather than a CSS property derived from bytes the field never
+  showed — which is *more* byte-true than the row list, not less. **Arrange is unchanged**
+  and works from either surface: it renders its own rows, and a trip through it without
+  dragging returns the document byte for byte.
+
+  Typing behaves as it does in the row list, because it is the same code: `Enter`
+  continues a checkbox or a bullet with the marker copied rather than normalised and the
+  indentation carried, `Enter` on an empty marker leaves the list, and `--` plus a space
+  becomes a checkbox that an immediate `Backspace` puts back. Inside a fence none of it
+  applies — a YAML list pasted into a code block starts lines with `- `, and continuing
+  it there would have knag editing code.
+
+  **`⌘A` now selects the whole page**, where the row list made it mean one row.
+  [ADR-006](docs/adr/ADR-006-cross-row-selection.md) listed keeping the old meaning as a
+  reason to reject a single surface — but that was a description of the row model, not a
+  decision: each row was its own field, so `⌘A` could not have meant anything else.
+
+  **It sits beside the row list rather than replacing it**, and that is temporary. Every
+  defect this project has shipped was found by a person on a phone rather than by the
+  suite, so the replacement gets used against the real page before the row list is
+  deleted. Switch back in the same place if it misbehaves.
+
+  What this costs: **the client goes from 21.6 KB to 107 KB gzipped.** That is the largest
+  dependency knag has taken, against a stated preference for the boring tool — and the
+  argument for it is that text editing on iOS Safari is the one domain here where
+  hand-rolling *is* the exotic choice. Undo, composition, dictation and paste are the
+  things a maintained editor library has already fixed, and all four were verified on a
+  real iPhone before this was started.
 
 - **Line endings can now survive an editor that does not believe in them**
   ([#110](https://github.com/danjamk/knag/issues/110)). `client/src/eol.ts` splits a
@@ -702,7 +742,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/danjamk/knag/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/danjamk/knag/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/danjamk/knag/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/danjamk/knag/compare/v0.7.0...v0.7.1

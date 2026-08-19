@@ -456,6 +456,21 @@ stale by construction.
 
 ## 7. Client — list view (default)
 
+> 🔴 **There are two editing surfaces during the transition to
+> [ADR-007](adr/ADR-007-one-editing-surface.md).** Everything in this section describes
+> the **row list**, which is still the default and still correct. Beside it, Settings →
+> View → **editor** is one CodeMirror document — same bytes, same checkboxes, same
+> Arrange, but a selection crosses lines because it is not one form control per row.
+>
+> The behaviours below are shared, not duplicated: `Enter`, the `--` shorthand and the
+> marker rules are stated once in `client/src/edit.ts` and adapted by both. What the row
+> list has and the surface does not need is everything about **crossing a row boundary** —
+> the four arrow rules, `client/src/caret.ts`, and the pixel-column preservation — because
+> on one document those are line boundaries and the platform owns them.
+>
+> The row list is deleted once the replacement has survived real use, and this section
+> goes with it.
+
 Parse `body` into blocks (§14.1). Render each block by kind:
 
 | Block | Rendering |
@@ -694,6 +709,12 @@ ADR-003's revisit trigger, not a reason to patch.
 
 **Raw view must round-trip byte-for-byte.** No trimming, no whitespace
 normalization, no line-ending rewriting. Code pasted in comes out identical.
+
+🔴 **Its remaining purpose evaporates under [ADR-007](adr/ADR-007-one-editing-surface.md).**
+The editing surface *is* the bytes with decorations over them, and multi-row selection —
+the thing this section assigns to raw view — works there. It stays through the transition
+because it is exactly the escape hatch it was designed to be, and is removed once the new
+surface has survived a month of real use. Its absence is what finally pays ADR-003 off.
 
 ---
 
@@ -984,7 +1005,8 @@ auth · one typing-first editor with live checkbox rows · `--` shorthand · raw
 view as an escape hatch · per-row copy · linkify · fenced block grouping ·
 reorder mode with delete · wipe, in two scopes, with a one-tap recovery line ·
 coalesced revision log · history diff · 4 MCP tools · PWA manifest · two boards
-and system · two self-hosted typefaces
+and system · two self-hosted typefaces · **cross-line selection, on one editing
+surface** ([ADR-007](adr/ADR-007-one-editing-surface.md))
 
 **Out:** search · tags · multiple documents · attachments · offline editing ·
 WebSockets · Electron · native apps · email auth · multi-user · sharing ·
@@ -999,6 +1021,12 @@ Two entries have since been argued properly rather than merely listed:
   italic or headings. Indentation was never covered by this and already works.
 - **offline editing** — still out, but the *state* is in (§9). Failing silently
   while offline is a bug; refusing to edit and saying so is the decision.
+- **cross-line selection** — was never on the Out list, but was declined by
+  [ADR-006](adr/ADR-006-cross-row-selection.md) and is now in, via
+  [ADR-007](adr/ADR-007-one-editing-surface.md). What made it possible was not new
+  ambition: it was measuring a maintained editor library instead of hand-rolling the
+  input layer, and scoping a carve-out of the no-framework rule to the editing surface
+  alone.
 
 ---
 

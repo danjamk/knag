@@ -1,6 +1,7 @@
 # ADR-006: Cross-row selection stays out of the editor
 
-**Status:** Accepted
+**Status:** **Decision 1 superseded by [ADR-007](ADR-007-one-editing-surface.md)**; the
+spike's findings stand unchanged
 **Date:** 2026-08-18
 **Relates to:** [ADR-003](ADR-003-single-mode-editor.md) §2 (one row per block, live
 inputs), [ADR-004](ADR-004-display-matches-the-bytes.md) (the display never diverges
@@ -99,6 +100,13 @@ recording, because it nearly turned a finding into a false green.
 ## Decision
 
 ### 1. Cross-row selection stays out of the editor
+
+> 🔴 **Superseded by [ADR-007](ADR-007-one-editing-surface.md).** Cross-row selection is in
+> the editor. What this ADR *measured* is unaffected and remains the reason: letting the
+> browser apply edits to a hand-rolled `contenteditable` corrupts the document. ADR-007
+> does not overturn that — it takes the door this ADR left open in *Consequences*, where
+> the real question was named as *"is it worth intercepting every `beforeinput`?"* The
+> answer turned out to be that a maintained library already had.
 
 The row model keeps one form control per row. `←` `→` `↑` `↓` cross row boundaries
 (#84, #88); a *selection* does not.

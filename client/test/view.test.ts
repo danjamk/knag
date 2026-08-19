@@ -137,6 +137,19 @@ describe("view preference (spec §8)", () => {
     expect(readView(s.api)).toBe("raw");
   });
 
+  it("round-trips the editor surface", () => {
+    const s = store();
+    writeView(s.api, "editor");
+    expect(readView(s.api)).toBe("editor");
+  });
+
+  // 🔴 A device that has been offline can hold a preference written by a newer build.
+  // `as ViewMode` on the way out would let that reach a `paint()` with no branch for it,
+  // which is a blank page rather than a wrong one.
+  it("treats a value from a future build as list", () => {
+    expect(readView(store("timeline").api)).toBe("list");
+  });
+
   it("treats anything unrecognised as list", () => {
     expect(readView(store("nonsense").api)).toBe("list");
     expect(readView(store("").api)).toBe("list");

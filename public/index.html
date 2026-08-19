@@ -517,6 +517,37 @@
         user-select: none;
       }
 
+      /* ── The editing surface (#110) ────────────────────────────────────────
+         Almost everything about this element is set from EditorView.theme() in
+         client/src/editor.ts rather than here, and that is not a preference:
+         CodeMirror emits its base theme under a generated class, which outranks any
+         plain `.cm-content` rule written in this file. During the spike that made the
+         caret compute to black on a near-black board. What stays here is what CSS can
+         own outright — the widgets, which are knag's elements, not CodeMirror's. */
+      [data-surface] { width: 100%; }
+      /* The same measure the rows take, and for the same reason: the page starts at the
+         top-left corner on every device and the footer stays edge to edge. */
+      @media (min-width: 900px) {
+        [data-surface] .cm-line { max-width: var(--measure-wide); }
+      }
+      /* The same control the row list draws, at the same size, so switching surfaces
+         does not change what a checkbox looks like. */
+      input.cm-box {
+        accent-color: var(--amber);
+        width: var(--checkbox-size);
+        height: var(--checkbox-size);
+        margin-right: var(--row-gap);
+        vertical-align: -3px;
+        flex: none;
+      }
+      a.cm-open {
+        color: var(--dim);
+        display: inline-flex;
+        vertical-align: -3px;
+        margin-left: var(--space-1);
+      }
+      a.cm-open:active { color: var(--amber); }
+
       /* ── Arrange (ADR-003 §5) ──────────────────────────────────────────────
          An explicit mode, not an always-on grip. A drag handle competing for the same
          touch as an always-live text field is worse than one competing with a tap
@@ -929,6 +960,11 @@
            filtering blanks out would make a row's position stop meaning its block
            index. -->
       <ul data-rows hidden></ul>
+      <!-- 🔴 The CodeMirror surface (#110), mounted into here only while it is the active
+           view and destroyed on the way out — including when Arrange takes over, which
+           renders as rows. Two live editing surfaces over one document is the failure
+           that design exists to avoid, and hidden is not the same as not editing. -->
+      <div data-surface hidden></div>
 
       <!-- 🔴 Above the footer, not in it. It is transient chrome that appears after an
            action and stays until the next wipe, and the footer's control budget is
@@ -984,11 +1020,14 @@
           <h3>View</h3>
           <div class="choices">
             <button type="button" data-view-set="list">list</button>
+            <button type="button" data-view-set="editor">editor</button>
             <button type="button" data-view-set="raw">raw</button>
           </div>
           <p class="note">
-            Raw is the escape hatch — bulk paste, sweeps, anything the rows cannot
-            express. The page is where you land.
+            Editor is the replacement being tried out — one surface, so selecting and
+            copying across lines works the way it does everywhere else. Arrange still
+            works from it. Raw is the escape hatch for a bulk paste. The page is where
+            you land.
           </p>
         </section>
 

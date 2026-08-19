@@ -1,9 +1,17 @@
 # ADR-003: One editing mode, not two
 
-**Status:** Accepted
+**Status:** Accepted — **mechanism amended by [ADR-007](ADR-007-one-editing-surface.md)**
 **Date:** 2026-08-15
 **Supersedes:** spec §7 "Why single-line inputs", and the peer relationship
 between list and raw view in §8
+
+> 🔴 **Read this with [ADR-007](ADR-007-one-editing-surface.md).** Everything below about
+> *intent* stands and is confirmed by use: one mode, typing is primary, the editor is
+> where you land. What no longer holds is the **mechanism** — decision 1's "every block is
+> a row holding a live input". A DOM selection cannot span two form controls, so one input
+> per row is what made selecting across lines impossible, and the *Revisit when* at the
+> bottom of this document named that exact outcome and has now fired. Decision 6
+> (autocorrect per row kind) survives only provisionally; ADR-007 says how.
 
 ## Context
 

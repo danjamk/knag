@@ -40,6 +40,8 @@ import {
   rowIsEditable,
 } from "./sync.js";
 import Sortable from "sortablejs";
+import { GLYPH, glyph } from "./glyphs.js";
+import { type EditorHandle, mountEditor } from "./editor.js";
 import {
   type EditResult,
   applyShorthand,
@@ -75,6 +77,7 @@ const settingsDialog = document.querySelector<HTMLDialogElement>("[data-settings
 const settingsOpen = document.querySelector<HTMLButtonElement>("[data-settings-open]");
 const clearCountEl = document.querySelector<HTMLElement>("[data-clear-count]");
 const rowsEl = document.querySelector<HTMLUListElement>("[data-rows]");
+const surfaceEl = document.querySelector<HTMLElement>("[data-surface]");
 const clearButton = document.querySelector<HTMLButtonElement>("[data-clear]");
 const wipeAllButton = document.querySelector<HTMLButtonElement>("[data-wipe-all]");
 const restoreButton = document.querySelector<HTMLButtonElement>("[data-restore]");
@@ -235,7 +238,11 @@ function noteConnectivity(responded: boolean): void {
     if (dirty) void save();
   }
 
-  paintRows();
+  // 🔴 `paint`, not `paintRows`. This repainted the row list and nothing else, so the
+  // editing surface never learned the connection had dropped and went on accepting
+  // typing that could not be saved — which is precisely the "looks live, discards
+  // everything" failure #57 exists to prevent, reintroduced on a new surface.
+  paint();
   paintConnectivity();
 }
 
@@ -302,17 +309,91 @@ function render(doc: Doc): void {
 // ── Rendering (spec §7) ──────────────────────────────────────────────────────
 
 /** Draw whichever view is active from `body`. Never the other way round. */
+/**
+ * The CodeMirror surface, mounted only while it is the active view (#110).
+ *
+ * 🔴 Mounted and destroyed rather than hidden, and Arrange destroys it too. Two live
+ * editing surfaces over one document is the failure this whole design exists to avoid,
+ * and "hidden" is not "not editing" — a hidden contenteditable still holds a selection
+ * and still answers `beforeinput`.
+ */
+let surface: EditorHandle | null = null;
+
+function mountSurface(): void {
+  if (surface || !surfaceEl) return;
+  surface = mountEditor(surfaceEl, {
+    initial: body,
+    onChange(next) {
+      // The same three lines `syncFromRow` runs, for the same reason: the surface
+      // already shows what was typed, so nothing repaints and the caret stays put.
+      if (next === body) return;
+      body = next;
+      refreshClearButton();
+      scheduleSave();
+    },
+    onFocusChange(next) {
+      focused = next;
+      // Blur is where a held remote update gets applied, exactly as the row path does.
+      if (!next && pendingRemote) {
+        const doc = pendingRemote;
+        pendingRemote = null;
+        render(doc);
+        setStatus("updated elsewhere");
+      }
+    },
+  });
+}
+
+function unmountSurface(): void {
+  surface?.destroy();
+  surface = null;
+  surfaceEl?.replaceChildren();
+  // Focus left with the element. A stale `true` here blocks every future remote update,
+  // which is the bug `applyRemote` exists to fix.
+  focused = false;
+}
+
 function paint(): void {
   if (editor) editor.value = body;
+
+  // 🔴 Arrange always renders as rows, whichever surface you came from. That is the whole
+  // reason the editor replacement does not cost the sort mode: the two renderings never
+  // share an element, each builds itself from the document string and hands one back
+  // (#110). In Arrange the editor is destroyed, not hidden.
+  const arranging = reordering && view !== "raw";
+  const rowsVisible = arranging || view === "list";
+
   editor?.toggleAttribute("hidden", view !== "raw");
-  rowsEl?.toggleAttribute("hidden", view !== "list");
+  rowsEl?.toggleAttribute("hidden", !rowsVisible);
+  surfaceEl?.toggleAttribute("hidden", !(view === "editor" && !arranging));
 
-  reorderButton?.toggleAttribute("hidden", view !== "list");
+  // Rearranging is a whole-row operation, so it is offered from both editing surfaces
+  // and from neither raw view nor a page nobody can edit.
+  reorderButton?.toggleAttribute("hidden", view === "raw");
 
-  if (view === "list") {
+  if (view === "editor" && !arranging) {
+    // 🔴 Cleared, not left hidden. Stale rows in a hidden list are invisible to a person
+    // and perfectly visible to `querySelectorAll` — which made a test assert "Arrange
+    // rendered 7 rows" while Arrange had not run at all.
+    rowsEl?.replaceChildren();
+    mountSurface();
+    surface?.setBody(body);
+    // 🔴 Not `rowIsEditable`. Offline, the row model keeps editable exactly the row you
+    // were mid-sentence in and freezes the rest; one surface cannot make that
+    // distinction, so offline freezes all of it. `readOnly`, never `disabled` — the page
+    // stays readable, scrollable and copyable while it refuses edits (spec §9).
+    surface?.setReadOnly(connectivity !== "online");
+    refreshClearButton();
+    return;
+  }
+
+  unmountSurface();
+
+  if (rowsVisible) {
     paintRows();
     return;
   }
+
   // Raw view is the escape hatch for bulk edits; sweeping or rearranging from it
   // would act on a document the reader is mid-way through rewriting by hand.
   clearButton?.toggleAttribute("hidden", true);
@@ -411,44 +492,6 @@ function gripElement(): HTMLSpanElement {
  * control, 20px for the Arrange grip. No target changed, so the four-targets-at-380px
  * geometry is untouched; the glyph inside it stopped being timid.
  */
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-const GLYPH = {
-  grip: '<circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="6" cy="8" r="1.1"/><circle cx="10" cy="8" r="1.1"/><circle cx="6" cy="12" r="1.1"/><circle cx="10" cy="12" r="1.1"/>',
-  copy: '<rect x="6" y="2.75" width="7.25" height="9" rx="1.5"/><rect x="2.75" y="4.75" width="7.25" height="9" rx="1.5"/>',
-  remove: '<path d="M4.2 4.2 L11.8 11.8"/><path d="M11.8 4.2 L4.2 11.8"/>',
-  /** The tick, reused from the checkbox — copy confirms in the same mark that ticks. */
-  done: '<path d="M3.6 8.4 L6.6 11.4 L12.4 4.8"/>',
-  /** Copy failed. The same cross the delete control uses, which is the honest sign. */
-  failed: '<path d="M4.2 4.2 L11.8 11.8"/><path d="M11.8 4.2 L4.2 11.8"/>',
-  /**
-   * Open a link — the one glyph the design bundle did not ship, drawn to the same
-   * rules: an arrow leaving a corner, straight lines and nothing else.
-   */
-  open: '<path d="M5 11 L11 5"/><path d="M6.75 4.6 H11.4 V9.25"/>',
-} as const;
-
-/**
- * Build one.
- *
- * `innerHTML` is safe here and only here: every argument is a module constant above,
- * never a row's text. Row text is set with `textContent` and always will be — see
- * `linkify` in view.ts, which returns data rather than markup for the same reason.
- */
-function glyph(paths: string, size: number): SVGSVGElement {
-  const filled = paths === GLYPH.grip;
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("width", String(size));
-  svg.setAttribute("height", String(size));
-  svg.setAttribute("fill", filled ? "currentColor" : "none");
-  svg.setAttribute("stroke", filled ? "none" : "currentColor");
-  svg.setAttribute("stroke-width", "1.5");
-  svg.setAttribute("stroke-linecap", "square");
-  svg.setAttribute("aria-hidden", "true");
-  svg.innerHTML = paths;
-  return svg;
-}
 
 /**
  * Delete a whole block. Reorder mode only.
@@ -553,7 +596,8 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   li.append(input);
 
   // 🔴 A link affordance rather than an inline anchor. An <input> cannot contain
-  // one, and the alternatives are contenteditable (rejected by ADR-003) or swapping
+  // one, and the alternatives are contenteditable (which the row model does not use —
+  // the editing surface does, per ADR-007) or swapping
   // the element on focus (the tap-to-activate step this issue removes). So a row
   // holding a URL gets a button that opens it, and the URL stays editable text.
   const [first] = linkify(row.text).filter((segment) => segment.link);
@@ -741,6 +785,17 @@ function applyRemote(doc: Doc): void {
   }
 
   if (disposition === "apply") {
+    render(doc);
+    setStatus("updated elsewhere");
+    return;
+  }
+
+  // 🔴 The editing surface needs none of what follows. It maps its own selection through
+  // the change, and `captureCaret` queries `[data-rows]` — so in the editor view it finds
+  // nothing, concludes focus was lost, and sets `focused = false` while CodeMirror still
+  // has it. A stale `false` there lets the *next* remote update apply mid-keystroke,
+  // which is the bug this whole function exists to prevent, reintroduced sideways.
+  if (surface) {
     render(doc);
     setStatus("updated elsewhere");
     return;
@@ -1741,7 +1796,11 @@ function setReordering(on: boolean): void {
   // Leaving the mode flushes anything the drags queued, so the document is settled
   // before the caret goes anywhere near it again.
   if (!on) void saveNow();
-  paintRows();
+  // 🔴 `paint`, not `paintRows`. In the editor view, entering Arrange destroys the
+  // surface and leaving it builds a new one from the reordered document — which is the
+  // swap the spike measured, and the check that mattered there was that a trip through
+  // with no drag returns the identical bytes.
+  paint();
 }
 
 /**
@@ -1813,9 +1872,10 @@ globalThis
   });
 
 reorderButton?.addEventListener("click", () => {
-  // Switching to raw view while reordering would leave the mode on with nothing to
-  // drag, so the mode belongs to the list view only.
-  if (view !== "list") return;
+  // Raw view has no rows to drag, so the mode does not exist there. It exists from both
+  // editing surfaces, because rearranging is a whole-row operation and Arrange renders
+  // its own rows whichever surface you came from (#110).
+  if (view === "raw") return;
   setReordering(!reordering);
 });
 
