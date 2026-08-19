@@ -141,3 +141,18 @@ jobs:
           name: playwright-trace
           path: test-results/
           retention-days: 7
+
+      # 🔴 Wrangler's own crash log (#107). When the dev server dies it prints an
+      # empty `✘ [ERROR]` and writes the actual stack trace to a file, which CI then
+      # threw away — so two failures were triaged with no account from the process that
+      # died. `if-no-files-found: ignore` because a run that fails on a real assertion
+      # has no wrangler log and that is not itself a problem.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: wrangler-crash-logs
+          path: |
+            /github/home/.config/.wrangler/logs/
+            ~/.config/.wrangler/logs/
+          if-no-files-found: ignore
+          retention-days: 7

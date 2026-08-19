@@ -70,5 +70,23 @@ export default defineConfig({
     url: `http://localhost:${PORT}/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+
+    // 🔴 Opt-in, and NOT on in CI by default — piping this perturbs the thing it
+    // measures (#107).
+    //
+    // Playwright ignores webServer stdout by default and pipes only stderr, which is why
+    // two CI failures where the dev server died produced no account from the server of
+    // how it died. Piping it did produce that account — wrangler dies printing an empty
+    // `✘ [ERROR]` and writes no error to its own log — but it also took the flake from
+    // two occurrences in weeks to **five CI runs out of five**.
+    //
+    // The likely reason is that wrangler logs a line per request, `sync.spec.ts` polls
+    // in a loop and carries the heaviest request traffic in the suite, and a pipe the
+    // reader does not drain fast enough blocks the writer. A blocked stdout write inside
+    // the server's event loop is a good way to produce exactly this death.
+    //
+    // So it stays off, and becomes the reproducer #107 never had: set
+    // KNAG_WRANGLER_STDOUT=1 to turn a rare flake into a near-certain one on demand.
+    stdout: process.env.KNAG_WRANGLER_STDOUT ? "pipe" : "ignore",
   },
 });
