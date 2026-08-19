@@ -92,42 +92,76 @@ probe() {
 
   # 🔴 The one thing that provably grows across a run. `observability.enabled` is
   # true in worker/wrangler.jsonc, so every `wrangler dev` writes a request trace into
-  # this store, and nothing ever clears it — it was 63MB locally and had been
-  # accumulating since 2026-08-15, which is a candidate for why the flake finally
-  # reproduced on a dev machine that had never seen it.
+  # this store, and nothing ever clears it — it had reached 66MB locally, accumulating
+  # since 2026-08-15, and is why the flake finally reproduced on a dev machine that had
+  # never seen it. Cleared before every run below; this figure is the growth within one.
   trace=$(du -sm worker/.wrangler/state/v3/observability 2>/dev/null | cut -f1)
   d1=$(du -sm worker/.wrangler/state/v3/d1 2>/dev/null | cut -f1)
 
   printf '   probe %-34s workerd=%-3s wrangler=%-3s port=%-5s trace=%-5s d1=%-5s mem=%s\n' \
     "$when" "${workerd:-0}" "${wrangler:-0}" "$port" \
     "${trace:-0}MB" "${d1:-0}MB" "$mem"
+
+  # pid<-ppid for every workerd alive. Printed because the first reaper guessed at this
+  # and was wrong; a guess about parentage is not worth making twice.
+  local detail
+  detail=$(ps -eo pid=,ppid=,comm= 2>/dev/null | awk '$3 ~ /workerd/ { printf "%s<-%s ", $1, $2 }')
+  [ -n "$detail" ] && printf '         workerd parents: %s\n' "$detail"
+  return 0
 }
 
 # 🔴 Reap the workerd processes wrangler leaves behind (#107).
 #
 # This is the mechanism, found by the probe on its first CI run. Playwright stops the
-# `wrangler dev` it started, but wrangler's two `workerd` children survive it, and the CI
-# container has no init to reap them. The count climbed exactly +2 per spec file —
-# 0, 2, 4, 6, 8, 10, 12, 14, 16, 18 — so `sync.spec.ts`, second-to-last, ran against a
-# runner carrying sixteen orphans. That is why the flake lands late in the run, and why
-# it never reproduced locally: macOS reaps them and the probe reads 0 after every file
-# there.
+# `wrangler dev` it started, but wrangler's two `workerd` children survive it. The count
+# climbed by exactly two per spec file and never came down:
 #
-# Orphans only, identified by PPID 1, so a `make dev` running in another terminal is
-# never touched — a live server's workerd is parented to its wrangler process, not to
-# init.
+#     0 → 2 → 4 → 6 → 8 → 10 → 12 → 14 → 16 → 18
+#
+# So `sync.spec.ts`, second-to-last, runs against a runner already carrying sixteen of
+# them. That is why the flake lands late in a run rather than in a particular file, and
+# it retires the confounding between identity and position that #107 described: position
+# is the variable. It is also why this never reproduced locally — macOS kills the
+# children with the parent, and the probe reads 0 after every file there.
+#
+# 🔴 The first attempt at this filtered on PPID 1, on the assumption that the
+# survivors are orphans. It reaped nothing: the counts in CI were identical with it in
+# place. That assumption was a guess about process parentage in a container rather than
+# a measurement, so the probe now prints each workerd's actual parent and this filters on
+# identity instead, which does not depend on the answer.
+#
+# Anything running before the suite started is left alone, so a `wrangler dev` in another
+# terminal survives. Everything else matching workerd was started by this script and has
+# already had its spec file finished by Playwright.
+BASELINE_WORKERD=""
+
+workerd_pids() {
+  ps -eo pid=,comm= 2>/dev/null | awk '$2 ~ /workerd/ { print $1 }'
+}
+
 reap_orphans() {
-  local pids
-  pids=$(ps -eo pid=,ppid=,comm= 2>/dev/null | awk '$2 == 1 && $3 ~ /workerd/ { print $1 }')
-  [ -z "$pids" ] && return 0
+  local pid stale=""
+
+  for pid in $(workerd_pids); do
+    case " ${BASELINE_WORKERD} " in
+      *" ${pid} "*) continue ;;
+    esac
+    stale="${stale} ${pid}"
+  done
+
+  [ -z "$stale" ] && return 0
 
   # shellcheck disable=SC2086
-  kill $pids 2>/dev/null || true
+  kill $stale 2>/dev/null || true
   sleep 1
-  pids=$(ps -eo pid=,ppid=,comm= 2>/dev/null | awk '$2 == 1 && $3 ~ /workerd/ { print $1 }')
-  if [ -n "$pids" ]; then
+
+  local survivors=""
+  for pid in $stale; do
+    kill -0 "$pid" 2>/dev/null && survivors="${survivors} ${pid}"
+  done
+  if [ -n "$survivors" ]; then
     # shellcheck disable=SC2086
-    kill -9 $pids 2>/dev/null || true
+    kill -9 $survivors 2>/dev/null || true
   fi
 }
 
@@ -160,6 +194,7 @@ fi
 echo "Running ${#SPECS[@]} spec file(s), each against its own dev server."
 echo ""
 
+BASELINE_WORKERD=$(workerd_pids | tr '\n' ' ')
 probe "baseline"
 
 for spec in "${SPECS[@]}"; do
