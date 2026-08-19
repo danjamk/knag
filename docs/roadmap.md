@@ -18,6 +18,9 @@ clears, promote the next one.** Nothing else decides what to pick up.
 This replaces the MVP plan's `#2 → #3 → #4 → #8`, which was true until it was
 not and stayed written down for a while afterwards.
 
+**Phase 0 is in progress.** #107 shipped instrumentation and eliminated four
+hypotheses without closing; #74 is next and may close #107 outright — see below.
+
 ---
 
 ## The two findings that set the order
@@ -69,12 +72,57 @@ reds, and one of them **held up a release**. Every phase below ends in a PR that
 has to go green, so fixing it once pays back on all of them. #74 is the same
 area — two majors of miniflare installed at once, one an alpha, nobody chose it.
 
+**Updated 2026-08-19, after the first pass at #107.** It shipped instrumentation
+rather than a fix and did not close, which was the right outcome: the probe
+eliminated four hypotheses with data — the file's own traffic (both failures
+killed a server twelve seconds old), leaked live processes (`workerd` climbs to
+18 but every one is a *zombie*, holding a PID slot and nothing else), a retained
+port, and memory. It also found and fixed a real one: wrangler's observability
+trace store grows unbounded and had reached 66MB locally, which is why #107
+"never reproduced locally" — it does, once a working tree ages.
+
+The lesson worth carrying: an instrument must not add a pipe to the path it
+measures. Capturing output through `tee` took the flake from two occurrences in
+weeks to six CI runs out of six; a file redirect went green.
+
+🔴 **#107 and #74 now look like one issue, so do #74 first.** What remains
+unexplained is a dev server dying while printing an *empty* `✘ [ERROR]` and
+recording nothing in its own log. That is what an alpha runtime does. #74 was
+filed as tidying-up and may close #107 outright.
+
 **Also start #4 now.** It is wall-clock, not work: the iOS cookie clock needs
 seven days of *not* touching the phone. It has been deferred since 2026-08-15
 and should be running in the background underneath every phase here, not
 scheduled into one.
 
-### Phase 1 · Earn the editor, then delete the row list — #119, #114, #113
+### Phase 1 · Sessions you can revoke — #125
+
+**The only security item on the board, and it has no workaround.** `SESSION_TTL_SECONDS`
+is a year on purpose — re-auth is what kills daily use
+([ADR-001](adr/ADR-001-passphrase-auth.md), spec §4) — but `findLiveSession` matches only
+`token_hash` and `expires_at`, so a session has no relationship to the passphrase that
+created it.
+
+🔴 **Rotating `KNAG_PASSPHRASE` leaves every existing cookie live for its full year.** A
+lost phone is a year of access, and the only remedy today is `DELETE FROM sessions` typed
+by hand against the one copy of the document. There is no log out at all.
+
+Placed here, ahead of the editor work, for three reasons and not for severity theatre —
+this is one person's todo list, not a breach:
+
+- **It is independent.** Server-side plus one Settings section. Nothing in it gets cheaper
+  after #113, so it does not benefit from waiting, and nothing else is blocked by it.
+- **It is small** — one additive migration (a surrogate `id`, because `token_hash` is the
+  SHA-256 of a live credential and must never appear in a response body), two store
+  functions, three routes, one Settings section.
+- 🔴 **#122 is dead without it.** "Invite friends to try it" is not a thing you can offer
+  when access cannot be withdrawn. Whatever the auth spike decides, being able to revoke is
+  the floor.
+
+It also resolves the open question in #92 — log out is not part of About, it is this — so
+#92 keeps its later slot with the rest of the Settings work rather than moving up.
+
+### Phase 2 · Earn the editor, then delete the row list — #119, #114, #113
 
 🔴 **#113 is the hinge of the roadmap.** Two editing surfaces exist during the
 transition ([ADR-007](adr/ADR-007-one-editing-surface.md) §7), and every UI item
@@ -92,15 +140,15 @@ list are exactly two:
 Three PRs. #113 alone, because a ~400-line deletion deserves to be reviewable by
 itself. Natural **0.9.0**.
 
-### Phase 2 · Copy, settled — #115 + #118, one branch
+### Phase 3 · Copy, settled — #115 + #118, one branch
 
 #118 cannot ship without #115's answer, because the button has to put *something*
 on the clipboard. Shipping a third copy path while the existing two disagree is
 how you end up with three that disagree.
 
-Cheaper after Phase 1: two paths left (Arrange, editor) rather than three.
+Cheaper after Phase 2: two paths left (Arrange, editor) rather than three.
 
-### Phase 3 · The wipe, made good — #120, #92, #121
+### Phase 4 · The wipe, made good — #120, #92, #121
 
 **Open this phase with one request to the design session**, covering wipe motion,
 wipe sound, where #120's control goes, and #90's landing-page brief — which is
@@ -111,22 +159,22 @@ from there and not from here; motion is named explicitly in `CLAUDE.md`.
 so they pair. #121 lands after #113 so the animation is written once, against one
 surface.
 
-### Phase 4 · Show it — #90
+### Phase 5 · Show it — #90
 
 After #121, so the landing page has the good wipe to demonstrate. That is #121's
 own argument for existing. Plausible **1.0**: a landing page is the point at
 which this is a thing you show people.
 
-### Phase 5 · A handful of pages — #123
+### Phase 6 · A handful of pages — #123
 
 Ships independently of auth; §17 is explicit that it "can ship long before
 tenancy does". Before #91, per finding 1.
 
-### Phase 6 · Recovery and history — #91
+### Phase 7 · Recovery and history — #91
 
 Designed per-page, once.
 
-### Phase 7 · Multi-user — #122
+### Phase 8 · Multi-user — #122
 
 Last, deliberately — and the reason is not difficulty. The spike is reading and
 measuring, and it can float earlier in any week that wants a break from
@@ -134,7 +182,7 @@ building.
 
 🔴 **A pilot spends invitations, and you only get to invite someone for the first
 time once.** Inviting friends to a product whose wipe does not animate and which
-still carries a vestigial row list wastes them. Phases 1–4 are what make the
+still carries a vestigial row list wastes them. Phases 1–5 are what make the
 invitation worth sending.
 
 Note also that #122 is scoped as **spike and ADR, not build**. It is
