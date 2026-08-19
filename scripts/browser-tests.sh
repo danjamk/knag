@@ -135,6 +135,19 @@ probe() {
 # What the probe ruled out along with it: a retained port (`port=free` after every
 # file, red runs included), memory exhaustion (flat at ~14GB throughout), and the
 # trace store (7MB in CI against the 66MB that broke a local run).
+#
+# 🔴 What is still not explained is the death itself. Wrangler prints an empty
+# `✘ [ERROR]`, writes no error into its own log, and the log simply stops mid-heartbeat.
+# The log is uploaded as a CI artifact on failure now, so the next one can be read
+# rather than reconstructed.
+#
+# What #107 does now have is a reproducer, which it never had:
+#
+#     KNAG_WRANGLER_STDOUT=1 pnpm test:browser
+#
+# Piping wrangler's stdout took the flake from two occurrences in weeks to five CI runs
+# out of five. That is why it is opt-in rather than on — it perturbs what it measures —
+# and why it is worth keeping.
 
 shopt -s nullglob
 SPECS=(browser/*.spec.ts)
