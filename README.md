@@ -211,6 +211,7 @@ read.
 |---|---|
 | [docs/spec.md](docs/spec.md) | The build spec — data model, API, sync rules, block grammar. §12 is the scope boundary; §17 is what a larger future would break. |
 | [docs/roadmap.md](docs/roadmap.md) | What is being built next and why in that order. The board holds the cards; this holds the sequence. |
+| [docs/philosophy.md](docs/philosophy.md) | Why throwing things away is the product, and where that sits in a long argument about lists. §5 answers feature requests before they arrive. |
 | [docs/deployment.md](docs/deployment.md) | The runbook — what ships where, provisioning a pipeline from nothing, and what a failure at each step means. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and why, per release. |
 | [ADR-001](docs/adr/ADR-001-passphrase-auth.md) | Why this rolls its own sessions instead of using Cloudflare Access. |
@@ -220,6 +221,7 @@ read.
 | [ADR-005](docs/adr/ADR-005-mcp-oauth.md) | Why `/mcp` needs OAuth as well as a static bearer. |
 | [ADR-006](docs/adr/ADR-006-cross-row-selection.md) | What a hand-rolled `contenteditable` did to the document. Decision 1 is superseded by ADR-007; the measurement is why. |
 | [ADR-007](docs/adr/ADR-007-one-editing-surface.md) | One editing surface, owned by CodeMirror. Amends ADR-003's mechanism while upholding its intent. |
+| [docs/reviews/](docs/reviews/) | The brief written for outside review of the editing surface, and the review that came back. ADR-007 is the decision; these are the argument. |
 
 The spec refers to a set of house standards — a private, personal collection covering
 Node, Cloudflare, MCP and release practice. Where one of its rules matters here it is
