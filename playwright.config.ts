@@ -70,5 +70,12 @@ export default defineConfig({
     url: `http://localhost:${PORT}/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+
+    // 🔴 Playwright ignores webServer stdout by default and pipes only stderr, which
+    // is why two CI failures where the dev server died produced no account from the
+    // server of how it died (#107). Piped in CI so the next one arrives with evidence;
+    // left ignored locally, where wrangler logs every request and the flake has never
+    // reproduced anyway.
+    stdout: process.env.CI ? "pipe" : "ignore",
   },
 });

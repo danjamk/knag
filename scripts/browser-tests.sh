@@ -29,15 +29,79 @@
 # swallowed #62.
 #
 # The unit of splitting is the spec file, which is a proxy for "not too many tests
-# against one server". If a single spec file ever grows past roughly fifteen tests,
-# expect this to start flaking again and split that file rather than raising a timeout.
+# against one server".
+#
+# 🔴 That proxy had a stated trigger — "a spec file past roughly fifteen tests" —
+# and it was wrong (#107). Both CI failures since landed in `sync.spec.ts`, which has
+# seven tests, and following the old advice would have prevented neither.
+#
+# What the archived logs actually show is that both died on a server that had only just
+# started: `98e7249` before its first test could see the editor, `95a06d5` twelve seconds
+# into a file that runs for forty, with two tests already passed. A file's own traffic
+# exhausting its own server does not explain either one. What the two share is position —
+# `sync.spec.ts` is the 8th of 9 servers this script starts — which makes it the place a
+# per-run accumulation tips over, not the cause.
+#
+# So the trigger is unknown and being measured rather than guessed. The probe lines below
+# print on every run, green ones included, so the next failure arrives with evidence
+# attached instead of needing a reproduction that has never happened locally.
 
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Mirrors PORT in playwright.config.ts. Duplicated rather than imported because this is
+# bash reading a TypeScript module's constant; if they ever disagree the probe reports
+# `port=free` forever, which is wrong but harmless.
+PORT=8788
+
 FAILED=()
+DEAD=()
 PASSED=0
+
+# Failure signatures that mean "the dev server went away", not "an assertion failed".
+DEAD_SERVER='Could not connect to|socket hang up|ECONNREFUSED|Connection refused|Network connection lost|browserContext.newPage'
+
+# What accumulates across the nine servers this script starts, if anything (#107).
+# Bash builtins and pgrep only — the CI container is a Playwright image, not a box with
+# lsof or ss installed, and this has to keep working on a Mac too.
+probe() {
+  local when="$1" workerd wrangler port mem trace d1
+
+  # 🔴 `pgrep -c` is procps-only and does not exist on macOS, where it fails usage
+  # and the probe would report 0 forever — a false negative that would have quietly
+  # wasted this whole investigation. Counted with `wc -l` instead, which both agree on.
+  # One `wrangler dev` spawns two `workerd`, so the clean between-files reading is 0/0
+  # and a single leaked server reads as workerd=2.
+  workerd=$(pgrep -x workerd 2>/dev/null | wc -l | tr -d ' ')
+  wrangler=$(pgrep -f 'wrangler dev' 2>/dev/null | wc -l | tr -d ' ')
+
+  if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+    port=bound
+  else
+    port=free
+  fi
+
+  if [ -r /proc/meminfo ]; then
+    mem=$(awk '/^MemAvailable:/ {printf "%dMB", $2/1024}' /proc/meminfo)
+  else
+    # macOS. The flake has only ever appeared on Linux runners, so this is not worth
+    # a vm_stat parser.
+    mem="n/a"
+  fi
+
+  # 🔴 The one thing that provably grows across a run. `observability.enabled` is
+  # true in worker/wrangler.jsonc, so every `wrangler dev` writes a request trace into
+  # this store, and nothing ever clears it — it was 63MB locally and had been
+  # accumulating since 2026-08-15, which is a candidate for why the flake finally
+  # reproduced on a dev machine that had never seen it.
+  trace=$(du -sm worker/.wrangler/state/v3/observability 2>/dev/null | cut -f1)
+  d1=$(du -sm worker/.wrangler/state/v3/d1 2>/dev/null | cut -f1)
+
+  printf '   probe %-34s workerd=%-3s wrangler=%-3s port=%-5s trace=%-5s d1=%-5s mem=%s\n' \
+    "$when" "${workerd:-0}" "${wrangler:-0}" "$port" \
+    "${trace:-0}MB" "${d1:-0}MB" "$mem"
+}
 
 shopt -s nullglob
 SPECS=(browser/*.spec.ts)
@@ -48,22 +112,63 @@ if [ ${#SPECS[@]} -eq 0 ]; then
   exit 1
 fi
 
+# 🔴 Cleared before the run, not between files. `observability.enabled` is true in
+# worker/wrangler.jsonc, so every `wrangler dev` writes request traces here and nothing
+# ever removes them: one suite adds about 8MB and it had reached 66MB on the machine
+# this was found on. At that size the suite died in editor.spec.ts with the exact
+# signature of #107; cleared, the same suite on the same commit passed 9/9.
+#
+# That also explains why #107 "does not reproduce locally" — it does, once a working
+# tree has aged enough. CI starts from a fresh checkout every time and never had the
+# accumulation, so local and CI were quietly running different experiments. Clearing
+# makes them the same one, and the trace= figure in the probe still shows the growth
+# *within* a run, which is the part CI can also see.
+TRACE_STORE=worker/.wrangler/state/v3/observability
+if [ -d "$TRACE_STORE" ]; then
+  echo "Clearing $(du -sm "$TRACE_STORE" 2>/dev/null | cut -f1)MB of accumulated wrangler traces (#107)."
+  rm -rf "$TRACE_STORE"
+fi
+
 echo "Running ${#SPECS[@]} spec file(s), each against its own dev server."
 echo ""
 
+probe "baseline"
+
 for spec in "${SPECS[@]}"; do
   echo "── ${spec}"
-  if pnpm exec playwright test "$spec" "$@"; then
+
+  # Captured as well as streamed, so a dead server can be told apart from a failing
+  # assertion. `pipefail` is set, so the `if` still sees playwright's exit code and not
+  # tee's.
+  log="$(mktemp)"
+  if pnpm exec playwright test "$spec" "$@" 2>&1 | tee "$log"; then
     PASSED=$((PASSED + 1))
   else
     FAILED+=("$spec")
+    if grep -qE "$DEAD_SERVER" "$log"; then
+      DEAD+=("$spec")
+      echo ""
+      echo "🔴 ${spec} failed with a DEAD DEV SERVER, not a failing assertion (#107)."
+      echo "   A connection error is what a dead server looks like from inside a test, and"
+      echo "   reading it as a broken test is what makes these expensive to triage."
+      echo "   The probe lines are the evidence. Read them before re-running."
+    fi
   fi
+  rm -f "$log"
+
+  probe "after ${spec}"
   echo ""
 done
 
 if [ ${#FAILED[@]} -gt 0 ]; then
   echo "✗ ${#FAILED[@]} spec file(s) failed:" >&2
   printf '    %s\n' "${FAILED[@]}" >&2
+  if [ ${#DEAD[@]} -gt 0 ]; then
+    echo "" >&2
+    echo "🔴 ${#DEAD[@]} of those died as a dev server, not as a real failure (#107):" >&2
+    printf '    %s\n' "${DEAD[@]}" >&2
+    echo "   Still a red build on purpose. Re-running hides it; the probe lines explain it." >&2
+  fi
   exit 1
 fi
 
