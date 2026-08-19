@@ -1055,6 +1055,13 @@ Two entries have since been argued properly rather than merely listed:
 Steps 1–4 are the weekend. Everything after is incremental and independently
 useful.
 
+🔴 **All eleven steps are done, and this section is history.** It ordered the
+build phase and nothing since — the editing surface (ADR-007), the design system,
+the wipe and the deploy pipeline are all past its end. **The live sequence is
+[roadmap.md](roadmap.md)**, which is where a question about what comes next is
+answered. The plan that ran this order is
+[implementation/completed/MVP_PLAN.md](implementation/completed/MVP_PLAN.md).
+
 ---
 
 ## 14. Resolved details
@@ -1482,10 +1489,24 @@ sourced as a self-hosted thing.
 | Future | Breaks | Insurance taken today |
 |---|---|---|
 | Multi-user | Schema (`CHECK (id = 1)`), every query | All SQL in `store.ts`, `DOC_ID` constant. Adding `owner_id` is one file plus a migration. |
-| A few pages | Same `CHECK (id = 1)`, and every route assuming a singleton | Same chokepoint. `page_id INTEGER NOT NULL DEFAULT 1` is additive and the backfill is one `UPDATE`. |
+| A few pages | Same `CHECK (id = 1)`, and every route assuming a singleton | Same chokepoint. `page_id` on `revisions` is additive; `documents` is not — see the correction below. |
 | Any real auth | Passphrase is a shared secret — no revocation, no accounts | `authenticate() → Principal`; handlers key off `principal.id` |
 | Native / App Store | Cookies don't fit a Keychain-token client | Bearer is first-class on every `/api/*` route |
 | Public / self-hosted | Config assumes one owner | Vars in `wrangler.jsonc`, secrets via `wrangler secret put`, MIT already |
+
+🔴 **Corrected 2026-08-19: the "a few pages" insurance is half a release short.**
+The row above used to claim `page_id INTEGER NOT NULL DEFAULT 1` covers it. That is
+true of `revisions`, whose rows carry no document reference at all today. It is not
+true of `documents`, which is `id INTEGER PRIMARY KEY CHECK (id = 1)` — and SQLite
+has no `ALTER TABLE ... DROP CONSTRAINT`. Removing that `CHECK` is a full table
+rebuild, which is destructive, and `make migrate` runs *before* `make deploy`, so the
+deployed Worker runs against the new schema in the gap (ADR-002 §3).
+
+So a few pages is **expand/contract across two releases**, not one additive column:
+a new `pages` table backfilled from `documents` and read going forward, then
+`documents` dropped in a later release. Still one file of SQL and still cheap — the
+chokepoint holds — but it is two releases, and a plan that budgeted one would have
+found out at migration time.
 
 **What is not insured, deliberately:** no `owner_id` columns, no accounts table,
 no billing hooks, no CORS. Each is a future that may never come, and each is

@@ -11,6 +11,7 @@
   <a href="#agent-access">Agent access</a> ·
   <a href="#deploying">Deploying</a> ·
   <a href="docs/spec.md">Spec</a> ·
+  <a href="docs/roadmap.md">Roadmap</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
@@ -208,7 +209,8 @@ read.
 
 | | |
 |---|---|
-| [docs/spec.md](docs/spec.md) | The build spec — data model, API, sync rules, block grammar, build order. §12 is the scope boundary; §17 is what a larger future would break. |
+| [docs/spec.md](docs/spec.md) | The build spec — data model, API, sync rules, block grammar. §12 is the scope boundary; §17 is what a larger future would break. |
+| [docs/roadmap.md](docs/roadmap.md) | What is being built next and why in that order. The board holds the cards; this holds the sequence. |
 | [docs/deployment.md](docs/deployment.md) | The runbook — what ships where, provisioning a pipeline from nothing, and what a failure at each step means. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and why, per release. |
 | [ADR-001](docs/adr/ADR-001-passphrase-auth.md) | Why this rolls its own sessions instead of using Cloudflare Access. |
