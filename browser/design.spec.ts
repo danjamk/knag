@@ -243,3 +243,38 @@ test.describe("glyphs", () => {
     }
   });
 });
+
+/**
+ * Layout invariants that hold across every editing surface.
+ *
+ * 🔴 This describe exists because #116 got past everything. The footer is asserted six
+ * times above — voice, colour, animation, control sizes — and its *position* was never
+ * asserted anywhere, because in the row model the layout could not get it wrong. A new
+ * surface then inherited the container without its contract, and the footer sat 1,223px
+ * below the fold on a sixty-line page.
+ */
+test.describe("the footer belongs to the window", () => {
+  const LONG = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
+
+  test("stays on screen in the row list, on a page long enough to overflow", async ({ knag }) => {
+    await knag.seed(LONG);
+    const viewport = knag.page.viewportSize();
+    const footer = await knag.page.locator("footer").boundingBox();
+    expect(footer).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    // 🔴 Measured, not asserted on a class. The bug was invisible to every rule that
+    // checks what the footer looks like and visible to anything that asks where it is.
+    expect((footer as { y: number; height: number }).y + (footer as { height: number }).height)
+      .toBeLessThanOrEqual((viewport as { height: number }).height + 1);
+  });
+
+  test("🔴 stays on screen in the editing surface too", async ({ knag }) => {
+    await knag.seed(LONG);
+    await knag.useEditor();
+    const viewport = knag.page.viewportSize();
+    const footer = await knag.page.locator("footer").boundingBox();
+    expect(footer).not.toBeNull();
+    expect((footer as { y: number; height: number }).y + (footer as { height: number }).height)
+      .toBeLessThanOrEqual((viewport as { height: number }).height + 1);
+  });
+});
