@@ -297,6 +297,11 @@
 
       /* Full-bleed editor. Safe-area insets matter because a home-screen PWA runs
          fullscreen — without them the notch eats the first line. */
+      /* 🔴 A flex column at full height, and **every editing surface added here must
+         claim the leftover height** — `flex: 1; min-height: 0`, and scroll inside itself.
+         That is the only thing keeping the footer on screen rather than at the bottom of
+         the text. It is a contract, and #116 happened because it was written nowhere and
+         a new surface inherited the container without it. */
       [data-editor] {
         display: flex;
         flex-direction: column;
@@ -524,7 +529,21 @@
          plain `.cm-content` rule written in this file. During the spike that made the
          caret compute to black on a near-black board. What stays here is what CSS can
          own outright — the widgets, which are knag's elements, not CodeMirror's. */
-      [data-surface] { width: 100%; }
+      /* 🔴 `flex: 1` and `min-height: 0`, exactly as `[data-rows]` and `[data-body]` do.
+         `[data-editor]` is a flex column at height 100% and its children are expected to
+         claim the leftover height — that is what pins the footer to the viewport, and it
+         was an expectation living only in two rules that happened to say `flex: 1`. This
+         one shipped without them in v0.8.0 and the footer sat 1,223px below the fold on a
+         sixty-line page (#116). `min-height: 0` is the half that is easy to omit: without
+         it a flex item refuses to shrink below its content and the footer is still gone.
+
+         🔴 And NOT `overflow-y: auto` here, however much it looks like `[data-rows]`.
+         CodeMirror brings its own scroller, so putting one on the container gives two
+         nested — which is precisely what made long-press-and-drag fight scrolling on iOS
+         during the spike. Giving `.cm-editor` a height makes `.cm-scroller` the single
+         scroller, which is how CodeMirror is meant to be used at a fixed height. */
+      [data-surface] { flex: 1; min-height: 0; width: 100%; }
+      [data-surface] .cm-editor { height: 100%; }
       /* The same measure the rows take, and for the same reason: the page starts at the
          top-left corner on every device and the footer stays edge to edge. */
       @media (min-width: 900px) {

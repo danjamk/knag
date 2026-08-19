@@ -478,3 +478,26 @@ test.describe("a remote change, twice over", () => {
     expect(offset).toBe(5);
   });
 });
+
+test.describe("layout", () => {
+  test("🔴 exactly one scroller, never two", async ({ knag }) => {
+    await knag.seed(Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n"));
+    await knag.useEditor();
+
+    // 🔴 Pins the trap in #116's obvious fix. Adding `overflow-y: auto` to the container
+    // to match `[data-rows]` looks right and gives two nested scrollers, because
+    // CodeMirror brings its own — and a nested scroller inside the page is what made
+    // long-press-and-drag fight scrolling on iOS during the spike. If this ever reads 2,
+    // selection on a phone has quietly got worse and nothing else will say so.
+    const scrollers = await knag.page.evaluate(() => {
+      const host = globalThis as unknown as {
+        document: { querySelectorAll: (s: string) => ArrayLike<unknown> };
+        getComputedStyle: (e: unknown) => { overflowY: string };
+      };
+      const all = Array.from(host.document.querySelectorAll("[data-surface], [data-surface] *"));
+      return all.filter((el) => ["auto", "scroll"].includes(host.getComputedStyle(el).overflowY))
+        .length;
+    });
+    expect(scrollers).toBe(1);
+  });
+});

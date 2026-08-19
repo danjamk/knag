@@ -13,6 +13,31 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-08-18
+
+### Fixed
+
+- **The footer scrolled off the bottom of the editing surface**
+  ([#116](https://github.com/danjamk/knag/issues/116)). It stayed pinned to the window in
+  the row list and in raw view, and in the new surface it sat at the bottom of the *text* —
+  1,223px below the fold on a sixty-line page.
+
+  `[data-editor]` is a flex column at full height and its children are expected to claim
+  the leftover space; the surface added in 0.8.0 declared neither `flex: 1` nor
+  `min-height: 0`, so it sized to its content and pushed the footer past the edge.
+
+  🔴 Not fixed with `overflow-y: auto` on the container, which is the obvious move and the
+  wrong one: CodeMirror brings its own scroller, so that gives two nested — and a nested
+  scroller is what made long-press-and-drag fight scrolling on iOS during the spike.
+  `.cm-editor` gets a height instead, leaving one scroller.
+
+### Notes
+
+- **The footer's position had never been asserted anywhere.** It is checked six times for
+  voice, colour, animation and control size, and in the row model the layout could not get
+  it wrong, so there was nothing to test. There is now a check in every surface, and one
+  that fails if a second scroller ever appears.
+
 ## [0.8.0] — 2026-08-18
 
 Editing works the way editing works everywhere else.
@@ -742,7 +767,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/danjamk/knag/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/danjamk/knag/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/danjamk/knag/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/danjamk/knag/compare/v0.7.1...v0.7.2
