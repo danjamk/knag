@@ -183,13 +183,17 @@ probe "baseline"
 for spec in "${SPECS[@]}"; do
   echo "── ${spec}"
 
-  # Captured as well as streamed, so a dead server can be told apart from a failing
-  # assertion. `pipefail` is set, so the `if` still sees playwright's exit code and not
-  # tee's.
+  # 🔴 Redirected to a file and printed afterwards, NOT piped through tee.
+  # A pipe the reader does not drain fast enough blocks the writer, and the thing being
+  # investigated here is a dev server dying under exactly that kind of pressure — so the
+  # instrument must not add a pipe to the path it measures. The cost is that output
+  # appears per spec file rather than streaming live, which in CI is no cost at all.
   log="$(mktemp)"
-  if pnpm exec playwright test "$spec" "$@" 2>&1 | tee "$log"; then
+  if pnpm exec playwright test "$spec" "$@" > "$log" 2>&1; then
+    cat "$log"
     PASSED=$((PASSED + 1))
   else
+    cat "$log"
     FAILED+=("$spec")
     if grep -qE "$DEAD_SERVER" "$log"; then
       DEAD+=("$spec")
