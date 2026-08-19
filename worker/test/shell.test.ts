@@ -230,7 +230,16 @@ describe("PWA shell (spec §9)", () => {
     expect(shell()).toContain("viewport-fit=cover");
   });
 
-  it("keeps the input font at 16px, or iOS zooms on focus and never returns", () => {
-    expect(shell()).toMatch(/font-size:\s*16px/);
+  it("🔴 keeps the editable floor at 16px, or iOS zooms on focus and never returns", () => {
+    // Asserted on the tokens rather than on a literal `font-size: 16px`, because the
+    // sizes became tokens so a reading preference could override one of them (#92).
+    // The floor is the reason the number exists, so the floor is what is pinned: the
+    // font-size control scales `--size-row` *up* and is not offered a smaller step.
+    expect(shell()).toMatch(/--size-row:\s*16px/);
+    expect(shell()).toMatch(/--size-control:\s*16px/);
+
+    // And nothing names a size outside the token block. A rule that reintroduced a bare
+    // `font-size: 15px` on a field would pass the two assertions above and still zoom.
+    expect(shell()).not.toMatch(/font-size:\s*1[0-5]px/);
   });
 });

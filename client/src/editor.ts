@@ -538,10 +538,12 @@ const theme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
     fontFamily: "var(--font-body)",
-    // 🔴 16px literal, matching `textarea.text`, and not a token: below 16px iOS zooms
-    // the viewport when a field takes focus and never zooms back. That zoom is what got
-    // reported as "klunky" during the spike.
-    fontSize: "16px",
+    // 🔴 The token, not a literal — this is the surface the reading preference acts on
+    // (#92), and the row list reads the same one so switching views does not resize the
+    // page. The floor stays at 16px and lives in the token: below it iOS zooms the
+    // viewport when a field takes focus and never zooms back, which is what got reported
+    // as "klunky" during the spike.
+    fontSize: "var(--size-row)",
     lineHeight: "var(--leading-row)",
   },
   ".cm-content": { padding: "0", caretColor: "var(--caret)" },

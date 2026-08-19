@@ -52,15 +52,18 @@ import {
   splitAt,
 } from "./edit.js";
 import {
+  type FontSize,
   type Theme,
   type ViewMode,
   linkify,
   move,
+  readFontSize,
   readTheme,
   readView,
   removeMany,
   rows,
   themeColor,
+  writeFontSize,
   writeTheme,
   writeView,
 } from "./view.js";
@@ -136,6 +139,9 @@ function pickedText(): string {
 
 /** Persisted, unlike the mode — this is a preference, not something you are doing. */
 let theme: Theme = "system";
+
+/** Reading size for the page text only, per device (#92). Never part of the document. */
+let fontSize: FontSize = 16;
 
 /** The version we believe we are editing. Every write carries it (spec §6). */
 let baseVersion = 0;
@@ -1837,6 +1843,22 @@ function setReordering(on: boolean): void {
  * dark under a light theme puts a black strip above a white app, which reads as a
  * rendering bug rather than a preference (spec §9).
  */
+/**
+ * The reading size, as a `--size-row` override on `:root` (#92).
+ *
+ * 🔴 A token override and nothing else, so no rule outside the `:root` block names a
+ * size. Both editing surfaces and raw view already read `--size-row`, so one property
+ * moves all three and switching views cannot resize the page underneath you.
+ *
+ * 16 is removed rather than set, so the default state is the stylesheet's own value and
+ * the floor lives in exactly one place.
+ */
+function applyFontSize(): void {
+  const root = document.documentElement;
+  if (fontSize === 16) root.style.removeProperty("--size-row");
+  else root.style.setProperty("--size-row", `${fontSize}px`);
+}
+
 function applyTheme(): void {
   const root = document.documentElement;
   // `system` sets no attribute at all, so the CSS media query decides — rather than
@@ -1870,6 +1892,18 @@ settingsDialog?.addEventListener("click", (event) => {
     theme = chosenTheme as Theme;
     writeTheme(globalThis.localStorage, theme);
     applyTheme();
+    return;
+  }
+
+  const chosenSize = target.closest<HTMLElement>("[data-font-size]")?.dataset.fontSize;
+  if (chosenSize) {
+    // Validated through the same reader the boot path uses rather than cast: the value
+    // comes off a DOM attribute, and a typo in the markup must not put `--size-row`
+    // below the floor that keeps iOS from zooming.
+    fontSize = readFontSize({ getItem: () => chosenSize, setItem: () => {} });
+    writeFontSize(globalThis.localStorage, fontSize);
+    applyFontSize();
+    markChoices("[data-font-size]", "fontSize", String(fontSize));
     return;
   }
 
@@ -2065,6 +2099,7 @@ sessionsList?.addEventListener("click", (event) => {
 settingsOpen?.addEventListener("click", () => {
   markChoices("[data-theme-set]", "themeSet", theme);
   markChoices("[data-view-set]", "viewSet", view);
+  markChoices("[data-font-size]", "fontSize", String(fontSize));
   settingsDialog?.showModal();
   void loadSessions();
 });
@@ -2202,6 +2237,11 @@ loginForm?.addEventListener("submit", async (event) => {
 // Before the first paint, so the app never flashes the wrong theme.
 theme = readTheme(globalThis.localStorage);
 applyTheme();
+
+// Same reason as the theme: applied before the first paint, or the page renders at 16px
+// and jumps to the reader's size a frame later.
+fontSize = readFontSize(globalThis.localStorage);
+applyFontSize();
 
 view = readView(globalThis.localStorage);
 

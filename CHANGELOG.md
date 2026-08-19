@@ -13,6 +13,49 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-08-19
+
+Bigger controls, and text you can size.
+
+### Added
+
+- **Text size, in Settings** ([#92](https://github.com/danjamk/knag/issues/92)). Three
+  steps — 16, 18, 20 — applied to the page text and nothing else. Per device, like the
+  board, and never part of the document.
+
+  🔴 **It scales up from 16 and is offered nothing smaller.** Below 16px iOS Safari zooms
+  the viewport when a field takes focus and never zooms back. Anyone wanting smaller text
+  wants a smaller device.
+
+  It moves the page and leaves the interface alone, which is the decision this turns on:
+  someone raising the reading size wants more room for the document, not a louder footer.
+  Both editing surfaces and raw view read the same token, so switching views cannot resize
+  the page underneath you.
+
+- **About, in Settings.** What knag is, the license, and a link to the repository. The
+  human-voice half of Build, which keeps saying the same thing in numbers directly below.
+
+### Changed
+
+- **The footer's controls are bigger, and stay that way**. The touch target was **28px**;
+  Apple's HIG minimum is 44. "The icons are too small on all devices" turned out to be a
+  hit-target problem wearing a visual complaint's clothes, so it is fixed against the
+  standard rather than by eye. Icons go 18px to 20px, the machine voice 13px to 14px, the
+  env badge 11px to 12px, the wordmark 14px to 15px.
+
+  The bar grows from 44px to 52px rather than to 60px, because its vertical padding drops
+  a step to absorb half of it. None of this follows the reading preference — it is set
+  once and fixed.
+
+### Fixed
+
+- **Every font size is a token now.** `--size-row` was declared and read by *nothing*,
+  while seven rules named `16px` directly — the issue believed there were three. A
+  preference cannot override a token nobody consumes, so this was the actual first task.
+  Document surfaces take `--size-row`, controls take a new `--size-control`, and the
+  shell test now pins the 16px floor on the tokens plus the absence of any small bare
+  `font-size` anywhere, which is a stronger assertion than the literal it replaced.
+
 ## [0.10.0] — 2026-08-19
 
 One tap to get the page out.
@@ -873,7 +916,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/danjamk/knag/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/danjamk/knag/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/danjamk/knag/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/danjamk/knag/compare/v0.8.1...v0.9.0
