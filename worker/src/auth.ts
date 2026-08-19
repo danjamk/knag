@@ -22,6 +22,20 @@ export const OWNER = "dan";
 export type Principal = {
   id: string;
   source: "session" | "bearer";
+
+  /**
+   * The caller's own session, when it has one (#125).
+   *
+   * 🔴 `publicId` is the surrogate from migration 0003, never `token_hash` — the hash
+   * is the SHA-256 of a live credential and this object reaches handlers that build
+   * response bodies. `tokenHash` is carried too, because logging out means deleting
+   * the row for the credential presented rather than for a row the caller named, but
+   * it must not be serialised.
+   *
+   * Absent for `source: "bearer"`, which holds no session. Handlers that need one say
+   * so; they do not ask how the principal was resolved.
+   */
+  session?: { publicId: string; tokenHash: string };
 };
 
 /**
@@ -92,8 +106,21 @@ export async function authenticate(request: Request, env: Env): Promise<Principa
     // The stored value is a hash, so lookup is an equality match on a digest rather
     // than a scan-and-compare. There is nothing to compare in constant time here —
     // an attacker who can guess a 256-bit token does not need a timing side channel.
-    const session = await findLiveSession(env, await hashToken(cookie));
-    if (session) return { id: OWNER, source: "session" };
+    const tokenHash = await hashToken(cookie);
+    const session = await findLiveSession(env, tokenHash);
+    if (session) {
+      return {
+        id: OWNER,
+        source: "session",
+        // `public_id` is NOT NULL in practice — the migration backfilled every row and
+        // `createSession` always sets it — but the column is nullable because SQLite
+        // would not let it be added otherwise, so the type says so and this does not
+        // pretend to know better.
+        ...(session.public_id
+          ? { session: { publicId: session.public_id, tokenHash } }
+          : {}),
+      };
+    }
   }
 
   return null;
@@ -119,10 +146,19 @@ export async function issueSession(
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
+  // 🔴 Generated independently of `raw`, not derived from it. A public id that is any
+  // function of the token is a public id that leaks the token to anyone who can invert
+  // it, and this one goes in response bodies (#125). Half the width because it names a
+  // row rather than guarding one — guessing it grants nothing without a credential.
+  const publicId = [...crypto.getRandomValues(new Uint8Array(16))]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
   await createSession(
     env,
     {
       tokenHash: await hashToken(raw),
+      publicId,
       deviceLabel: deviceLabel?.slice(0, MAX_DEVICE_LABEL) || null,
       expiresAt: new Date(now.getTime() + SESSION_TTL_SECONDS * 1000),
     },
@@ -144,6 +180,21 @@ export async function issueSession(
   // Cloudflare terminates TLS, so a deployed request is never http:.
   if (isSecureContext(request)) attributes.push("Secure");
 
+  return attributes.join("; ");
+}
+
+/**
+ * The `Set-Cookie` that ends a session in the browser (#125).
+ *
+ * 🔴 Attributes must match `issueSession` exactly apart from the expiry — a browser
+ * matches a deletion cookie on name, Path and Domain, so a mismatched `Path` leaves
+ * the original cookie sitting there and the user appears to log out and then does not.
+ * The row is deleted server-side regardless, so a browser that ignores this is logged
+ * out anyway; this is what stops it sending a dead cookie on every subsequent request.
+ */
+export function clearSession(request: Request): string {
+  const attributes = [`${SESSION_COOKIE}=`, "HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=0"];
+  if (isSecureContext(request)) attributes.push("Secure");
   return attributes.join("; ");
 }
 

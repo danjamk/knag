@@ -3,6 +3,7 @@ import {
   OWNER,
   type Principal,
   authenticate,
+  clearSession,
   issueSession,
   secretEquals,
   unauthorized,
@@ -15,6 +16,10 @@ import { handleAuthorize } from "./oauth.js";
 import {
   type DocumentSource,
   type WipeScope,
+  deleteOtherSessions,
+  deleteSession,
+  deleteSessionByToken,
+  listLiveSessions,
   readDocument,
   wipe,
   writeDocument,
@@ -116,9 +121,140 @@ const router = {
       );
     }
 
+    if (url.pathname === "/api/logout") {
+      const principal = await authenticate(request, env);
+      if (!principal) return unauthorized();
+
+      if (request.method !== "POST") {
+        return Response.json(
+          { error: "Method not allowed" },
+          { status: 405, headers: { Allow: "POST" } },
+        );
+      }
+      return logout(request, env, principal);
+    }
+
+    // 🔴 The router's first path-parameter route. Everything above matches `pathname`
+    // exactly, so this is checked with a prefix and the id is taken from the tail —
+    // deliberately not a regex over the whole path, because `/api/sessions` and
+    // `/api/sessions/<id>` are different resources with different methods and folding
+    // them into one branch is how a DELETE with no id becomes a DELETE of everything.
+    if (url.pathname === "/api/sessions" || url.pathname.startsWith("/api/sessions/")) {
+      const principal = await authenticate(request, env);
+      if (!principal) return unauthorized();
+
+      const tail = url.pathname.slice("/api/sessions".length);
+
+      if (tail === "" || tail === "/") {
+        if (request.method === "GET") return listSessions(env, principal);
+        if (request.method === "DELETE") return revokeOthers(env, principal);
+
+        return Response.json(
+          { error: "Method not allowed" },
+          { status: 405, headers: { Allow: "GET, DELETE" } },
+        );
+      }
+
+      if (request.method !== "DELETE") {
+        return Response.json(
+          { error: "Method not allowed" },
+          { status: 405, headers: { Allow: "DELETE" } },
+        );
+      }
+      return revokeSession(request, env, principal, decodeURIComponent(tail.slice(1)));
+    }
+
     return Response.json({ error: "Not found" }, { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * The device list (#125).
+ *
+ * 🔴 `is_current` is computed here rather than stored, and it is what makes the list
+ * usable: without it the operator is choosing between four opaque rows and the one
+ * they must not revoke looks like the others. A bearer caller has no session, so every
+ * row reads `false` — correct, not a special case.
+ */
+async function listSessions(env: Env, principal: Principal): Promise<Response> {
+  const sessions = await listLiveSessions(env);
+
+  return Response.json({
+    sessions: sessions.map((s) => ({
+      id: s.public_id,
+      label: s.device_label,
+      created_at: s.created_at,
+      expires_at: s.expires_at,
+      is_current: s.public_id === principal.session?.publicId,
+    })),
+  });
+}
+
+/**
+ * End this session.
+ *
+ * 🔴 400 rather than 401 for a bearer, and the distinction is the point. A bearer is
+ * perfectly well authenticated — it simply holds no session, so there is nothing here
+ * to end. Answering 401 would tell an agent its credential was rejected and send it
+ * off to re-authenticate against a problem that re-authenticating cannot fix.
+ *
+ * `KNAG_BEARER_TOKEN` is revoked by rotating the Worker secret, which is stated in the
+ * body so the answer arrives with the refusal rather than in a doc somewhere.
+ */
+async function logout(request: Request, env: Env, principal: Principal): Promise<Response> {
+  if (!principal.session) {
+    return Response.json(
+      { error: "No session to end. A bearer token is revoked by rotating KNAG_BEARER_TOKEN." },
+      { status: 400 },
+    );
+  }
+
+  await deleteSessionByToken(env, principal.session.tokenHash);
+
+  // Deleted by token hash, not by public id: the caller is proving possession of the
+  // credential rather than naming a row, so this cannot log out anyone else even if
+  // the id were wrong.
+  return new Response(null, { status: 204, headers: { "Set-Cookie": clearSession(request) } });
+}
+
+/**
+ * Revoke one device by its surrogate id.
+ *
+ * 404 for an id that matched nothing, so a typo is distinguishable from a revocation.
+ * There is no ownership check because there is one owner (`OWNER`); when that stops
+ * being true this is the line that has to change, which is why it says so here.
+ */
+async function revokeSession(
+  request: Request,
+  env: Env,
+  principal: Principal,
+  publicId: string,
+): Promise<Response> {
+  const revoked = await deleteSession(env, publicId);
+  if (!revoked) return Response.json({ error: "No such session" }, { status: 404 });
+
+  // Revoking your own row from the device list is a log out, and it has to clear the
+  // cookie too — otherwise the browser keeps sending a credential whose row is gone,
+  // which reads to the user as "it did nothing" until the next reload.
+  return new Response(null, {
+    status: 204,
+    ...(principal.session?.publicId === publicId
+      ? { headers: { "Set-Cookie": clearSession(request) } }
+      : {}),
+  });
+}
+
+/**
+ * Sign out everywhere else — the panic button for a lost phone.
+ *
+ * Spares the caller's own session, so securing everything else does not eject you from
+ * the device you are holding. A bearer has no session to spare and takes every row,
+ * which is the honest reading of the request rather than a refusal.
+ */
+async function revokeOthers(env: Env, principal: Principal): Promise<Response> {
+  const revoked = await deleteOtherSessions(env, principal.session?.publicId ?? null);
+  return Response.json({ revoked });
+}
 
 /**
  * One provider per origin, cached for the life of the isolate.

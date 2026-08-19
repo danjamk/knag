@@ -253,7 +253,10 @@ describe("bearer is first-class on every /api/* route", () => {
       headers: { Authorization: "Bearer wrong", Cookie: `${SESSION_COOKIE}=${raw}` },
     });
 
-    expect(await authenticate(request, env)).toEqual({ id: OWNER, source: "session" });
+    // Matched rather than deep-equalled: a session principal now also carries its own
+    // identity (#125), and this test is about *which credential won*, not about the
+    // shape of the object. Deep equality here would fail on every future field.
+    expect(await authenticate(request, env)).toMatchObject({ id: OWNER, source: "session" });
   });
 
   it("401s with WWW-Authenticate when nothing is presented", async () => {
@@ -282,5 +285,208 @@ describe("secretEquals", () => {
     expect(await secretEquals(undefined, "x")).toBe(false);
     expect(await secretEquals("x", undefined)).toBe(false);
     expect(await secretEquals("", "")).toBe(false);
+  });
+});
+
+// ── Log out and device revocation (#125) ─────────────────────────────────────
+//
+// 🔴 The property under test throughout is that a revoked credential stops working on
+// the *next request*, not that a row vanished from a table. A test that asserts the
+// DELETE returned 204 and stops there would pass against an implementation that
+// deletes the wrong row, so every case here re-presents the cookie afterwards.
+
+const LOGOUT = "https://knag.test/api/logout";
+const SESSIONS = "https://knag.test/api/sessions";
+
+/** A live session cookie, labelled so the list has something to distinguish rows by. */
+async function session(label: string): Promise<string> {
+  return cookieValue(await login({ passphrase: PASSPHRASE, device_label: label }));
+}
+
+function asSession(url: string, raw: string, init: RequestInit = {}): Promise<Response> {
+  return SELF.fetch(url, { ...init, headers: { Cookie: `${SESSION_COOKIE}=${raw}` } });
+}
+
+type Listed = { id: string; label: string | null; is_current: boolean };
+
+async function listed(raw: string): Promise<Listed[]> {
+  const res = await asSession(SESSIONS, raw);
+  return ((await res.json()) as { sessions: Listed[] }).sessions;
+}
+
+describe("GET /api/sessions", () => {
+  it("refuses anonymous callers", async () => {
+    expect((await SELF.fetch(SESSIONS)).status).toBe(401);
+  });
+
+  it("lists live devices by label, and marks which one is asking", async () => {
+    const phone = await session("iphone");
+    const laptop = await session("mac");
+
+    const rows = await listed(laptop);
+    const labels = rows.map((r) => r.label);
+
+    expect(labels).toContain("iphone");
+    expect(labels).toContain("mac");
+    expect(rows.find((r) => r.label === "mac")?.is_current).toBe(true);
+    expect(rows.find((r) => r.label === "iphone")?.is_current).toBe(false);
+    void phone;
+  });
+
+  it("🔴 never puts the token hash in the body", async () => {
+    const raw = await session("iphone");
+    const hash = await hashToken(raw);
+
+    const body = await (await asSession(SESSIONS, raw)).text();
+
+    // The id is a surrogate precisely so this holds. If it ever fails, the revocation
+    // endpoint has become a credential-disclosure endpoint.
+    expect(body).not.toContain(hash);
+    expect(body).not.toContain(raw);
+  });
+
+  it("is first-class for a bearer, which simply has no session of its own", async () => {
+    await session("iphone");
+
+    const res = await SELF.fetch(SESSIONS, { headers: { Authorization: `Bearer ${BEARER}` } });
+    const rows = ((await res.json()) as { sessions: Listed[] }).sessions;
+
+    expect(res.status).toBe(200);
+    expect(rows.length).toBeGreaterThan(0);
+    // Not a special case: a bearer holds no session, so no row is "current".
+    expect(rows.every((r) => !r.is_current)).toBe(true);
+  });
+});
+
+describe("POST /api/logout", () => {
+  it("🔴 makes the cookie stop working on the next request", async () => {
+    const raw = await session("iphone");
+    expect((await asSession(DOC, raw)).status).toBe(200);
+
+    const res = await asSession(LOGOUT, raw, { method: "POST" });
+    expect(res.status).toBe(204);
+
+    expect((await asSession(DOC, raw)).status).toBe(401);
+  });
+
+  it("clears the cookie with attributes that match the one it is replacing", async () => {
+    const raw = await session("iphone");
+
+    const header = (await asSession(LOGOUT, raw, { method: "POST" })).headers.get("Set-Cookie");
+
+    // A browser matches a deletion cookie on name and Path. Get Path wrong and the
+    // original survives, so the user appears to log out and then does not.
+    expect(header).toContain(`${SESSION_COOKIE}=`);
+    expect(header).toContain("Max-Age=0");
+    expect(header).toContain("Path=/");
+  });
+
+  it("leaves other devices alone", async () => {
+    const phone = await session("iphone");
+    const laptop = await session("mac");
+
+    await asSession(LOGOUT, phone, { method: "POST" });
+
+    expect((await asSession(DOC, laptop)).status).toBe(200);
+  });
+
+  it("🔴 tells a bearer it has nothing to log out, rather than rejecting it", async () => {
+    const res = await SELF.fetch(LOGOUT, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${BEARER}` },
+    });
+
+    // 400, not 401. The bearer is authenticated fine; it holds no session. A 401 would
+    // send an agent off to re-authenticate against a problem re-authenticating cannot
+    // fix, and KNAG_BEARER_TOKEN is revoked by rotating the secret instead.
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("KNAG_BEARER_TOKEN");
+  });
+
+  it("refuses anonymous callers", async () => {
+    expect((await SELF.fetch(LOGOUT, { method: "POST" })).status).toBe(401);
+  });
+});
+
+describe("DELETE /api/sessions/<id>", () => {
+  it("🔴 revokes another device, and that device is 401 on its next request", async () => {
+    const phone = await session("iphone");
+    const laptop = await session("mac");
+
+    const target = (await listed(laptop)).find((r) => r.label === "iphone");
+    const res = await asSession(`${SESSIONS}/${target?.id}`, laptop, { method: "DELETE" });
+
+    expect(res.status).toBe(204);
+    expect((await asSession(DOC, phone)).status).toBe(401);
+    expect((await asSession(DOC, laptop)).status).toBe(200);
+  });
+
+  it("clears the cookie when the row revoked is the caller's own", async () => {
+    const raw = await session("iphone");
+    const mine = (await listed(raw)).find((r) => r.is_current);
+
+    const res = await asSession(`${SESSIONS}/${mine?.id}`, raw, { method: "DELETE" });
+
+    // Otherwise the browser keeps sending a credential whose row is gone, which reads
+    // as "the button did nothing" until the next reload.
+    expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect((await asSession(DOC, raw)).status).toBe(401);
+  });
+
+  it("404s an id that matched nothing, so a typo is not a silent success", async () => {
+    const raw = await session("iphone");
+
+    const res = await asSession(`${SESSIONS}/not-a-real-id`, raw, { method: "DELETE" });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("refuses anonymous callers", async () => {
+    const raw = await session("iphone");
+    const mine = (await listed(raw)).find((r) => r.is_current);
+
+    const res = await SELF.fetch(`${SESSIONS}/${mine?.id}`, { method: "DELETE" });
+
+    expect(res.status).toBe(401);
+    // And the session it named is still usable, so the refusal was real.
+    expect((await asSession(DOC, raw)).status).toBe(200);
+  });
+});
+
+describe("DELETE /api/sessions — sign out everywhere", () => {
+  it("🔴 revokes every other device but keeps the caller signed in", async () => {
+    const phone = await session("iphone");
+    const ipad = await session("ipad");
+    const laptop = await session("mac");
+
+    const res = await asSession(SESSIONS, laptop, { method: "DELETE" });
+
+    expect(res.status).toBe(200);
+    expect((await asSession(DOC, phone)).status).toBe(401);
+    expect((await asSession(DOC, ipad)).status).toBe(401);
+    // The panic button is for a lost phone. Ejecting you from the device in your hand
+    // while you are using it is worse than the problem.
+    expect((await asSession(DOC, laptop)).status).toBe(200);
+  });
+
+  it("takes everything for a bearer, which has no session to spare", async () => {
+    const phone = await session("iphone");
+    const laptop = await session("mac");
+
+    const res = await SELF.fetch(SESSIONS, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${BEARER}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect((await asSession(DOC, phone)).status).toBe(401);
+    expect((await asSession(DOC, laptop)).status).toBe(401);
+  });
+
+  it("refuses anonymous callers", async () => {
+    const raw = await session("iphone");
+
+    expect((await SELF.fetch(SESSIONS, { method: "DELETE" })).status).toBe(401);
+    expect((await asSession(DOC, raw)).status).toBe(200);
   });
 });
