@@ -13,6 +13,43 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-08-19
+
+The wipe works in the editing surface. Both halves of it.
+
+### Fixed
+
+- **The wipe control was missing from the editing surface entirely**
+  ([#119](https://github.com/danjamk/knag/issues/119)). `refreshClearButton` hid it on
+  `view !== "list"` — a condition written before that surface existed — so the only wipe
+  reachable from the editor was the whole-page one in Settings. The reorder button was
+  updated for the surface in 0.8.0 and this one was missed. Raw view still hides it, which
+  is the deliberate half: sweeping from the bulk-paste escape hatch would act on a
+  document being rewritten by hand.
+
+- **And the wipe did not animate there** (same issue). `animateWipe` resolved
+  `li[data-index]` inside `[data-rows]`, which `paint()` empties in editor view, so it
+  returned on its first guard and the checked lines vanished on the repaint. The wipe is
+  the only animation in the product and the moment the nag → wipe loop is built around;
+  the surface replacing the row list did not have it.
+
+  Both stages are preserved, because the separation is the design and not an
+  implementation detail: the lines go transparent **in place, holding their height**, and
+  only then does one collapse close the gap. Same keyframes, same tokens, same stagger
+  expression as the row list — so `prefers-reduced-motion` still collapses both surfaces
+  from one place and neither can drift.
+
+  🔴 The animation takes **lines, not block indices**. One block renders as one row in the
+  list, so the two were interchangeable there — but a fenced block is one block and
+  several lines, and animating by index would have faded the opening ``` and left the rest
+  of the fence sitting there until the repaint.
+
+  [ADR-007](docs/adr/ADR-007-one-editing-surface.md) is amended rather than quietly
+  broken: `EditorHandle` no longer speaks *only* in document bytes. The alternative was a
+  CodeMirror import in `app.ts`, which is the leak that made the row model expensive to
+  replace, so the smaller one was taken — one method, with the timing still owned by
+  `app.ts`.
+
 ## [0.9.0] — 2026-08-19
 
 A session can be ended. Until now, none could.
@@ -802,7 +839,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/danjamk/knag/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/danjamk/knag/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/danjamk/knag/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/danjamk/knag/compare/v0.7.3...v0.8.0

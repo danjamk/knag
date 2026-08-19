@@ -93,6 +93,23 @@ leaked into `app.ts` through `editorIn`, `focusRow`, `captureCaret` and four arr
 branches, and that leak is precisely why replacing it is a project rather than a change.
 Not repeating it is the whole reason for the interface.
 
+🔴 **Amended 2026-08-19 (#119): "only document bytes" is no longer strictly true, and the
+exception is recorded rather than left to be discovered.** `animateWipe(lines, timings)`
+is about presentation, not bytes.
+
+The wipe is the only animation in the product, and it worked by finding `<li>` elements —
+so it did not happen in this surface at all. Restoring it needs line decorations, which
+means CodeMirror. The two ways to get there were a CodeMirror import in `app.ts` or one
+presentational method on the handle, and **the second is the smaller leak**: the rule that
+made the row model expensive to replace was CodeMirror knowledge spreading through
+`app.ts`, not the handle having a method that is not a byte accessor.
+
+What keeps it contained: it is one method, `app.ts` still owns the *timing* (read once
+from the CSS tokens and passed in, so both surfaces run one sequence rather than two that
+drift), and it decides nothing about what gets wiped. If a second presentational method is
+ever wanted, that is the signal this boundary was drawn in the wrong place — reopen it
+rather than adding a third.
+
 ### 3. Line endings live outside the editor
 
 CodeMirror's document is LF-only. Pinning `EditorState.lineSeparator` makes a *pristine*

@@ -20,7 +20,14 @@
  * Those stay in `app.ts` where they already live.
  */
 
-import { Annotation, Compartment, EditorState, RangeSetBuilder, StateField } from "@codemirror/state";
+import {
+  Annotation,
+  Compartment,
+  EditorState,
+  RangeSetBuilder,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -44,9 +51,24 @@ export type EditorHandle = {
   setBody(body: string): void;
   /** Offline refuses edits without making the page unreadable (spec §9). */
   setReadOnly(readOnly: boolean): void;
+  /**
+   * Fade the given zero-based lines, then close the gap they leave (#119).
+   *
+   * 🔴 The one method here that is about presentation rather than bytes, and it is a
+   * deliberate widening of [ADR-007]'s interface. The alternative is a CodeMirror import
+   * outside this file, which is the rule that made the row model expensive to replace —
+   * so the leak that was allowed is the smaller one, and the timing still lives in
+   * `app.ts` so both surfaces run one sequence rather than two that drift.
+   *
+   * Resolves when the collapse has finished. Decides nothing about what is wiped.
+   */
+  animateWipe(lines: number[], timings: WipeTimings): Promise<void>;
   focus(): void;
   destroy(): void;
 };
+
+/** Durations read once from the stylesheet by `app.ts`, so the tokens stay the source. */
+export type WipeTimings = { duration: number; stagger: number; collapse: number };
 
 export type EditorOptions = {
   initial: string;
@@ -278,6 +300,62 @@ function decorate(view: EditorView): DecorationSet {
   }
   return builder.finish();
 }
+
+// ── The wipe, in this surface (#119) ─────────────────────────────────────────
+//
+// 🔴 A StateField rather than an addition to the ViewPlugin below. That plugin
+// recomputes from the document on every change, so a wipe mark placed in it would be
+// erased by the first keystroke or remote update that arrived mid-animation. CodeMirror
+// merges decoration sources, so the two coexist and this one survives until it is
+// cleared on purpose.
+//
+// Lines rather than ranges: the classes act on `.cm-line`, which is what has a height to
+// collapse. `--i` carries the stagger index so the CSS can use the same expression the
+// row list already uses, from the same tokens.
+
+type WipeMark = { lines: number[]; closing: boolean } | null;
+
+const setWipe = StateEffect.define<WipeMark>();
+
+const wipeField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+
+  update(current, tr) {
+    for (const effect of tr.effects) {
+      if (!effect.is(setWipe)) continue;
+      const mark = effect.value;
+      if (!mark) return Decoration.none;
+
+      const builder = new RangeSetBuilder<Decoration>();
+      // Sorted because RangeSetBuilder requires ascending positions, and the caller
+      // derives these from a parse that could in principle hand them over unordered.
+      const lines = [...mark.lines].sort((a, b) => a - b);
+
+      for (const [order, line] of lines.entries()) {
+        // 🔴 Guarded. A line number past the end throws inside `doc.line`, and these
+        // arrive from a parse of `body` which can be a repaint behind the document if a
+        // remote update landed between the tap and the dispatch.
+        if (line < 0 || line >= tr.state.doc.lines) continue;
+        const at = tr.state.doc.line(line + 1).from;
+        builder.add(
+          at,
+          at,
+          Decoration.line({
+            class: mark.closing ? "cm-wiping cm-closing" : "cm-wiping",
+            attributes: { style: `--i: ${order}` },
+          }),
+        );
+      }
+      return builder.finish();
+    }
+
+    // Mapped through document changes so a mark does not slide onto the wrong line if
+    // anything edits mid-animation. It is cleared explicitly, never by a doc change.
+    return current.map(tr.changes);
+  },
+
+  provide: (field) => EditorView.decorations.from(field),
+});
 
 const decorations = ViewPlugin.fromClass(
   class {
@@ -547,6 +625,7 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
         editable.of(editState(false)),
         history(),
         shorthandField,
+        wipeField,
         // 🔴 Before `standardKeymap`, which binds Enter and Backspace itself. A keymap
         // registered later loses; these have to see the key first and hand it back by
         // returning false when they have nothing to say.
@@ -618,6 +697,32 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
     setReadOnly(next: boolean): void {
       if (next === view.state.readOnly) return;
       view.dispatch({ effects: editable.reconfigure(editState(next)) });
+    },
+
+    animateWipe(lines: number[], timings: WipeTimings): Promise<void> {
+      if (lines.length === 0) return Promise.resolve();
+
+      view.dispatch({ effects: setWipe.of({ lines, closing: false }) });
+
+      return new Promise((resolve) => {
+        // Two stages, and the separation is the point — the lines go transparent in
+        // place holding their height, and only then does one collapse close the gap.
+        // Doing both at once makes the page jump under the thumb that just tapped.
+        setTimeout(
+          () => {
+            view.dispatch({ effects: setWipe.of({ lines, closing: true }) });
+            setTimeout(() => {
+              // 🔴 Cleared here rather than left for the repaint. `setBody` computes a
+              // *minimal* change, so a line that survives the wipe keeps its position —
+              // and would keep a stale `cm-wiping` class with it, rendering a line of
+              // the new document permanently invisible.
+              view.dispatch({ effects: setWipe.of(null) });
+              resolve();
+            }, timings.collapse);
+          },
+          timings.duration + (lines.length - 1) * timings.stagger,
+        );
+      });
     },
 
     focus: () => view.focus(),

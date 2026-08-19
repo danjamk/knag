@@ -1,7 +1,14 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { parse } from "../../worker/src/blocks.js";
-import { applyShorthand, mergeBackward, neighbor, revertShorthand, splitAt } from "../src/edit.js";
+import {
+  applyShorthand,
+  leavingLines,
+  mergeBackward,
+  neighbor,
+  revertShorthand,
+  splitAt,
+} from "../src/edit.js";
 import { displayText } from "../src/view.js";
 
 /**
@@ -393,6 +400,58 @@ describe("checkbox shorthand (spec §7, ADR-003 §4)", () => {
           (converted as { caret: number }).caret,
         );
         expect(reverted).toEqual({ text: typed, caret: ind.length + 3 });
+      }),
+      { numRuns: 1000 },
+    );
+  });
+});
+
+describe("leavingLines", () => {
+  it("takes the checked lines and leaves the rest", () => {
+    const body = ["Thursday", "- [ ] milk", "- [x] bread", "note"].join("\n");
+
+    expect(leavingLines(body, "completed")).toEqual([2]);
+  });
+
+  it("takes every line for a whole-page wipe, including the ones nobody finished", () => {
+    const body = ["Thursday", "- [ ] milk", "- [x] bread"].join("\n");
+
+    expect(leavingLines(body, "all")).toEqual([0, 1, 2]);
+  });
+
+  it("🔴 takes every line of a fence, not just the line the block starts on", () => {
+    // The whole reason this function exists. One block renders as one <li> in the row
+    // list, so block indices were interchangeable with lines there. A fence is one
+    // block and several lines, and animating by block index would fade the opening
+    // ``` and leave the body of the fence sitting there until the repaint.
+    const body = ["before", "```js", "const x = 1;", "```", "after"].join("\n");
+
+    expect(leavingLines(body, "all")).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("counts past a fence correctly, so later lines are not off by its height", () => {
+    const body = ["```js", "const x = 1;", "```", "- [x] done"].join("\n");
+
+    // The checked line is line 3, not line 1 — the fence advanced the counter by three.
+    expect(leavingLines(body, "completed")).toEqual([3]);
+  });
+
+  it("returns nothing when nothing is finished, rather than an empty animation", () => {
+    expect(leavingLines("- [ ] milk\nnote", "completed")).toEqual([]);
+  });
+
+  it("🔴 never names a line the document does not have", () => {
+    // A line number past the end is a crash in the surface that consumes this, and the
+    // arithmetic is the kind that goes wrong at a blank line or a trailing newline.
+    fc.assert(
+      fc.property(fc.string({ maxLength: 300 }), (body) => {
+        const height = body.split("\n").length;
+        for (const scope of ["completed", "all"] as const) {
+          for (const line of leavingLines(body, scope)) {
+            expect(line).toBeGreaterThanOrEqual(0);
+            expect(line).toBeLessThan(height);
+          }
+        }
       }),
       { numRuns: 1000 },
     );

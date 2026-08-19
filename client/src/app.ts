@@ -45,6 +45,7 @@ import { type EditorHandle, mountEditor } from "./editor.js";
 import {
   type EditResult,
   applyShorthand,
+  leavingLines,
   mergeBackward,
   neighbor,
   revertShorthand,
@@ -450,7 +451,13 @@ function autoGrow(area: HTMLTextAreaElement): void {
  */
 function refreshClearButton(): void {
   const completed = parse(body).filter(isCompleted).length;
-  clearButton?.toggleAttribute("hidden", completed === 0 || view !== "list");
+  // 🔴 `view === "raw"`, not `view !== "list"` (#119). Raw view is the escape hatch for a
+  // bulk paste and sweeping from it would act on a document being rewritten by hand — but
+  // the editing surface is an editing surface, and this condition predates it, so the
+  // control was simply absent there. The reorder button below was updated for #110 and
+  // this was missed, which is why the wipe appeared not to animate in the new surface:
+  // the only way to reach one was the whole-page control in Settings.
+  clearButton?.toggleAttribute("hidden", completed === 0 || view === "raw");
   // Only the count changes — rewriting the button's whole text would drop the label.
   if (clearCountEl) clearCountEl.textContent = String(completed);
 
@@ -1391,7 +1398,20 @@ function leavingRows(scope: WipeScope): number[] {
  * the server's answer is what lands, so the worst case is a row that faded and came
  * back, never a row that vanished from the page without leaving the document.
  */
-function animateWipe(indices: number[]): Promise<void> {
+function animateWipe(scope: WipeScope): Promise<void> {
+  const timings = {
+    duration: motionMs("--wipe-duration", 420),
+    stagger: motionMs("--wipe-stagger", 26),
+    collapse: motionMs("--wipe-collapse", 160),
+  };
+
+  // 🔴 The surface takes it when there is one, and it takes *lines* rather than block
+  // indices. One block is one <li> here, so the two were interchangeable — but a fence
+  // is one block and several lines, and animating by index there would fade the opening
+  // ``` and leave the rest of the fence until the repaint (#119).
+  if (surface) return surface.animateWipe(leavingLines(body, scope), timings);
+
+  const indices = leavingRows(scope);
   if (!rowsEl || indices.length === 0) return Promise.resolve();
 
   const leaving = indices
@@ -1399,9 +1419,7 @@ function animateWipe(indices: number[]): Promise<void> {
     .filter((el): el is HTMLElement => el !== null);
   if (leaving.length === 0) return Promise.resolve();
 
-  const duration = motionMs("--wipe-duration", 420);
-  const stagger = motionMs("--wipe-stagger", 26);
-  const collapse = motionMs("--wipe-collapse", 160);
+  const { duration, stagger, collapse } = timings;
 
   leaving.forEach((el, order) => {
     el.style.setProperty("--i", String(order));
@@ -1441,7 +1459,7 @@ async function requestWipe(scope: WipeScope): Promise<void> {
   // *inside* the 632ms the animation takes rather than after it. The rows are already
   // leaving by the time the server answers, which is what makes the tap feel immediate
   // on a phone.
-  const leaving = animateWipe(leavingRows(scope));
+  const leaving = animateWipe(scope);
 
   try {
     const res = await fetch("/api/doc/clear-completed", {
@@ -1494,11 +1512,16 @@ async function requestWipe(scope: WipeScope): Promise<void> {
     }
   } catch {
     setStatus("not wiped");
-    // 🔴 Put the faded rows back. Nothing was removed, and rows left mid-animation are
+    // 🔴 Put the faded lines back. Nothing was removed, and lines left mid-animation are
     // transparent and collapsed to zero height — so the failure would *look* exactly
-    // like the successful wipe it is telling you did not happen. A repaint rebuilds
-    // every <li> from `body`, which drops the animation classes with them.
-    paintRows();
+    // like the successful wipe it is telling you did not happen.
+    //
+    // Awaited first, and `paint` rather than `paintRows`: repainting while the sequence
+    // is still running restores the document and then lets the pending collapse land on
+    // it, so the page a failed wipe left alone would fold up anyway. Both surfaces clear
+    // themselves once it has finished.
+    await leaving;
+    paint();
   }
 }
 
