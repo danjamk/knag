@@ -117,60 +117,24 @@ probe() {
   return 0
 }
 
-# 🔴 Reap the workerd processes wrangler leaves behind (#107).
+# 🔴 The workerd count is a leak, and a red herring. Recorded so it is not
+# investigated a third time.
 #
-# This is the mechanism, found by the probe on its first CI run. Playwright stops the
-# `wrangler dev` it started, but wrangler's two `workerd` children survive it. The count
-# climbed by exactly two per spec file and never came down:
+# The probe showed it climbing by exactly two per spec file and never coming down —
+# 0, 2, 4, 6, 8, 10, 12, 14, 16, 18 — which looked like the mechanism. It is not.
+# Every one of them is **defunct**: `zombie=` tracks `workerd=` exactly at every step.
+# A zombie holds a PID table slot and nothing else, no CPU and no memory, and `kill -9`
+# cannot remove one — only its parent reaping it can, which is why two attempts at a
+# reaper here killed nothing at all.
 #
-#     0 → 2 → 4 → 6 → 8 → 10 → 12 → 14 → 16 → 18
+# Playwright stops the `wrangler dev` it started and wrangler's two workerd children
+# outlive it as zombies, because the CI container has no init that reaps. Untidy,
+# harmless, and not worth code. It does not happen on macOS, which is a large part of
+# why #107 never reproduced there — but it is not the reason the server dies.
 #
-# So `sync.spec.ts`, second-to-last, runs against a runner already carrying sixteen of
-# them. That is why the flake lands late in a run rather than in a particular file, and
-# it retires the confounding between identity and position that #107 described: position
-# is the variable. It is also why this never reproduced locally — macOS kills the
-# children with the parent, and the probe reads 0 after every file there.
-#
-# 🔴 The first attempt at this filtered on PPID 1, on the assumption that the
-# survivors are orphans. It reaped nothing: the counts in CI were identical with it in
-# place. That assumption was a guess about process parentage in a container rather than
-# a measurement, so the probe now prints each workerd's actual parent and this filters on
-# identity instead, which does not depend on the answer.
-#
-# Anything running before the suite started is left alone, so a `wrangler dev` in another
-# terminal survives. Everything else matching workerd was started by this script and has
-# already had its spec file finished by Playwright.
-BASELINE_WORKERD=""
-
-workerd_pids() {
-  ps -eo pid=,comm= 2>/dev/null | awk '$2 ~ /workerd/ { print $1 }'
-}
-
-reap_orphans() {
-  local pid stale=""
-
-  for pid in $(workerd_pids); do
-    case " ${BASELINE_WORKERD} " in
-      *" ${pid} "*) continue ;;
-    esac
-    stale="${stale} ${pid}"
-  done
-
-  [ -z "$stale" ] && return 0
-
-  # shellcheck disable=SC2086
-  kill $stale 2>/dev/null || true
-  sleep 1
-
-  local survivors=""
-  for pid in $stale; do
-    kill -0 "$pid" 2>/dev/null && survivors="${survivors} ${pid}"
-  done
-  if [ -n "$survivors" ]; then
-    # shellcheck disable=SC2086
-    kill -9 $survivors 2>/dev/null || true
-  fi
-}
+# What the probe ruled out along with it: a retained port (`port=free` after every
+# file, red runs included), memory exhaustion (flat at ~14GB throughout), and the
+# trace store (7MB in CI against the 66MB that broke a local run).
 
 shopt -s nullglob
 SPECS=(browser/*.spec.ts)
@@ -201,7 +165,6 @@ fi
 echo "Running ${#SPECS[@]} spec file(s), each against its own dev server."
 echo ""
 
-BASELINE_WORKERD=$(workerd_pids | tr '\n' ' ')
 probe "baseline"
 
 for spec in "${SPECS[@]}"; do
@@ -226,7 +189,6 @@ for spec in "${SPECS[@]}"; do
   fi
   rm -f "$log"
 
-  reap_orphans
   probe "after ${spec}"
   echo ""
 done
