@@ -157,6 +157,41 @@ export class Knag {
     });
   }
 
+  /**
+   * Switch to the CodeMirror surface the way a person does — through Settings.
+   *
+   * 🔴 Not by writing localStorage and reloading. The preference and the mount are two
+   * different things and a test that sets the former proves nothing about the latter;
+   * the switch itself is a code path (`paint`) that has to destroy one surface and build
+   * another without losing the document.
+   */
+  async useEditor(): Promise<void> {
+    await this.page.locator("[data-settings-open]").click();
+    await this.page.locator('[data-view-set="editor"]').click();
+    await this.page.keyboard.press("Escape");
+    await expect(this.surface()).toBeVisible();
+  }
+
+  /** The contenteditable CodeMirror owns. */
+  surface() {
+    return this.page.locator("[data-surface] .cm-content");
+  }
+
+  /** Every checkbox control drawn over the bytes. */
+  boxes() {
+    return this.page.locator("[data-surface] input.cm-box");
+  }
+
+  /** What the browser reports as selected — the only honest answer to "does it span". */
+  async selection(): Promise<string> {
+    // Structurally typed: this tsconfig has no DOM lib on purpose, and adding one to
+    // reach `getSelection` would put `document` in scope for every test file.
+    return this.page.evaluate(() => {
+      const host = globalThis as { getSelection?: () => { toString(): string } | null };
+      return host.getSelection?.()?.toString() ?? "";
+    });
+  }
+
   /** The post-wipe recovery line, as one string: `wiped 3 · bring back`. */
   recovery() {
     return this.page.locator("[data-recovery]");

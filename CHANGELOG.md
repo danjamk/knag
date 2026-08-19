@@ -15,6 +15,30 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- **Select and copy across lines, the way you can everywhere else**
+  ([#110](https://github.com/danjamk/knag/issues/110)). Settings → View → **editor** is a
+  new editing surface: one document rather than one text field per row, so dragging
+  across four lines selects four lines, and copy, cut and delete act on the selection.
+
+  Checkboxes are still real controls, still tappable while the keyboard is up, and
+  toggling one still rewrites exactly the character between the brackets. Indentation is
+  now literal document text rather than a CSS property derived from bytes the field never
+  showed — which is *more* byte-true than the row list, not less. **Arrange is unchanged**
+  and works from either surface: it renders its own rows, and a trip through it without
+  dragging returns the document byte for byte.
+
+  **It sits beside the row list rather than replacing it**, and that is temporary. Every
+  defect this project has shipped was found by a person on a phone rather than by the
+  suite, so the replacement gets used against the real page before the row list is
+  deleted. Switch back in the same place if it misbehaves.
+
+  What this costs: **the client goes from 21.6 KB to 107 KB gzipped.** That is the largest
+  dependency knag has taken, against a stated preference for the boring tool — and the
+  argument for it is that text editing on iOS Safari is the one domain here where
+  hand-rolling *is* the exotic choice. Undo, composition, dictation and paste are the
+  things a maintained editor library has already fixed, and all four were verified on a
+  real iPhone before this was started.
+
 - **Line endings can now survive an editor that does not believe in them**
   ([#110](https://github.com/danjamk/knag/issues/110)). `client/src/eol.ts` splits a
   document into LF-only text plus the set of lines whose break was CRLF, maps that set
