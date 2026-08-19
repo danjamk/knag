@@ -203,6 +203,27 @@ const VIEWS: readonly ViewMode[] = ["list", "editor", "raw"];
 /** UI state, not document state — per device, never synced (spec §8). */
 export const VIEW_KEY = "knag.view";
 
+/**
+ * Reading size, in px, as a per-device preference (#92).
+ *
+ * 🔴 **Steps, and they start at 16.** 16px is a hard floor on anything editable: below it
+ * iOS Safari zooms the viewport when a field takes focus and never zooms back. So this
+ * scales *up* and cannot offer smaller — anyone wanting smaller text wants a smaller
+ * device. Steps rather than a slider because a slider is a decision where a preference
+ * will do.
+ *
+ * It moves `--size-row` only. The machine voice and every control hold at
+ * `--size-control`, because someone raising this wants more room for the page, not a
+ * louder footer.
+ */
+export type FontSize = 16 | 18 | 20;
+
+/** Everything a stored preference is allowed to be. Anything else falls back to 16. */
+const FONT_SIZES: readonly FontSize[] = [16, 18, 20];
+
+/** UI state, not document state — per device, never synced (spec §8). */
+export const FONT_SIZE_KEY = "knag.fontSize";
+
 /** Just enough of `Storage` to read and write one key. */
 export type KeyValueStore = Pick<Storage, "getItem" | "setItem">;
 
@@ -305,4 +326,31 @@ export const BOARD_WHITEBOARD = "#EDF1F3";
 export function themeColor(theme: Theme, systemPrefersDark: boolean): string {
   const slate = theme === "slate" || (theme === "system" && systemPrefersDark);
   return slate ? BOARD_SLATE : BOARD_WHITEBOARD;
+}
+
+
+/**
+ * The saved reading size, defaulting to the 16px floor.
+ *
+ * Validated against the list rather than parsed and trusted: a number from a newer build,
+ * or anything at all from a corrupted value, must not become a `--size-row` below the
+ * floor. Same `try`/`catch` as `readView` — Safari **throws** rather than returning null
+ * when storage is blocked, and this runs during boot.
+ */
+export function readFontSize(storage: KeyValueStore | undefined): FontSize {
+  try {
+    const stored = Number(storage?.getItem(FONT_SIZE_KEY));
+    return FONT_SIZES.find((size) => size === stored) ?? 16;
+  } catch {
+    return 16;
+  }
+}
+
+/** Best effort. A preference that cannot be saved is not worth failing an app over. */
+export function writeFontSize(storage: KeyValueStore | undefined, size: FontSize): void {
+  try {
+    storage?.setItem(FONT_SIZE_KEY, String(size));
+  } catch {
+    // Ignored, deliberately. See readFontSize.
+  }
 }

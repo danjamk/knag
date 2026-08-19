@@ -4,17 +4,20 @@ import { type Block, parse, serialize, setText, toggle } from "../../worker/src/
 import {
   BOARD_SLATE,
   BOARD_WHITEBOARD,
+  FONT_SIZE_KEY,
   THEME_KEY,
   VIEW_KEY,
   linkify,
   move,
   nextTheme,
+  readFontSize,
   readTheme,
   readView,
   removeAt,
   removeMany,
   rows,
   themeColor,
+  writeFontSize,
   writeTheme,
   writeView,
 } from "../src/view.js";
@@ -563,5 +566,69 @@ describe("theme (spec §9)", () => {
     // above it does not match.
     expect(BOARD_SLATE.toLowerCase()).toBe("#11150f");
     expect(BOARD_WHITEBOARD.toLowerCase()).toBe("#edf1f3");
+  });
+});
+
+describe("readFontSize", () => {
+  const store = (value: string | null) => ({ getItem: () => value, setItem: () => {} });
+
+  it("defaults to the 16px floor when nothing is stored", () => {
+    expect(readFontSize(store(null))).toBe(16);
+    expect(readFontSize(undefined)).toBe(16);
+  });
+
+  it("returns a stored step", () => {
+    expect(readFontSize(store("18"))).toBe(18);
+    expect(readFontSize(store("20"))).toBe(20);
+  });
+
+  it("🔴 never returns a size below the floor, whatever is stored", () => {
+    // The floor is not cosmetic: below 16px iOS Safari zooms the viewport when a field
+    // takes focus and never zooms back. A value written by a newer build, or a corrupted
+    // one, must not be able to produce that — so this validates against the list rather
+    // than parsing and trusting.
+    for (const bad of ["12", "15", "0", "-20", "15.9"]) {
+      expect(readFontSize(store(bad))).toBe(16);
+    }
+  });
+
+  it("rejects anything that is not one of the steps", () => {
+    for (const bad of ["", "large", "17", "24", "999", "NaN", "[]"]) {
+      expect(readFontSize(store(bad))).toBe(16);
+    }
+  });
+
+  it("🔴 survives storage throwing, because Safari throws rather than returning null", () => {
+    // Private browsing, or a home-screen PWA whose storage has been evicted. This runs
+    // during boot, so an uncaught throw is a blank screen rather than a lost preference.
+    const hostile = {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => {},
+    };
+    expect(readFontSize(hostile)).toBe(16);
+  });
+});
+
+describe("writeFontSize", () => {
+  it("stores the size as a string", () => {
+    const written: Record<string, string> = {};
+    writeFontSize({ getItem: () => null, setItem: (k, v) => void (written[k] = v) }, 18);
+    expect(written[FONT_SIZE_KEY]).toBe("18");
+  });
+
+  it("swallows a storage failure rather than taking the app down", () => {
+    expect(() =>
+      writeFontSize(
+        {
+          getItem: () => null,
+          setItem: () => {
+            throw new Error("QuotaExceededError");
+          },
+        },
+        20,
+      ),
+    ).not.toThrow();
   });
 });
