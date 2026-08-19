@@ -15,6 +15,20 @@ Two things a newcomer gets wrong:
   no build step. The reason is `worker/src/blocks.ts` — the block parser, needed
   by the Worker for clear-completed and by the client for rendering. It exists
   once. Do not add a second parser; do not inline a "quick" version anywhere.
+- **The editing surface is CodeMirror and `app.ts` does not know that.** Everything
+  is behind `EditorHandle` in `client/src/editor.ts`, which speaks only in document
+  bytes ([ADR-007](docs/adr/ADR-007-one-editing-surface.md)). The row model leaked
+  into `app.ts` through `editorIn`, `focusRow`, `captureCaret` and four arrow-key
+  branches, and that leak is why replacing it was a project rather than a change.
+  **No CodeMirror import belongs outside `editor.ts`.**
+- **CodeMirror never sees a `\r`.** `client/src/eol.ts` splits the document into
+  LF-only text plus the CRLF line set and rejoins on the way out, because a lone
+  carriage return inside the editor is a character the caret can sit past — which
+  strands it mid-line, renders perfectly, and corrupts on save.
+- **Two editing surfaces exist during the transition** — the row list and the
+  CodeMirror one — and they must never be live at once. Arrange **destroys** the
+  editor rather than hiding it; hidden is not the same as not editing. The row list
+  goes once the replacement has survived real use.
 - **`assets.run_worker_first` in `worker/wrangler.jsonc` lists the only paths
   that reach the Worker.** Everything else is static. A new route needs adding in
   both places, and forgetting the config half produces a 404 that looks like a

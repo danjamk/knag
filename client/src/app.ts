@@ -596,7 +596,8 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   li.append(input);
 
   // 🔴 A link affordance rather than an inline anchor. An <input> cannot contain
-  // one, and the alternatives are contenteditable (rejected by ADR-003) or swapping
+  // one, and the alternatives are contenteditable (which the row model does not use —
+  // the editing surface does, per ADR-007) or swapping
   // the element on focus (the tap-to-activate step this issue removes). So a row
   // holding a URL gets a button that opens it, and the URL stays editable text.
   const [first] = linkify(row.text).filter((segment) => segment.link);

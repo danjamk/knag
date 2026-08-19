@@ -83,6 +83,17 @@ render styled ranges at all. It would mean `contenteditable` for unfocused rows 
 which ADR-003 rejected for the whole document and would be reintroducing at
 smaller scale.
 
+> 🔴 **That cost argument expired with [ADR-007](ADR-007-one-editing-surface.md), and
+> the decision above did not.** The editing surface is now one CodeMirror document, and
+> focus-dependent rendering over ranges is exactly what its decorations do — the
+> machinery this paragraph called prohibitive is already in the bundle.
+>
+> Nothing about that makes rendered markdown a better idea. **This ADR's reasons were
+> never about cost.** They are the agent contract (an agent editing a line has to model
+> the transform to predict the result), the parser staying small, and knag being a bad
+> Bear on purpose. Read "it would be cheap now" as an argument and you have answered a
+> question this document never asked.
+
 ## Consequences
 
 **The feature request is answered, and mostly already delivered.** Indentation
