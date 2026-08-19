@@ -18,8 +18,16 @@ clears, promote the next one.** Nothing else decides what to pick up.
 This replaces the MVP plan's `#2 → #3 → #4 → #8`, which was true until it was
 not and stayed written down for a while afterwards.
 
-**Phase 0 is in progress.** #107 shipped instrumentation and eliminated four
-hypotheses without closing; #74 is next and may close #107 outright — see below.
+**Where it stands, 2026-08-19.** Phases 1, 3 and half of 2 and 4 have shipped —
+0.9.0 through 0.11.0. What is left in 1.0 is **#114** (a device test, not a
+branch), **#113** and **#115** (both waiting on the editor being the daily surface
+for a couple of weeks — their own issues say so), and **#120 · #121 · #90**, which
+share one design-session request.
+
+🔴 **#107 is open and #74 did not close it.** The instrumentation eliminated four
+hypotheses; the third occurrence, on 2026-08-19, moved the finding from *identity*
+to **position** — failures land in the last or second-to-last spec file whichever
+file that happens to be.
 
 ---
 
@@ -61,9 +69,33 @@ issue.
 
 ---
 
+## The release shape
+
+Set 2026-08-19. The version numbers are meant to say something:
+
+| | What it is | Phases |
+|---|---|---|
+| **1.0** | **One page, finished.** Everything the single-document product should be | 0–5 |
+| **1.1** | A handful of pages | 6–7 |
+| **1.2** | Multi-user | 8 |
+
+**1.0 is "as far as we can go on one document"**, not "feature complete" and not a
+promise about quality — it is the point at which adding anything more means adding a
+second document, which is a different product shape.
+
+🔴 **This resolves a tension, and the resolution is worth stating.** Finding 1 above says
+#91 should come *after* #123 or it gets designed twice, since recovery and history acquire
+a per-page dimension. That would pull #91 out of 1.0. It does: **#91 ships in 1.1, not
+1.0.** The one-tap bring-back already works and history is already readable through the
+agent — what #91 revisits is the *screen*, and a screen designed for one page and then
+redesigned for several is exactly the waste finding 1 warns about.
+
+So 1.0 does not mean every open issue is closed. It means the single-document product is
+done, which is a claim about shape rather than about a count.
+
 ## The phases
 
-### Phase 0 · Clear the runway — #107, #74
+### Phase 0 · Clear the runway — #107, ~~#74~~ · *mostly done*
 
 Test infrastructure, no product change, no release.
 
@@ -95,7 +127,7 @@ seven days of *not* touching the phone. It has been deferred since 2026-08-15
 and should be running in the background underneath every phase here, not
 scheduled into one.
 
-### Phase 1 · Sessions you can revoke — #125
+### Phase 1 · Sessions you can revoke — ~~#125~~ · ✅ **done, 0.9.0**
 
 **The only security item on the board, and it has no workaround.** `SESSION_TTL_SECONDS`
 is a year on purpose — re-auth is what kills daily use
@@ -122,7 +154,7 @@ this is one person's todo list, not a breach:
 It also resolves the open question in #92 — log out is not part of About, it is this — so
 #92 keeps its later slot with the rest of the Settings work rather than moving up.
 
-### Phase 2 · Earn the editor, then delete the row list — #119, #114, #113
+### Phase 2 · Earn the editor, then delete the row list — ~~#119~~, #114, #113
 
 🔴 **#113 is the hinge of the roadmap.** Two editing surfaces exist during the
 transition ([ADR-007](adr/ADR-007-one-editing-surface.md) §7), and every UI item
@@ -140,41 +172,56 @@ list are exactly two:
 Three PRs. #113 alone, because a ~400-line deletion deserves to be reviewable by
 itself. Natural **0.9.0**.
 
-### Phase 3 · Copy, settled — #115 + #118, one branch
+### Phase 3 · Copy, settled — #115, ~~#118~~
 
-#118 cannot ship without #115's answer, because the button has to put *something*
-on the clipboard. Shipping a third copy path while the existing two disagree is
-how you end up with three that disagree.
+🔴 **Corrected 2026-08-19: #118 did not depend on #115, and shipped alone in
+0.10.0.** This phase originally said the two were one branch because "the button
+has to put *something* on the clipboard". That reasoning does not survive #118's
+own issue, which says a whole-page copy is *"the only one with no room for
+interpretation: it carries the page, markers and all"* — the answer is forced by
+round-tripping, not by #115.
 
-Cheaper after Phase 2: two paths left (Arrange, editor) rather than three.
+**#115 is parked, and not because it is hard.** Its own first task says
+*"use both for a week and notice whether it ever bites — do not decide from the
+armchair."* The editing surface shipped 2026-08-18. There is nothing to build
+that answers a question about how a gesture feels; what #115 gained from 0.10.0
+is that there are now three paths to rule on and the third is already decided.
 
-### Phase 4 · The wipe, made good — #120, #92, #121
+### Phase 4 · The wipe and Settings — #120, ~~#92~~, #121
 
 **Open this phase with one request to the design session**, covering wipe motion,
 wipe sound, where #120's control goes, and #90's landing-page brief — which is
 written and already waiting. One session, four answers. Design decisions come
 from there and not from here; motion is named explicitly in `CLAUDE.md`.
 
-#120 and #92 both edit the Settings dialog — #120 removes its `Page` section —
-so they pair. #121 lands after #113 so the animation is written once, against one
-surface.
+#120 and #92 both edit the Settings dialog — #120 removes its `Page` section — so
+they paired. **#92 shipped in 0.11.0**, taking the footer's touch target from 28px
+to the 44px HIG minimum along the way, and filing **#132** for the Settings
+redesign once the sheet stops changing shape. #121 is unblocked by #119 and lands
+after #113 so the animation is written once, against one surface.
 
-### Phase 5 · Show it — #90
+### Phase 5 · Show it — #90 · **ships 1.0**
 
 After #121, so the landing page has the good wipe to demonstrate. That is #121's
-own argument for existing. Plausible **1.0**: a landing page is the point at
-which this is a thing you show people.
+own argument for existing.
 
-### Phase 6 · A handful of pages — #123
+**This is 1.0.** A landing page is the point at which this stops being a thing you
+use and becomes a thing you show people, and it is the last item that belongs to
+the single-document product.
+
+### Phase 6 · A handful of pages — #123 · **ships 1.1**
 
 Ships independently of auth; §17 is explicit that it "can ship long before
 tenancy does". Before #91, per finding 1.
 
-### Phase 7 · Recovery and history — #91
+### Phase 7 · Recovery and history — #91 · **ships 1.1**
 
-Designed per-page, once.
+Designed per-page, **once** — which is why it sits here rather than in 1.0. See
+the release shape above: the bring-back and the agent-readable history already
+work, so what this revisits is the screen, and a screen designed for one page and
+then redesigned for several is the waste finding 1 exists to avoid.
 
-### Phase 8 · Multi-user — #122
+### Phase 8 · Multi-user — #122 · **ships 1.2**
 
 Last, deliberately — and the reason is not difficulty. The spike is reading and
 measuring, and it can float earlier in any week that wants a break from
