@@ -20,6 +20,7 @@ import {
   deleteSession,
   deleteSessionByToken,
   listLiveSessions,
+  oldestRevisionAt,
   readDocument,
   wipe,
   writeDocument,
@@ -102,6 +103,28 @@ const router = {
         );
       }
       return getHistory(url, env);
+    }
+
+    // 🔴 Behind auth, and that is the whole reason it is not on `/health`. The build
+    // line it feeds is one glance — version, environment, and how far back the record
+    // goes — but only the first two are facts about the deployment. The third is a fact
+    // about the document, and `/health` answers to anybody.
+    //
+    // Its own route rather than a field on `/api/doc`, which is polled every few
+    // seconds: this is read once, when the sheet opens.
+    if (url.pathname === "/api/carbon") {
+      const principal = await authenticate(request, env);
+      if (!principal) return unauthorized();
+
+      if (request.method !== "GET") {
+        return Response.json(
+          { error: "Method not allowed" },
+          { status: 405, headers: { Allow: "GET" } },
+        );
+      }
+
+      const since = await oldestRevisionAt(env);
+      return Response.json({ since });
     }
 
     if (url.pathname === "/api/doc") {

@@ -62,7 +62,12 @@ let elsewhere = 0;
 
 /** Open Settings and wait for the device list to have resolved past its placeholder. */
 async function openDevices(knag: Knag) {
+  // 🔴 Two steps now, and the second one is the feature (#132). The list left the sheet
+  // for a screen because a modal cannot hold something whose length nobody controls —
+  // it renders fine at two rows and *is* the sheet at fifteen.
   await knag.openSettings();
+  await knag.page.locator("[data-devices-open]").click();
+  await expect(knag.page.locator("[data-devices-screen]")).toBeVisible();
   const list = knag.page.locator("[data-sessions]");
   await expect(list.locator("li")).not.toHaveText(["…"]);
   return list;
@@ -123,7 +128,10 @@ test.describe("the device list", () => {
     await knag.seed(PAGE);
 
     await openDevices(knag);
-    await knag.page.locator("[data-settings] .done").click();
+    // Back to the sheet, then out. A screen is a place you come back *from*, and the
+    // route out of the product goes through where you came in.
+    await knag.page.locator("[data-devices-back]").click();
+    await knag.page.locator("[data-settings] .sheet-close").click();
 
     // A second device appears while the sheet is closed. Nothing in the page knows.
     const other = await loginElsewhere(baseURL ?? "", "ipad");
@@ -151,13 +159,17 @@ test.describe("the device list", () => {
 
     await expect(list).not.toContainText(other);
     // Still logged in, still holding the document — the row that went was not this one.
-    await knag.page.locator("[data-settings] .done").click();
+    await knag.page.locator("[data-devices-back]").click();
+    await knag.page.locator("[data-settings] .sheet-close").click();
     expect(await knag.document()).toBe(PAGE);
   });
 
   test("🔴 log out ends the session and lands on the login form", async ({ knag }) => {
     await knag.seed(PAGE);
-    await openDevices(knag);
+
+    // 🔴 In the sheet, not on the screen. `log out` acts on *this* device, so it sits
+    // next to the identity it ends rather than in the list of the others (#132, §7e).
+    await knag.openSettings();
 
     await knag.page.locator("[data-logout]").click();
 
