@@ -13,6 +13,72 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-08-20
+
+One page, one editing surface. The row list is gone.
+
+**1.0 is a claim about shape, not a count of closed issues.** It means the
+single-document product is done — the point at which adding anything more means adding a
+second document, which is a different product. It was held back from the landing page
+release for one reason: the shape still had two editing surfaces in it.
+
+### Removed
+
+- **The row list**, and everything that existed to make a *row boundary* behave like a
+  *line boundary*: `client/src/caret.ts` in full, the four arrow-key branches, `neighbor`,
+  `splitAt`, `mergeBackward`, `editorIn`, `focusRow`, `captureCaret`, `syncFromRow`, the
+  per-row `<textarea>` rendering, and the `list` view option.
+
+  🔴 On one document those *are* line boundaries and the platform owns them. #84 and #88
+  were both bugs in the arrow code; neither has an equivalent now.
+
+  It shipped in 0.8.0 *beside* the CodeMirror surface rather than instead of it, because
+  every defect this project has shipped was found by a person on a phone rather than by
+  the suite — so the replacement was used against the real page for two weeks first. That
+  was the precondition ADR-007 set for itself, and it was met the way it intended: by the
+  operator saying the editor had stopped feeling like the new thing.
+
+- **The per-row offline exemption.** Offline used to keep editable exactly the row you
+  were mid-sentence in and freeze the rest — an affordance only a list of separate fields
+  can offer. One contenteditable has no per-row anything, so offline freezes all of it,
+  which is what the editing surface has done since it shipped. `rowIsEditable` and
+  `EditableState` went with it.
+
+  What that rule protected is unchanged: the dirty guard still holds unsaved keystrokes,
+  the count is still visible rather than hidden behind one word, and on reconnect the
+  pending save is still an ordinary versioned write rather than a queue (spec §12).
+
+- **`browser/arrows.spec.ts` and `browser/editing.spec.ts`**, whose subjects no longer
+  exist. 🔴 Two tests from the second were **ported rather than deleted** — neither was
+  ever about rows, both are about the save and poll cycle under fast input, and that cycle
+  is unchanged. Deleting a file wholesale is how coverage is lost by accident.
+
+### Changed
+
+- **The editing surface is the default and the only one.** A device still holding
+  `knag.view: "list"` resolves to it silently — the value is simply not in the allowed
+  list any more, so the existing validation does the migration and no code was written
+  for it.
+- **`[data-rows]` holds only Arrange now**, which builds its own rows from the block
+  array and never shares an element with the surface. That separation is what kept the
+  sort mode when the editing surface replaced the rows (ADR-007 §4).
+- **`splitLine` is tested directly** for the first time. It was only ever covered
+  *through* `splitAt`, the row-model adapter over it — so this deletion would have
+  silently left the one function the surface calls on every Enter with no tests at all.
+
+### Fixed
+
+- **A remote update no longer loses focus in raw view.** The caret restoration path
+  queried `[data-rows]`, found nothing there, and concluded focus had been lost while the
+  textarea still had it. It went with the row list.
+
+**The bundle is 6.4kb smaller** — 327.2kb to 320.8kb minified, from 1,726 deleted lines
+against 505 added. #113 guessed this would "claw back some of the +85 KB" and it claws
+back less: CodeMirror *is* the +85 KB, and it stays. What came back was the row model
+wrapped around it.
+
+Closes #113.
+
 ## [0.16.0] — 2026-08-20
 
 knag has a landing page.
@@ -1178,7 +1244,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/danjamk/knag/compare/v0.16.0...v1.0.0
 [0.16.0]: https://github.com/danjamk/knag/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/danjamk/knag/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/danjamk/knag/compare/v0.13.0...v0.14.0

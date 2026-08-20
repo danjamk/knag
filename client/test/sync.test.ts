@@ -10,7 +10,6 @@ import {
   dispositionFor,
   initialConnectivity,
   pollInterval,
-  rowIsEditable,
 } from "../src/sync.js";
 
 /**
@@ -169,26 +168,15 @@ describe("what counts as offline", () => {
   });
 });
 
-describe("which rows accept input while offline", () => {
-  it("keeps every row editable while online", () => {
-    expect(rowIsEditable(3, { connectivity: "online", typingInto: null })).toBe(true);
-  });
-
-  it("🔴 lets the row already being typed into finish", () => {
-    // Freezing mid-keystroke eats the rest of the sentence someone was writing — lost
-    // text they already typed, which is the failure this feature exists to prevent
-    // arriving as the cure.
-    expect(rowIsEditable(2, { connectivity: "offline", typingInto: 2 })).toBe(true);
-  });
-
-  it("refuses every other row", () => {
-    expect(rowIsEditable(1, { connectivity: "offline", typingInto: 2 })).toBe(false);
-  });
-
-  it("refuses all of them when nothing was being typed into", () => {
-    expect(rowIsEditable(0, { connectivity: "offline", typingInto: null })).toBe(false);
-  });
-});
+// 🔴 The "which rows accept input while offline" suite was deleted with the row list
+// (#113). It pinned `rowIsEditable`, whose whole subject was a *per-row* exemption —
+// offline freezes every row except the one already being typed into — and that is only
+// expressible with a list of separate fields. One document in one contenteditable has no
+// per-row anything, so offline now freezes the whole surface and there is no row argument
+// left to test.
+//
+// What the deleted rule protected is still covered below and in `browser/offline.spec.ts`:
+// the window stays visible, and nothing is replayed against a document that has moved on.
 
 describe("what the footer says", () => {
   it("says nothing while online, leaving the save status alone", () => {

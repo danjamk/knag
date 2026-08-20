@@ -22,35 +22,23 @@ import {
   isCompleted,
   parse,
   serialize,
-  setText,
   toggle,
 } from "../../worker/src/blocks.js";
-import { caretX, offsetNearestX, visualEdge } from "./caret.js";
 import { safeNext } from "./nav.js";
 import { offerExpiresAt, restoredBody } from "./restore.js";
 import {
   type Connectivity,
-  type EditableState,
   RECONNECT_PROBE_MS,
   connectivityAfter,
   connectivityStatus,
   dispositionFor,
   initialConnectivity,
   pollInterval,
-  rowIsEditable,
 } from "./sync.js";
 import Sortable from "sortablejs";
 import { GLYPH, glyph } from "./glyphs.js";
 import { type EditorHandle, mountEditor } from "./editor.js";
-import {
-  type EditResult,
-  applyShorthand,
-  leavingLines,
-  mergeBackward,
-  neighbor,
-  revertShorthand,
-  splitAt,
-} from "./edit.js";
+import { leavingLines } from "./edit.js";
 import {
   type FontSize,
   type Theme,
@@ -116,7 +104,7 @@ type WipeScope = "completed" | "all";
  * two would drift and a view switch would save whichever one happened to be stale.
  */
 let body = "";
-let view: ViewMode = "list";
+let view: ViewMode = "editor";
 
 /**
  * Typing or rearranging. **Never persisted** — unlike the view preference, this is
@@ -186,17 +174,7 @@ let pendingRemote: Doc | null = null;
 
 let connectivity: Connectivity = initialConnectivity(navigator.onLine);
 
-/**
- * The row that had focus when the network went away, so it can finish the sentence it
- * was mid-way through. Cleared on reconnect, and on blur.
- */
-let typingInto: number | null = null;
-
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-
-function editableState(): EditableState {
-  return { connectivity, typingInto };
-}
 
 /**
  * The last status the app wanted to show, so it can be put back on reconnect rather
@@ -246,14 +224,14 @@ function noteConnectivity(responded: boolean): void {
   connectivity = next;
 
   if (next === "offline") {
-    // Whatever row is being typed into keeps working; everything else freezes. Read
-    // from the DOM rather than tracked separately, so it is the truth at the moment
-    // the drop was noticed rather than a stale guess.
-    typingInto = focusedRowIndex();
+    // 🔴 The per-row exemption went with the row list (#113). Offline used to keep
+    // editable exactly the row you were mid-sentence in and freeze the rest — an
+    // affordance only a list of separate fields can offer. One surface cannot make that
+    // distinction, so offline freezes all of it, which is what `paint` has done for the
+    // editing surface since it shipped.
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(() => void probeConnection(), RECONNECT_PROBE_MS);
   } else {
-    typingInto = null;
     clearTimeout(reconnectTimer);
     // Back to a live page with no reload: repaint so rows become editable again, and
     // pick the poll back up from wherever the tier logic says.
@@ -283,14 +261,6 @@ async function probeConnection(): Promise<void> {
   } catch {
     reconnectTimer = setTimeout(() => void probeConnection(), RECONNECT_PROBE_MS);
   }
-}
-
-/** The `data-index` of the row holding focus, or null. */
-function focusedRowIndex(): number | null {
-  const active = document.activeElement;
-  if (!(active instanceof HTMLElement)) return null;
-  const li = active.closest<HTMLElement>("li[data-index]");
-  return li ? Number(li.dataset.index) : null;
 }
 
 function showEditor(authed: boolean): void {
@@ -384,8 +354,12 @@ function paint(): void {
   // reason the editor replacement does not cost the sort mode: the two renderings never
   // share an element, each builds itself from the document string and hands one back
   // (#110). In Arrange the editor is destroyed, not hidden.
+  // 🔴 Arrange is now the *only* thing the row list renders (#113). The list view is
+  // gone; what survives is a separate mode that builds rows from the block array, and
+  // ADR-007 §4 is explicit that this is what saved the sort mode when the surface
+  // replaced the editing rows. The two renderings never share an element.
   const arranging = reordering && view !== "raw";
-  const rowsVisible = arranging || view === "list";
+  const rowsVisible = arranging;
 
   editor?.toggleAttribute("hidden", view !== "raw");
   rowsEl?.toggleAttribute("hidden", !rowsVisible);
@@ -402,10 +376,10 @@ function paint(): void {
     rowsEl?.replaceChildren();
     mountSurface();
     surface?.setBody(body);
-    // 🔴 Not `rowIsEditable`. Offline, the row model keeps editable exactly the row you
-    // were mid-sentence in and freezes the rest; one surface cannot make that
-    // distinction, so offline freezes all of it. `readOnly`, never `disabled` — the page
-    // stays readable, scrollable and copyable while it refuses edits (spec §9).
+    // 🔴 `readOnly`, never `disabled` — the page stays readable, scrollable and
+    // copyable while it refuses edits (spec §9). Offline freezes all of it: the row
+    // model's per-row exemption went with the row list (#113), because only a list of
+    // separate fields could keep one of them live.
     surface?.setReadOnly(connectivity !== "online");
     refreshClearButton();
     return;
@@ -480,11 +454,6 @@ function refreshClearButton(): void {
   clearButton?.toggleAttribute("hidden", completed === 0 || view === "raw");
   // Only the count changes — rewriting the button's whole text would drop the label.
   if (clearCountEl) clearCountEl.textContent = String(completed);
-
-  // The empty page says nothing at all: no hint, no illustration, no "add your first
-  // item". A blank board is the feature, and the only thing on it is the cursor —
-  // which is drawn by CSS off this attribute, and goes the moment the row takes focus.
-  rowsEl?.toggleAttribute("data-empty", body === "" && view === "list");
 
   // The whole-page control carries its own count and sits behind a dialog that may
   // already be open while the page changes underneath it.
@@ -584,7 +553,7 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
     area.spellcheck = false;
     area.autocapitalize = "off";
     area.setAttribute("autocorrect", "off");
-    area.readOnly = !rowIsEditable(row.index, editableState());
+    area.readOnly = connectivity !== "online";
     li.append(area);
     if (reordering) li.append(copyElement(row.text), removeElement(row.index));
     return li;
@@ -597,7 +566,7 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
     box.checked = row.checked === true;
     // Ticking a box is an edit like any other, so it is refused offline too — and
     // `disabled` rather than `readOnly`, which a checkbox does not honour.
-    box.disabled = !rowIsEditable(row.index, editableState());
+    box.disabled = connectivity !== "online";
     // Checked items stay where they are. No auto-sink (spec §7).
     li.append(box);
   }
@@ -622,7 +591,7 @@ function rowElement(row: ReturnType<typeof rows>[number]): HTMLLIElement {
   // 🔴 `readOnly`, not `disabled`. A disabled textarea cannot be focused, scrolled or
   // selected — so going offline would make the document unreadable as well as
   // uneditable, and you could not even copy a line out of it to somewhere that works.
-  input.readOnly = !rowIsEditable(row.index, editableState());
+  input.readOnly = connectivity !== "online";
   li.append(input);
 
   // 🔴 A link affordance rather than an inline anchor. An <input> cannot contain
@@ -658,75 +627,9 @@ function openElement(url: string): HTMLAnchorElement {
   return anchor;
 }
 
-/** The editor element inside a row — the text input, or a fence's textarea. */
-function editorIn(index: number): HTMLInputElement | HTMLTextAreaElement | null {
-  return (
-    rowsEl?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-      `li[data-index="${index}"] .text, li[data-index="${index}"] .fence`,
-    ) ?? null
-  );
-}
 
-/**
- * Put the caret in a row after a repaint.
- *
- * 🔴 Every structural edit repaints, and a repaint destroys focus. Restoring it is
- * not polish — without it, pressing Enter drops you out of the document entirely and
- * the next keystroke goes nowhere.
- */
-function focusRow(index: number, offset: number): void {
-  const editor = editorIn(index);
-  if (!editor) return;
-  focused = true;
-  editor.focus();
-  const at = Math.max(0, Math.min(offset, editor.value.length));
-  editor.setSelectionRange(at, at);
-}
 
-/**
- * Apply a structural edit: new document, repaint, caret where the model said.
- *
- * Saves immediately rather than on the debounce. A split, a merge or a demotion is a
- * complete intent, the same as a toggle or a drop (spec §6).
- */
-function applyEdit(result: EditResult): void {
-  if (result.body !== body) {
-    body = result.body;
-    paintRows();
-    dirty = true;
-    lastActivityAt = Date.now();
-    clearTimeout(saveTimer);
-    void save();
-    schedulePoll();
-  } else {
-    paintRows();
-  }
-  focusRow(result.focusIndex, result.focusOffset);
-}
 
-/**
- * Typing inside a row.
- *
- * 🔴 Deliberately does **not** repaint. The row already shows what was typed, and
- * rebuilding it would reset the caret to the end on every keystroke — the single
- * most common way this class of editor gets it wrong.
- */
-function syncFromRow(index: number, value: string): void {
-  const blocks = parse(body);
-  const block = blocks[index];
-  if (!block) return;
-
-  const next = serialize(
-    blocks.map((b: Block, i: number) =>
-      i === index ? { ...b, raw: block.kind === "fence" ? value : setText(b, value) } : b,
-    ),
-  );
-  if (next === body) return;
-
-  body = next;
-  refreshClearButton();
-  scheduleSave();
-}
 
 // ── Polling (spec §6, §14.4) ─────────────────────────────────────────────────
 
@@ -766,30 +669,6 @@ async function poll(): Promise<void> {
   }
 }
 
-/** Where the caret is, in terms that survive a repaint. */
-type Caret = { index: number; offset: number };
-
-/**
- * The focused row and caret offset, or null if the caret is not in a row.
- *
- * Read from `document.activeElement` rather than from the `focused` flag, because the
- * flag can outlive the element it describes — and a null here is what corrects it.
- */
-function captureCaret(): Caret | null {
-  const active = document.activeElement;
-  if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) {
-    return null;
-  }
-
-  const row = active.closest("li[data-index]");
-  if (!row) return null;
-
-  const index = Number(row.getAttribute("data-index"));
-  if (!Number.isInteger(index)) return null;
-
-  return { index, offset: active.selectionStart ?? 0 };
-}
-
 /**
  * Take a freshly fetched document, respecting whatever the user is in the middle of.
  *
@@ -820,30 +699,16 @@ function applyRemote(doc: Doc): void {
     return;
   }
 
-  // 🔴 The editing surface needs none of what follows. It maps its own selection through
-  // the change, and `captureCaret` queries `[data-rows]` — so in the editor view it finds
-  // nothing, concludes focus was lost, and sets `focused = false` while CodeMirror still
-  // has it. A stale `false` there lets the *next* remote update apply mid-keystroke,
-  // which is the bug this whole function exists to prevent, reintroduced sideways.
-  if (surface) {
-    render(doc);
-    setStatus("updated elsewhere");
-    return;
-  }
-
-  // Focused but clean. Repaint under the caret and put it back where it was.
-  const caret = captureCaret();
+  // 🔴 Focused but clean, and both surviving surfaces keep their own caret through a
+  // repaint — CodeMirror maps its selection through the change, and raw view's textarea
+  // keeps focus across a `value` assignment.
+  //
+  // The row list could do neither, so this used to capture an offset, repaint, and put
+  // the caret back by hand — then correct `focused` when the row it had been in did not
+  // survive. All of that went with the row list (#113), and raw view is quietly better
+  // for it: `captureCaret` queried `[data-rows]`, found nothing there, and concluded
+  // focus had been lost while the textarea still had it.
   render(doc);
-
-  if (caret && editorIn(caret.index)) {
-    focusRow(caret.index, caret.offset);
-  } else {
-    // The row the caret was in did not survive the repaint, so focus is now wherever
-    // the browser put it. Correct the flag: a stale `true` here would block every
-    // future update, which is the bug this function exists to fix.
-    focused = false;
-  }
-
   setStatus("updated elsewhere");
 }
 
@@ -1060,216 +925,23 @@ function applyPendingRemote(): void {
   setStatus("updated elsewhere");
 }
 
-// ── The typing model (ADR-003, spec §7) ──────────────────────────────────────
+// ── Arrange's rows (ADR-007 §4) ──────────────────────────────────────────────
+//
+// 🔴 **The typing model that lived here is gone (#113).** Delegated `input`, `focusin`,
+// `focusout` and `keydown` handlers on `[data-rows]`, the `--` shorthand and its undo,
+// row splits and merges, and the four arrow-key branches that carried a caret across a
+// row boundary — roughly 200 lines, all of it in service of making row boundaries behave
+// like line boundaries.
+//
+// On one document those *are* line boundaries and the platform owns them. #84 and #88
+// were both bugs in the arrow code; neither has an equivalent in a surface where a line
+// is a line.
+//
+// What remains below is Arrange, which renders its own rows from the block array and
+// never shares an element with the editing surface. Its rows carry `pointer-events: none`
+// on the text, so nothing here can be typed into — which is why none of the deleted
+// handlers had anywhere left to fire.
 
-// Delegated so it survives every repaint, and so the row count can change freely.
-/**
- * The row a `--` conversion just happened in, so the next `Backspace` can undo it.
- *
- * 🔴 Cleared by any other keystroke. An undo that stays available indefinitely stops
- * being an undo and becomes a rule nobody can predict — backspacing at the start of
- * a checkbox you made an hour ago must demote it, not resurrect two dashes.
- */
-let shorthandAt: { index: number } | null = null;
-
-rowsEl?.addEventListener("input", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
-  if (target.type === "checkbox") return;
-
-  const index = Number(target.closest("li")?.dataset.index);
-  if (!Number.isInteger(index)) return;
-
-  // `-- ` → `- [ ] `, on the space. The row becomes a checkbox, so unlike ordinary
-  // typing this one does have to repaint — and therefore has to put the caret back.
-  if (!target.classList.contains("fence")) {
-    const converted = applyShorthand(target.value, target.selectionStart ?? 0);
-    if (converted) {
-      syncFromRow(index, converted.text);
-      paintRows();
-      focusRow(index, converted.caret);
-      shorthandAt = { index };
-      return;
-    }
-  }
-
-  shorthandAt = null;
-  if (target instanceof HTMLTextAreaElement) autoGrow(target);
-  syncFromRow(index, target.value);
-});
-
-rowsEl?.addEventListener("focusin", (event) => {
-  // Focus alone blocks a remote update from repainting under the caret — the other
-  // half of the dirty guard (spec §6).
-  if ((event.target as HTMLElement).closest(".text, .fence")) focused = true;
-});
-
-rowsEl?.addEventListener("focusout", (event) => {
-  // Moving between rows fires focusout before focusin, so settle on the next tick
-  // rather than tearing down state a keystroke is about to need.
-  const leaving = event.target as HTMLElement;
-  if (!leaving.closest(".text, .fence")) return;
-  setTimeout(() => {
-    if (rowsEl?.contains(document.activeElement) && document.activeElement !== document.body) return;
-    focused = false;
-    if (dirty) {
-      void saveNow();
-      return;
-    }
-    applyPendingRemote();
-  }, 0);
-});
-
-rowsEl?.addEventListener("keydown", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
-  if (target.type === "checkbox") return;
-
-  const index = Number(target.closest("li")?.dataset.index);
-  if (!Number.isInteger(index)) return;
-
-  const start = target.selectionStart ?? 0;
-  const end = target.selectionEnd ?? 0;
-  const isFence = target.classList.contains("fence");
-
-  // A fence's textarea owns Enter and Backspace — newlines inside a code block are
-  // the point, and merging one into its neighbour is never what backspace meant.
-  if (isFence && (event.key === "Enter" || event.key === "Backspace")) return;
-
-  // Any keystroke that is not the undo closes the window on it.
-  if (event.key !== "Backspace") shorthandAt = null;
-
-  if (event.key === "Enter") {
-    event.preventDefault();
-    // The live value, not `body`: an `input` event may not have landed yet on some
-    // IME and autocorrect paths, and splitting a stale line drops the last word.
-    syncFromRow(index, target.value);
-    applyEdit(splitAt(body, index, start));
-    return;
-  }
-
-  // Undo the shorthand, but only on the keystroke straight after it. Otherwise
-  // `--` at the start of a line would be untypeable, and a shortcut that takes a
-  // character away from you is worse than no shortcut (ADR-003 §4).
-  if (event.key === "Backspace" && shorthandAt?.index === index) {
-    const reverted = revertShorthand(target.value, start);
-    if (reverted) {
-      event.preventDefault();
-      shorthandAt = null;
-      syncFromRow(index, reverted.text);
-      paintRows();
-      focusRow(index, reverted.caret);
-      return;
-    }
-  }
-
-  if (event.key === "Backspace" && start === 0 && end === 0) {
-    event.preventDefault();
-    syncFromRow(index, target.value);
-    applyEdit(mergeBackward(body, index));
-    return;
-  }
-
-  // 🔴 Arrows cross a row boundary only when the caret is already **at** one, and only
-  // when nothing is selected. Anywhere else they belong to the field — a row is a
-  // textarea that can be several visual lines tall, and intercepting inside it would
-  // make a long wrapped line unnavigable.
-  //
-  // A live selection is not a caret: every editor collapses it on an arrow rather than
-  // moving somewhere, so a boundary jump would eat the gesture. That holds for all four
-  // arrows.
-  //
-  // 🔴 "At a boundary" means two different things for the two pairs, and conflating
-  // them was #88. For `←`/`→` it is an **offset**: the first or last character. For
-  // `↑`/`↓` it is a **visual line**, which an offset cannot express — see caret.ts.
-  const collapsed = start === end;
-  const atStart = collapsed && start === 0;
-  const atEnd = collapsed && end === target.value.length;
-
-  /**
-   * Step to the neighbouring row, or leave the keystroke to the browser.
-   *
-   * 🔴 The guard is **"did the row actually change"**, not "is the index in range".
-   * `neighbor` reports nowhere-to-go by returning the row it was given, along with the
-   * offset it was handed — so acting on it unconditionally moves the caret to that
-   * offset *within the current row*. That is how `ArrowRight` at the end of the last
-   * line threw the caret back to the start of it, which is worse than doing nothing.
-   *
-   * Not calling `preventDefault` on the no-move path leaves the browser to do what it
-   * already does correctly at a document boundary: nothing.
-   */
-  const step = (direction: -1 | 1, landing: "start" | "end"): boolean => {
-    const result = neighbor(body, index, direction, 0);
-    if (result.focusIndex === index) return false;
-    event.preventDefault();
-    const offset = landing === "end" ? (editorIn(result.focusIndex)?.value.length ?? 0) : 0;
-    focusRow(result.focusIndex, offset);
-    return true;
-  };
-
-  /**
-   * `↑` / `↓` — move to the neighbouring row and keep the column (#88).
-   *
-   * 🔴 Gated on the caret's **visual** line, not its offset. The old gate was
-   * `start === 0` / `end === value.length`, which meant a `↓` from the middle of a row
-   * was never intercepted — so the browser handled it, and what a browser does with
-   * `↓` in a one-line textarea is move the caret to the end of the text. Changing rows
-   * cost two presses and the first one threw the caret somewhere nobody asked for.
-   *
-   * A wrapped row is still navigable because `visualEdge` is false in its interior,
-   * which is the case an offset comparison could not distinguish from a boundary.
-   *
-   * 🔴 The column is the caret's **x in pixels**, carried across and resolved against
-   * the target row's own glyphs. `neighbor`'s `Math.min(offset, length)` is a character
-   * count, and a character count is not a column in a proportional face — row `iiii`
-   * and row `WWWW` put offset 4 nowhere near each other on screen. `neighbor` is still
-   * what decides *whether* there is a row to move to; only the landing differs.
-   */
-  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-    if (!collapsed) return;
-
-    const direction = event.key === "ArrowUp" ? -1 : 1;
-    const edge = visualEdge(target, start);
-    // The interior of a wrapped row belongs to the field — this is the whole reason the
-    // gate has to be visual.
-    if (direction === -1 ? !edge.first : !edge.last) return;
-
-    // 🔴 `preventDefault` here, before knowing whether there is a row to move to. At a
-    // visual edge the keystroke is ours either way: handing it back at the first or last
-    // row lets the browser do what it does in a one-line textarea — slam the caret to
-    // the start or end of the text — which is the same "press nobody asked for" this
-    // issue is about, just at the ends of the document. `↑` on the first row now does
-    // nothing, which is what a text editor does.
-    const column = caretX(target, start);
-    event.preventDefault();
-
-    const result = neighbor(body, index, direction, 0);
-    if (result.focusIndex === index) return;
-
-    const landing = editorIn(result.focusIndex);
-    if (!landing) return;
-
-    // Coming up, land on the row above's **last** visual line; going down, its first.
-    focusRow(result.focusIndex, offsetNearestX(landing, column, direction === -1 ? "last" : "first"));
-    return;
-  }
-
-  // Left at the start and right at the end (#84) — the horizontal pair of the same
-  // boundary rule, which was simply never written. The caret hit the end of a row and
-  // stopped dead, so moving through the page by keyboard meant reaching for the down
-  // arrow and then Home.
-  //
-  // Nothing is skipped: a blank row is a place you can type, and stepping over one
-  // would make the arrows disagree with what is on screen.
-  if (event.key === "ArrowLeft" && atStart) {
-    step(-1, "end");
-    return;
-  }
-
-  if (event.key === "ArrowRight" && atEnd) {
-    step(1, "start");
-  }
-});
 
 /**
  * Toggle a checkbox, delegated from the row list.

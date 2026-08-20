@@ -23,6 +23,13 @@ import { expect, test } from "./fixtures.js";
 // bottom-up order below is readable as [3, 2, 1, 0] rather than as an off-by-one.
 const MIXED = ["keep me", "- [x] done one", "- [ ] not done", "- [x] done two"].join("\n");
 
+/**
+ * 🔴 Rewritten for one surface (#113). Every assertion here used to run against the row
+ * list, with a second describe repeating them against the editing surface — because both
+ * rendered the wipe and either could drift. There is one surface now, so the duplicate
+ * describe is gone and these are the originals, repointed.
+ */
+
 /** Computed style, via `ownerDocument.defaultView` — browser/tsconfig has no DOM lib. */
 type Styled = { ownerDocument: { defaultView: unknown } };
 type View = { getComputedStyle: (e: unknown) => { getPropertyValue: (p: string) => string } };
@@ -44,38 +51,41 @@ const ms = (value: string) =>
 test.describe("the daily sweep", () => {
   test("🔴 fades in place first, and only then closes the gap", async ({ knag }) => {
     await knag.seed(MIXED);
+    await knag.useEditor();
     await knag.page.locator("[data-clear]").click();
 
     // The property the whole sequence was built around, and the one a retune could
     // quietly lose: the rows go transparent **holding their height**, and one collapse
     // closes the gap afterwards. Fading and collapsing together makes the page jump
     // under the thumb that just tapped, and the release starts feeling like a mis-tap.
-    const row = knag.page.locator("[data-rows] li.wiping").first();
+    const row = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
     await expect(row).toBeVisible();
     expect(await css(row, "max-height")).not.toBe("0px");
 
-    await expect(knag.page.locator("[data-rows] li.closing").first()).toBeAttached();
+    await expect(knag.page.locator("[data-surface] .cm-line.cm-closing").first()).toBeAttached();
   });
 
   test("runs the daily timing, not the page's", async ({ knag }) => {
     await knag.seed(MIXED);
+    await knag.useEditor();
     await knag.page.locator("[data-clear]").click();
 
-    const row = knag.page.locator("[data-rows] li.wiping").first();
+    const row = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
     await expect(row).toBeVisible();
 
     // Asserted against the token rather than against 260, so a retune moves one number
     // in one place and this still says what it means.
     const daily = ms(await css(knag.page.locator("body"), "--wipe-duration"));
     expect(ms(await css(row, "animation-duration"))).toBe(daily);
-    await expect(row).not.toHaveClass(/\bpage\b/);
+    await expect(row).not.toHaveClass(/cm-page/);
   });
 
   test("🔴 leaves top-down — the first row to go is the first one", async ({ knag }) => {
     await knag.seed(MIXED);
+    await knag.useEditor();
     await knag.page.locator("[data-clear]").click();
 
-    const rows = knag.page.locator("[data-rows] li.wiping");
+    const rows = knag.page.locator("[data-surface] .cm-line.cm-wiping");
     await expect(rows).toHaveCount(2);
     expect(await css(rows.nth(0), "--i")).toBe("0");
     expect(await css(rows.nth(1), "--i")).toBe("1");
@@ -90,9 +100,10 @@ test.describe("the lines travel", () => {
 
   test("🔴 the daily sweep moves left, not just to transparent", async ({ knag }) => {
     await knag.seed(MIXED);
+    await knag.useEditor();
     await knag.page.locator("[data-clear]").click();
 
-    const row = knag.page.locator("[data-rows] li.wiping").first();
+    const row = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
     await expect(row).toBeVisible();
     await expect.poll(async () => css(row, "translate"), { timeout: 2000 }).not.toBe("none");
   });
@@ -113,68 +124,26 @@ test.describe("the lines travel", () => {
 
   test("🔴 the page wipe moves down, not just to transparent", async ({ knag }) => {
     await knag.seed(MIXED);
+    await knag.useEditor();
     await knag.openLedge();
     await knag.page.locator("[data-wipe-all]").click();
     await knag.page.locator("[data-wipe-all]").click();
 
-    const row = knag.page.locator("[data-rows] li.wiping").first();
+    const row = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
     await expect(row).toBeVisible();
     await expect.poll(async () => css(row, "translate"), { timeout: 2000 }).not.toBe("none");
-  });
-});
-
-test.describe("the editing surface runs the same two timings", () => {
-  // 🔴 This describe exists because it was missing and a real report found the gap. The
-  // row list and CodeMirror are two different code paths to the same animation — one sets
-  // `--i` and a class on an <li>, the other threads them through a line decoration — and
-  // the surface is the one people actually use. Asserting only the row list proves the
-  // tokens are right and says nothing about the surface the wipe is watched in.
-
-  test("🔴 falls on the page timing, bottom-up, in the editor", async ({ knag }) => {
-    await knag.seed(MIXED);
-    await knag.useEditor();
-    await knag.openLedge();
-    await knag.page.locator("[data-wipe-all]").click();
-    await knag.page.locator("[data-wipe-all]").click();
-
-    const lines = knag.page.locator("[data-surface] .cm-line.cm-wiping");
-    await expect(lines.first()).toBeVisible();
-
-    const page = ms(await css(knag.page.locator("body"), "--page-duration"));
-    expect(ms(await css(lines.first(), "animation-duration"))).toBe(page);
-    await expect(lines.first()).toHaveClass(/cm-page/);
-
-    const count = await lines.count();
-    const order = await Promise.all(
-      Array.from({ length: count }, (_, n) =>
-        css(lines.nth(n), "--i").then((v) => Number.parseInt(v, 10)),
-      ),
-    );
-    expect(order).toEqual(order.map((_, n) => count - 1 - n));
-  });
-
-  test("sweeps on the daily timing in the editor", async ({ knag }) => {
-    await knag.seed(MIXED);
-    await knag.useEditor();
-    await knag.page.locator("[data-clear]").click();
-
-    const line = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
-    await expect(line).toBeVisible();
-
-    const daily = ms(await css(knag.page.locator("body"), "--wipe-duration"));
-    expect(ms(await css(line, "animation-duration"))).toBe(daily);
-    await expect(line).not.toHaveClass(/cm-page/);
   });
 });
 
 test.describe("wiping the page", () => {
   test("🔴 runs the page timing, which is a different length", async ({ knag }) => {
     await knag.seed(MIXED);
+    await knag.useEditor();
     await knag.openLedge();
     await knag.page.locator("[data-wipe-all]").click();
     await knag.page.locator("[data-wipe-all]").click();
 
-    const row = knag.page.locator("[data-rows] li.wiping").first();
+    const row = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
     await expect(row).toBeVisible();
 
     // 🔴 The end-to-end proof that four token redefinitions on the element actually
@@ -188,6 +157,7 @@ test.describe("wiping the page", () => {
 
   test("🔴 leaves bottom-up — the page goes as one object, not as a list", async ({ knag }) => {
     await knag.seed(MIXED);
+    await knag.useEditor();
     await knag.openLedge();
     await knag.page.locator("[data-wipe-all]").click();
     await knag.page.locator("[data-wipe-all]").click();
@@ -195,7 +165,7 @@ test.describe("wiping the page", () => {
     // Wiping completed lines is many small removals and reads top-down, like a list
     // being processed. Wiping the page is one removal of one thing. The direction is
     // the difference, and it is the whole reason the two do not feel the same.
-    const rows = knag.page.locator("[data-rows] li.wiping");
+    const rows = knag.page.locator("[data-surface] .cm-line.cm-wiping");
     await expect(rows).toHaveCount(4);
 
     const order = await Promise.all(

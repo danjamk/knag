@@ -20,12 +20,12 @@ not and stayed written down for a while afterwards.
 
 **Where it stands, 2026-08-20.** Phases 0 through 5 have shipped — 0.9.0 through 0.16.0,
 prod and dev on the same build, and the landing page live. **#114 is settled** (a device
-test, not a branch). What is left inside 1.0 is **#113** and **#115**, both waiting on the
-editor being the daily surface for a couple of weeks — their own issues say so, and neither
-is waiting on work.
+test, not a branch), and **#113 is done — the row list is deleted.** What is left inside
+1.0 is **#115** alone, waiting on a week of using both copy paths; its own issue says so.
 
-🔴 **1.0 is deliberately not cut yet.** It is a claim about *shape*, and the shape still has
-two editing surfaces in it. #113 is the hinge; 1.0 lands when it does.
+✅ **1.0 is this.** It was held back for one reason — the shape still had two editing
+surfaces in it, and 1.0 is a claim about shape rather than a count of closed issues. The
+hinge has turned.
 
 🔴 **The design session answered, and it reordered phase 4.** The holistic pass
 came back on 2026-08-19 and is recorded in
@@ -197,15 +197,23 @@ this is one person's todo list, not a breach:
 It also resolves the open question in #92 — log out is not part of About, it is this — so
 #92 keeps its later slot with the rest of the Settings work rather than moving up.
 
-### Phase 2 · Earn the editor, then delete the row list — ~~#119~~, #114, #113
+### Phase 2 · Earn the editor, then delete the row list — ~~#119~~, ~~#114~~, ~~#113~~ · ✅ **done, 1.0.0**
 
-🔴 **#113 is the hinge of the roadmap.** Two editing surfaces exist during the
-transition ([ADR-007](adr/ADR-007-one-editing-surface.md) §7), and every UI item
-below is written once after the row list goes and twice before it.
+🔴 **#113 was the hinge of the roadmap, and it turned on 2026-08-20.** Two editing
+surfaces existed during the transition ([ADR-007](adr/ADR-007-one-editing-surface.md)
+§7), and every UI item below would have been written once after the row list went and
+twice before it.
 
-Its precondition is stated on the ADR — *the replacement gets used against the
-real page before the old one is deleted* — and the outstanding items on that
-list are exactly two:
+Its precondition was stated on the ADR — *the replacement gets used against the real page
+before the old one is deleted* — and it was met the way the ADR intended: by the operator
+saying the editor had stopped feeling like the new thing, not by a date.
+
+**What the deletion cost and returned:** 1,726 lines out, 505 in, `caret.ts` gone
+entirely, and 6.4kb off the minified bundle. That last number is smaller than #113
+guessed at ("some of the +85 KB") and the reason is worth keeping: CodeMirror *is* the
++85 KB, and it stays. What came back was the row model wrapped around it.
+
+The outstanding items on the precondition list were:
 
 | | |
 |---|---|

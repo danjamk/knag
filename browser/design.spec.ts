@@ -151,25 +151,15 @@ test.describe("both boards", () => {
 });
 
 test.describe("the checkbox", () => {
-  test("🔴 a checked box draws its tick", async ({ knag }) => {
-    // The tick is a `::after` on an `appearance: none` checkbox — the technique that
-    // lets it be the *board* showing through the amber rather than a hardcoded white,
-    // which would be wrong on one of the two boards. A browser that declines to render
-    // a pseudo-element on a replaced element would give a blank amber square, and
-    // nothing else in the suite would notice.
-    await knag.seed(DAY);
+  // 🔴 Rewritten for one surface (#113). Three of these read
+  // `[data-rows] li.checked input`, which only Arrange renders now — and Arrange has no
+  // checked/unchecked distinction worth asserting design against, because its rows are
+  // dimmed and non-interactive by definition.
+  //
+  // The claim that mattered survives and is now simpler to state: the surface draws its
+  // own box rather than letting the platform own one.
 
-    const box = knag.page.locator('[data-rows] li.checked input[type="checkbox"]').first();
-
-    // The amber field, and then the mark cut out of it.
-    expect(await css(box, "background-color")).not.toBe("rgba(0, 0, 0, 0)");
-    expect(
-      Number.parseFloat(await css(box, "height", "::after")) || 0,
-      "the checked box has no tick",
-    ).toBeGreaterThan(0);
-  });
-
-  test("🔴 the editing surface draws the same box, not a native one", async ({ knag }) => {
+  test("🔴 the editing surface draws the box, not a native one", async ({ knag }) => {
     // It used to be a *native* checkbox tinted with `accent-color: var(--amber)`, which
     // looks right until the window loses focus: macOS desaturates native form controls
     // in an inactive window, so the amber and the border both vanished and the box
@@ -186,45 +176,36 @@ test.describe("the checkbox", () => {
     await expect(box).toBeVisible();
 
     expect(await css(box, "appearance")).toBe("none");
-    expect(
-      Number.parseFloat(await css(box, "height", "::after")) || 0,
-      "the checked box in the editor has no tick",
-    ).toBeGreaterThan(0);
   });
 
-  test("🔴 and draws it identically to the row list, which was only a claim before", async ({
-    knag,
-  }) => {
-    // The comment on the rule says "the same control the row list draws". That was not
-    // true — the two were drawn by completely different mechanisms and only looked
-    // alike while the window had focus. Asserted on computed pixels so the claim cannot
-    // quietly become false again.
+  test("🔴 a checked box draws its tick, and an unchecked one draws none", async ({ knag }) => {
+    // The tick is a `::after` on an `appearance: none` checkbox — the technique that
+    // lets it be the *board* showing through the amber rather than a hardcoded white,
+    // which would be wrong on one of the two boards. A browser that declines to render
+    // a pseudo-element on a replaced element would give a blank amber square, and
+    // nothing else in the suite would notice.
     await knag.seed(DAY);
-
-    const inRows = knag.page.locator('[data-rows] li.checked input[type="checkbox"]').first();
-    const rowsBackground = await css(inRows, "background-color");
-    const rowsBorder = await css(inRows, "border-top-color");
-    const rowsSize = await css(inRows, "width");
-
     await knag.useEditor();
-    const inSurface = knag.boxes().first();
-    await expect(inSurface).toBeVisible();
 
-    expect(await css(inSurface, "background-color")).toBe(rowsBackground);
-    expect(await css(inSurface, "border-top-color")).toBe(rowsBorder);
-    expect(await css(inSurface, "width")).toBe(rowsSize);
-  });
+    const checked = knag.page.locator("[data-surface] .cm-done input.cm-box").first();
+    await expect(checked).toBeVisible();
 
-  test("an unchecked box draws none", async ({ knag }) => {
-    await knag.seed(DAY);
+    // The amber field, and then the mark cut out of it.
+    expect(await css(checked, "background-color")).not.toBe("rgba(0, 0, 0, 0)");
+    expect(
+      Number.parseFloat(await css(checked, "height", "::after")) || 0,
+      "the checked box has no tick",
+    ).toBeGreaterThan(0);
 
-    const box = knag.page.locator('[data-rows] li:not(.checked) input[type="checkbox"]').first();
-    expect(Number.parseFloat(await css(box, "height", "::after")) || 0).toBe(0);
+    const unchecked = knag.page
+      .locator("[data-surface] .cm-line:not(.cm-done) input.cm-box")
+      .first();
+    expect(Number.parseFloat(await css(unchecked, "height", "::after")) || 0).toBe(0);
   });
 });
 
 test.describe("the wipe, the only animation in the product", () => {
-  test("🔴 the leaving rows fade before the gap closes", async ({ knag }) => {
+  test("🔴 the leaving lines fade before the gap closes", async ({ knag }) => {
     // Two stages on purpose. The rows go transparent **in place, holding their
     // height**, and only then does one collapse close the gap. Fading and collapsing at
     // once makes the list jump under the thumb that just tapped, and the release stops
@@ -234,8 +215,9 @@ test.describe("the wipe, the only animation in the product", () => {
     // it catches the state without a sleep guessing at the frame it lands on.
     await knag.seed(DAY);
 
+    await knag.useEditor();
     await knag.page.locator("[data-clear]").click();
-    await expect(knag.page.locator("[data-rows] li.wiping").first()).toBeAttached();
+    await expect(knag.page.locator("[data-surface] .cm-line.cm-wiping").first()).toBeAttached();
 
     // And it finishes: the row leaves the page, not just the animation.
     await expect.poll(() => knag.document()).not.toContain("- [x]");
@@ -267,7 +249,9 @@ test.describe("the wipe, the only animation in the product", () => {
     // mount or a slide-in dialog is a bug against the system, not a nicety.
     await knag.seed(DAY);
 
-    for (const el of ["[data-rows] li", "footer", "[data-save-status]", "[data-ledge]"]) {
+    await knag.useEditor();
+
+    for (const el of ["[data-surface] .cm-line", "footer", "[data-save-status]", "[data-ledge]"]) {
       expect(await css(knag.page.locator(el).first(), "animation-name"), el).toBe("none");
     }
     expect(await css(knag.page.locator("[data-login] .wordmark .block"), "animation-name")).toBe(
@@ -296,7 +280,7 @@ test.describe("the wipe, the only animation in the product", () => {
       value.endsWith("ms") ? Number.parseFloat(value) : Number.parseFloat(value) * 1000;
 
     expect(ms(await css(ledge, "transition-duration"))).toBe(
-      ms(await css(knag.page.locator("[data-rows] li").first(), "--state-duration")),
+      ms(await css(knag.page.locator("body"), "--state-duration")),
     );
   });
 });

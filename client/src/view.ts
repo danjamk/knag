@@ -189,16 +189,24 @@ export function linkify(text: string): Segment[] {
 // ── View preference ──────────────────────────────────────────────────────────
 
 /**
- * 🔴 `editor` is transitional. It is the CodeMirror surface from #110, offered beside the
- * row list so the replacement can be used against the real page before the row list is
- * deleted — every defect this project has shipped was found by a person on a phone, not
- * by the suite. When the row list goes, so does this value and the Settings control with
- * it, and the product is back to one editing surface with raw as the escape hatch.
+ * 🔴 **`list` is gone (#113).** The row list was shipped *beside* the CodeMirror surface
+ * rather than instead of it, because every defect this project has shipped was found by a
+ * person on a phone rather than by the suite — so the replacement got used against the
+ * real page first. It earned it, and a transition that does not end is two things to
+ * maintain plus a mode question in Settings, which is what ADR-003 removed on evidence.
+ *
+ * 🔴 A value stored by an older build still says `list`, on any device that has not
+ * opened knag since. `readView` resolves anything it does not recognise to `editor`, so
+ * that migration is silent and needs no code of its own — which is why the check below is
+ * against the list rather than a cast.
+ *
+ * `raw` survives for now as the escape hatch for a bulk paste. ADR-007's Consequences
+ * argue it should go too, once one surface has settled; that is its own change.
  */
-export type ViewMode = "list" | "editor" | "raw";
+export type ViewMode = "editor" | "raw";
 
-/** Everything a stored preference is allowed to be. Anything else falls back to list. */
-const VIEWS: readonly ViewMode[] = ["list", "editor", "raw"];
+/** Everything a stored preference is allowed to be. Anything else falls back to editor. */
+const VIEWS: readonly ViewMode[] = ["editor", "raw"];
 
 /** UI state, not document state — per device, never synced (spec §8). */
 export const VIEW_KEY = "knag.view";
@@ -228,7 +236,7 @@ export const FONT_SIZE_KEY = "knag.fontSize";
 export type KeyValueStore = Pick<Storage, "getItem" | "setItem">;
 
 /**
- * The saved view, defaulting to list.
+ * The saved view, defaulting to the editing surface.
  *
  * 🔴 Wrapped because **`localStorage` throws, it does not return null**, when Safari
  * blocks storage — private browsing, or a home-screen PWA whose storage has been
@@ -241,9 +249,12 @@ export function readView(storage: KeyValueStore | undefined): ViewMode {
     // 🔴 Checked against the list rather than trusted. A value written by a newer build
     // and read by an older one is a real case on a device that has been offline, and
     // `as ViewMode` would let it through to a `paint()` that has no branch for it.
-    return VIEWS.find((view) => view === stored) ?? "list";
+    // 🔴 This is also the `list` migration. A device that last opened knag before #113
+    // has `knag.view: "list"` in storage; it is not in the list any more, so it resolves
+    // here to `editor` and the reader lands on the one surface without noticing.
+    return VIEWS.find((view) => view === stored) ?? "editor";
   } catch {
-    return "list";
+    return "editor";
   }
 }
 

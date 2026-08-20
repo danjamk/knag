@@ -133,8 +133,17 @@ describe("view preference (spec §8)", () => {
     };
   }
 
-  it("defaults to the list view", () => {
-    expect(readView(store().api)).toBe("list");
+  it("defaults to the editing surface", () => {
+    expect(readView(store().api)).toBe("editor");
+  });
+
+  it("🔴 migrates a device that still says `list`", () => {
+    // The row list was deleted in #113, and a phone that has not opened knag since still
+    // has `list` in storage. It is not in the allowed list any more, so it resolves the
+    // same way any unrecognised value does — to the one surface — and the migration
+    // needs no code of its own. Without this, that reader lands on a `paint()` with no
+    // branch for their preference, which is a blank page rather than a wrong one.
+    expect(readView(store("list").api)).toBe("editor");
   });
 
   it("round-trips a saved preference", () => {
@@ -152,17 +161,17 @@ describe("view preference (spec §8)", () => {
   // 🔴 A device that has been offline can hold a preference written by a newer build.
   // `as ViewMode` on the way out would let that reach a `paint()` with no branch for it,
   // which is a blank page rather than a wrong one.
-  it("treats a value from a future build as list", () => {
-    expect(readView(store("timeline").api)).toBe("list");
+  it("treats a value from a future build as the editing surface", () => {
+    expect(readView(store("timeline").api)).toBe("editor");
   });
 
-  it("treats anything unrecognised as list", () => {
-    expect(readView(store("nonsense").api)).toBe("list");
-    expect(readView(store("").api)).toBe("list");
+  it("treats anything unrecognised as the editing surface", () => {
+    expect(readView(store("nonsense").api)).toBe("editor");
+    expect(readView(store("").api)).toBe("editor");
   });
 
   it("survives storage being absent entirely", () => {
-    expect(readView(undefined)).toBe("list");
+    expect(readView(undefined)).toBe("editor");
     expect(() => writeView(undefined, "raw")).not.toThrow();
   });
 
@@ -180,7 +189,7 @@ describe("view preference (spec §8)", () => {
       },
     } as unknown as Storage;
 
-    expect(readView(hostile)).toBe("list");
+    expect(readView(hostile)).toBe("editor");
     expect(() => writeView(hostile, "raw")).not.toThrow();
   });
 });

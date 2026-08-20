@@ -141,35 +141,18 @@ export function initialConnectivity(onLine: boolean): Connectivity {
   return onLine ? "online" : "offline";
 }
 
-export type EditableState = {
-  connectivity: Connectivity;
-  /** The row index holding focus when the drop was noticed, or null. */
-  typingInto: number | null;
-};
-
-/**
- * Whether a given row accepts input right now (#57).
- *
- * 🔴 **Offline freezes every row except the one already being typed into.**
- *
- * The alternative — freezing everything the instant the uplink drops — eats the rest of
- * the sentence someone is mid-way through writing. That is lost text they already typed,
- * which is the failure this whole feature exists to prevent, arriving as the cure.
- *
- * Letting that one row finish leaves exactly one unsaved row in existence, and that is
- * not a new risk: knag already holds unsaved keystrokes for the length of the save
- * debounce, and the dirty guard exists to protect them. Offline makes that window longer
- * and, crucially, **visible**.
- *
- * It also keeps spec §12 intact. On reconnect the pending save is an ordinary versioned
- * write; if the page moved it conflicts and reloads, exactly as any other save would.
- * One in-flight edit resolving through compare-and-swap is not an offline queue, and
- * nothing is ever replayed against a document that has moved on.
- */
-export function rowIsEditable(row: number, state: EditableState): boolean {
-  if (state.connectivity === "online") return true;
-  return state.typingInto === row;
-}
+// 🔴 `EditableState` and `rowIsEditable` were deleted with the row list (#113).
+//
+// They expressed one rule: offline freezes every row *except* the one already being typed
+// into, so the sentence someone is mid-way through does not get eaten by the cure. That
+// rule is only expressible with a list of separate fields — one document in one
+// contenteditable has no per-row anything — so with the row list gone, offline freezes the
+// whole surface, and the caller says so directly rather than asking a function whose row
+// argument no longer means anything.
+//
+// The reasoning it protected is not lost: the dirty guard still holds unsaved keystrokes,
+// `connectivityStatus` below still makes the window visible, and on reconnect the pending
+// save is still an ordinary versioned write rather than a queue (spec §12).
 
 /**
  * The footer, in the machine voice.

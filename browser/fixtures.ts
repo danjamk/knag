@@ -85,52 +85,14 @@ export class Knag {
     expect(wrote.ok()).toBe(true);
   }
 
-  /**
-   * The caret offset inside whatever row is focused, or -1 if none is.
-   *
-   * The callback is typed structurally rather than as an `HTMLTextAreaElement` on
-   * purpose: `browser/tsconfig.json` has no DOM lib, because `client/src` is the only
-   * place in the tree where DOM types exist. Asking for the one property this needs
-   * keeps that true.
-   */
-  async caretOffset(): Promise<number> {
-    const focused = this.page.locator("[data-rows] .text:focus, [data-rows] .fence:focus");
-    if ((await focused.count()) === 0) return -1;
-
-    return focused.evaluate((el: { selectionStart: number | null }) => el.selectionStart ?? -1);
-  }
-
-  /**
-   * Put the caret at an exact offset in a row.
-   *
-   * 🔴 Exists because **`Home` does not move the caret in WebKit** — it scrolls. A test
-   * that pressed it looked like it was starting at the beginning of a line and was
-   * really starting wherever the last click left the caret, so a `Backspace` meant to
-   * merge two rows quietly deleted a character instead. The test still passed or failed;
-   * it just was not testing the thing it named. Verified by probing `selectionStart`
-   * before and after the keypress.
-   *
-   * `End` is fine and is used directly. Nothing else here should reach for `Home`.
-   */
-  async placeCaret(index: number, offset: number): Promise<void> {
-    const field = this.editor(index);
-    await field.click();
-    await field.evaluate(
-      (el: { focus: () => void; setSelectionRange: (a: number, b: number) => void }, at: number) => {
-        el.focus();
-        el.setSelectionRange(at, at);
-      },
-      offset,
-    );
-  }
-
-  /** The `data-index` of the row holding focus, or -1. */
-  async focusedRowIndex(): Promise<number> {
-    const row = this.page.locator("[data-rows] li:focus-within");
-    if ((await row.count()) === 0) return -1;
-
-    return Number(await row.getAttribute("data-index"));
-  }
+  // 🔴 `caretOffset` and `placeCaret` were deleted with the row list (#113). Both read
+  // and wrote a `<textarea>`'s `selectionStart`, which no row has because no row exists.
+  //
+  // `placeCaret` is worth one line of epitaph: it existed because **`Home` does not move
+  // the caret in WebKit** — it scrolls — so a test that pressed it looked like it was
+  // starting at the beginning of a line and was really starting wherever the last click
+  // left it. That trap belongs to the platform, not to the row model, and
+  // `caretAtEndOfLine` below avoids it the same way, by never pressing `Home`.
 
   /** What the server actually holds — the only source of truth worth asserting on. */
   async document(): Promise<string> {
@@ -140,13 +102,36 @@ export class Knag {
     return ((await res.json()) as { body: string }).body;
   }
 
+  /**
+   * Arrange's rows.
+   *
+   * 🔴 `[data-rows]` holds **only Arrange** now (#113). Outside the mode it is empty, so
+   * a test that means "the lines of the document" wants `lines()` below — the two were
+   * the same thing while the row list was the editing surface, and reading `rows()` as
+   * "the document" is how several tests quietly stopped asserting anything.
+   */
   rows() {
     return this.page.locator("[data-rows] li");
   }
 
-  /** The editable element in row `index` — a text row or a fence. */
+  /** The lines of the document, as the editing surface renders them. */
+  lines() {
+    return this.page.locator("[data-surface] .cm-line");
+  }
+
+  /**
+   * Line `index` of the editing surface, zero-based.
+   *
+   * 🔴 This used to be row `index`'s `<textarea>` (#113). The row list is gone, so it now
+   * points at a `.cm-line` — which is a `div`, not a form control. `toHaveValue` and
+   * `fill` do not work on it; use `toHaveText` and the keyboard. Clicking it still focuses
+   * the surface at that line, which is what most callers wanted.
+   *
+   * Arrange's rows are reached with `rows()`, which is unchanged — that rendering
+   * survived, and it is the only thing `[data-rows]` holds now.
+   */
   editor(index: number) {
-    return this.page.locator(`[data-rows] li[data-index="${index}"] .text, [data-rows] li[data-index="${index}"] .fence`);
+    return this.page.locator("[data-surface] .cm-line").nth(index);
   }
 
   /** Wait for the save to land, so document() is not read mid-flight. */
@@ -223,6 +208,11 @@ export class Knag {
    * another without losing the document.
    */
   async useEditor(): Promise<void> {
+    // 🔴 The editing surface is the default now (#113) — the row list is gone. This used
+    // to be the only way to reach it and is kept because dozens of tests say it, and
+    // because it still exercises the real path when something else has switched away.
+    if (await this.surface().isVisible()) return;
+
     await this.openSettings();
     await this.page.locator('[data-view-set="editor"]').click();
     await this.page.keyboard.press("Escape");
