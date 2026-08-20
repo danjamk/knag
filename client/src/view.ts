@@ -354,3 +354,31 @@ export function writeFontSize(storage: KeyValueStore | undefined, size: FontSize
     // Ignored, deliberately. See readFontSize.
   }
 }
+
+/** UI state, not document state — per device, never synced (spec §8). */
+export const SOUND_KEY = "knag.sound";
+
+/**
+ * Whether the wipe makes a sound.
+ *
+ * 🔴 **Off unless the answer is exactly `on`.** Every other preference here falls back to
+ * a sensible default; this one falls back to silence, and the asymmetry is deliberate. A
+ * corrupt value, a half-written key or a storage that throws should never be the reason a
+ * phone makes a noise in a meeting. Opting in has to be something the person did.
+ */
+export function readSound(storage: KeyValueStore | undefined): boolean {
+  try {
+    return storage?.getItem(SOUND_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+/** Best effort. A preference that cannot be saved is not worth failing an app over. */
+export function writeSound(storage: KeyValueStore | undefined, on: boolean): void {
+  try {
+    storage?.setItem(SOUND_KEY, on ? "on" : "off");
+  } catch {
+    // Ignored, deliberately. See readSound.
+  }
+}

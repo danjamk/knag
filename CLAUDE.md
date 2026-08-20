@@ -77,6 +77,14 @@ a third colour, something upstream has gone wrong.** Same for a second animation
 the wipe is the only one, and the cursor blink in the mark is the mark, not the
 interface.
 
+**One sound, too, and it is off by default.** The wipe is the only thing in the product
+that makes a noise — one per wipe, never one per line — and its length is *computed from
+the motion tokens* rather than written down, so retuning the motion retunes the audio and
+`client/src/sound.ts` names no duration of its own. It is synthesised, never a file:
+nothing in `public/`, nothing in `SHELL`. **The iOS silent switch mutes it and that is not
+worked around** — the motion is the moment and the sound is a bonus, so if a wipe ever
+needs the sound to feel like a release, the wipe is wrong.
+
 The boundary that keeps that rule usable: **a state change is not an animation.**
 Anything that runs on `--state-duration` — the press tint, the checked row, the
 ledge opening — is a control arriving at its new state, and instant would read as

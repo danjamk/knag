@@ -13,7 +13,54 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
-## [0.13.0] — 2026-08-19
+## [0.14.0] — 2026-08-20
+
+The wipe makes a sound now, if you ask it to.
+
+### Added
+
+- **A sound for the wipe** — one, at the start, ending exactly as the last gap closes.
+  Off by default, with a switch under `Sound` in Settings.
+
+  🔴 **It is not a fixed length. It is derived from the motion:**
+
+  ```
+  knockAt      = duration + stagger × (n − 1) + collapse
+  noise length = knockAt
+  ```
+
+  A fixed sound against a wipe whose length depends on how many lines are going lands the
+  knock mid-motion on a long list and after silence on a short one, and the mismatch shows
+  up on the very first real wipe. Instead the noise band opens as the first line starts
+  moving and closes on the frame the last gap finishes closing, with the knock on that
+  same frame — so a two-line sweep and a nine-line page wipe are the same event at two
+  lengths rather than two sounds. Retune a motion token and the audio follows; there is no
+  duration written anywhere in `sound.ts`.
+
+  **Synthesised, never a file.** Nothing lands in `public/`, nothing joins `SHELL` in the
+  service worker, and no cold offline start plays silence. An audio asset is a thing that
+  can be missing, and a wipe that is silent because a cache is cold is indistinguishable
+  from one that is silent because it is off.
+
+  **`prefers-reduced-motion` silences it, with no special case.** The media query already
+  rewrites every motion token to 1ms, so the formula yields a few milliseconds and the
+  sound refuses to play — someone who asked for less motion is not handed the one thing
+  louder. The mechanism that guarantees that is the same one that keeps the sound
+  following the motion.
+
+  🔴 **The iOS silent switch mutes Web Audio and that is not worked around.** The motion
+  is the moment; this is a bonus for someone holding a phone with the ringer on. If the
+  sound is ever the only thing that made a wipe feel like a release, the wipe is wrong.
+
+### Fixed
+
+- The `0.13.0` heading was dated the day its work was written rather than the day it
+  shipped.
+
+Completes #121. Sequencing and the synth's numbers are
+[§6 of the design response](docs/design/holistic-response.md).
+
+## [0.13.0] — 2026-08-20
 
 The wipe stops being polite. Sound is not in this one.
 
@@ -1028,7 +1075,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/danjamk/knag/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/danjamk/knag/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/danjamk/knag/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/danjamk/knag/compare/v0.11.0...v0.11.1
