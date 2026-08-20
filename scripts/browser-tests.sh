@@ -28,23 +28,34 @@
 # place several of knag's guarantees are checked at all, and a retried suite would have
 # swallowed #62.
 #
-# The unit of splitting is the spec file, which is a proxy for "not too many tests
-# against one server".
+# The unit of splitting is the spec file, which is a proxy for how much one server is
+# asked to do.
 #
-# 🔴 That proxy had a stated trigger — "a spec file past roughly fifteen tests" —
-# and it was wrong (#107). Both CI failures since landed in `sync.spec.ts`, which has
-# seven tests, and following the old advice would have prevented neither.
+# 🔴 **The trigger is duration, not test count** (#107). The stated trigger used to be
+# "a spec file past roughly fifteen tests", which was replaced with "unknown, being
+# measured", and both were wrong in different directions. Five occurrences settled it:
 #
-# What the archived logs actually show is that both died on a server that had only just
-# started: `98e7249` before its first test could see the editor, `95a06d5` twelve seconds
-# into a file that runs for forty, with two tests already passed. A file's own traffic
-# exhausting its own server does not explain either one. What the two share is position —
-# `sync.spec.ts` is the 8th of 9 servers this script starts — which makes it the place a
-# per-run accumulation tips over, not the cause.
+#   sync.spec.ts    died twice, while it was the slowest file of 7 and then of 8
+#   wipe.spec.ts    failed once on an assertion, server alive — a different mode
+#   editor.spec.ts  died twice, while it was the slowest of 13 at 71-124 seconds
 #
-# So the trigger is unknown and being measured rather than guessed. The probe lines below
-# print on every run, green ones included, so the next failure arrives with evidence
-# attached instead of needing a reproduction that has never happened locally.
+# Every dead-server failure landed in whichever file was **slowest at the time**. It looked
+# like position for a while because in a small suite the slowest file also sat near the
+# end; at thirteen files those separated and the failure followed the duration.
+#
+# Test count is a bad instrument for this — `sync.spec.ts` is seven tests and forty
+# seconds of poll waiting, `editor.spec.ts` was thirty-three tests and seventy. Duration
+# measures what test count was reaching for.
+#
+# 🔴 **So: keep every spec file under about a minute.** If one grows past that, split
+# it rather than waiting for it to start flaking, and split it by what the tests wait on
+# rather than by how many there are. `editor.spec.ts` was split into three that way and
+# each lands near thirty seconds.
+#
+# What is still unexplained is the death itself: wrangler prints an empty `✘ [ERROR]` and
+# its own crash log, uploaded as a CI artifact on failure, contains no error at all. The
+# probe lines below print on every run, green ones included, so the next one arrives with
+# evidence attached.
 
 set -uo pipefail
 
