@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, test } from "./fixtures.js";
+import { type Knag, expect, test } from "./fixtures.js";
 
 /**
  * Copying the whole page (#118).
@@ -50,8 +50,8 @@ async function watchClipboard(page: Page): Promise<void> {
 const copied = (page: Page) =>
   page.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied);
 
-async function copyPage(knag: { page: Page }): Promise<void> {
-  await knag.page.locator("[data-settings-open]").click();
+async function copyPage(knag: Knag): Promise<void> {
+  await knag.openLedge();
   await knag.page.locator("[data-copy-page]").click();
 }
 
@@ -102,18 +102,21 @@ test.describe("copy the page", () => {
     expect(await copied(knag.page)).toEqual(["Thursday\n- [ ] milk"]);
   });
 
-  test("says so in the machine voice, and says so on the control", async ({ knag }) => {
+  test("🔴 says so in the machine slot, which it did not used to", async ({ knag }) => {
     await knag.seed(DOC);
     await watchClipboard(knag.page);
 
-    const button = knag.page.locator("[data-copy-page]");
     await copyPage(knag);
 
-    // 🔴 On the button, not the save-status line: the sheet is modal and covers the
-    // footer, so a confirmation the reader cannot see is not a confirmation. Lowercase
-    // and flat, like everything else the app says about itself.
-    await expect(button).toHaveText("copied");
-    await expect(button).toHaveText("copy the page", { timeout: 4000 });
+    // 🔴 Moved off the button (#139). While this lived in the sheet the label had to
+    // carry the confirmation, because a modal covers the footer and a confirmation the
+    // reader cannot see is not one. On the ledge the footer *is* what they are looking
+    // at, the machine slot is where the app already speaks about itself, and swapping a
+    // 4-character label for a 10-character one reflowed the whole ledge every copy.
+    await expect(knag.page.locator("[data-save-status]")).toHaveText("copied");
+
+    // And the control did not change shape while saying it.
+    await expect(knag.page.locator("[data-copy-page]")).toHaveText("copy");
   });
 
   test("🔴 says when it did not work, rather than failing silently", async ({ knag }) => {
@@ -134,15 +137,18 @@ test.describe("copy the page", () => {
 
     await copyPage(knag);
 
-    await expect(knag.page.locator("[data-copy-page]")).toHaveText("not copied");
+    await expect(knag.page.locator("[data-save-status]")).toHaveText("not copied");
   });
 
-  test("lives in Settings, not on the footer", async ({ knag }) => {
+  test("🔴 lives on the ledge, not on tier 1 and not in Settings", async ({ knag }) => {
     await knag.seed(DOC);
 
-    // The footer's budget is what sits permanently above the keyboard on a phone
-    // (spec §7). Copying the whole page is a rare act, and rare acts live in Settings.
-    await expect(knag.page.locator("footer [data-copy-page]")).toHaveCount(0);
-    await expect(knag.page.locator("[data-settings] [data-copy-page]")).toHaveCount(1);
+    // Tier 1's budget is what sits permanently above the keyboard on a phone (spec §7),
+    // and copying the whole page is not something you step over to read the page. But
+    // it is not rare enough to be three taps and a scroll deep either — which is the
+    // gap the ledge exists to fill (#139).
+    await expect(knag.page.locator(".bar [data-copy-page]")).toHaveCount(0);
+    await expect(knag.page.locator("[data-settings] [data-copy-page]")).toHaveCount(0);
+    await expect(knag.page.locator("[data-ledge] [data-copy-page]")).toHaveCount(1);
   });
 });

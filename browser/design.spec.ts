@@ -57,7 +57,16 @@ test.describe("the two voices", () => {
 
     expect(await css(knag.editor(0), "font-family")).toContain("Familjen Grotesk");
     expect(await css(knag.page.locator("[data-save-status]"), "font-family")).toContain("DM Mono");
-    expect(await css(knag.page.locator("footer .wordmark"), "font-family")).toContain("DM Mono");
+    expect(await css(knag.page.locator("[data-login] .wordmark"), "font-family")).toContain(
+      "DM Mono",
+    );
+
+    // 🔴 The page's name is the *human* voice, and it is the one that is easy to get
+    // wrong: it sits on the bar, surrounded by machine strings, and every instinct says
+    // to set it in mono like its neighbours. It is what the reader called the document.
+    expect(await css(knag.page.locator(".page-name"), "font-family")).toContain(
+      "Familjen Grotesk",
+    );
   });
 
   test("🔴 a fence and raw view stay mono, and stay untracked", async ({ knag }) => {
@@ -94,7 +103,7 @@ test.describe("both boards", () => {
     // The classic unreadable-page bug: a colour whose only definition sits inside one
     // board's block renders that board's ink on the other board's ground. Invisible
     // until someone switches, and then total.
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
     const dialog = knag.page.locator("[data-settings]");
 
     for (const board of ["whiteboard", "slate"]) {
@@ -113,7 +122,7 @@ test.describe("both boards", () => {
     // puts a black strip above a pale app, which reads as a rendering bug rather than a
     // preference — and it is the one token duplicated outside the stylesheet, because a
     // <meta> tag cannot read a custom property.
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
     const dialog = knag.page.locator("[data-settings]");
     const meta = knag.page.locator('meta[name="theme-color"]');
 
@@ -129,7 +138,7 @@ test.describe("both boards", () => {
     // 400 — there is no lighter weight to drop to, so the tracking is doing real work
     // rather than being a nicety. On a light ground it is not needed and subpixel AA is,
     // which is why the correction is scoped rather than global.
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
     const dialog = knag.page.locator("[data-settings]");
     const body = knag.page.locator("body");
 
@@ -242,7 +251,9 @@ test.describe("the wipe, the only animation in the product", () => {
 
     // The blink stops entirely. A `0s` duration would leave `animation-name` set and
     // this test green while the mark carried on running an animation.
-    expect(await css(knag.page.locator("footer .wordmark .block"), "animation-name")).toBe("none");
+    expect(await css(knag.page.locator("[data-login] .wordmark .block"), "animation-name")).toBe(
+      "none",
+    );
 
     // The wipe still happens — the row leaves, it just does not travel to get there.
     await knag.page.locator("[data-clear]").click();
@@ -256,11 +267,36 @@ test.describe("the wipe, the only animation in the product", () => {
     // mount or a slide-in dialog is a bug against the system, not a nicety.
     await knag.seed(DAY);
 
-    for (const el of ["[data-rows] li", "footer", "[data-save-status]"]) {
+    for (const el of ["[data-rows] li", "footer", "[data-save-status]", "[data-ledge]"]) {
       expect(await css(knag.page.locator(el).first(), "animation-name"), el).toBe("none");
     }
-    expect(await css(knag.page.locator("footer .wordmark .block"), "animation-name")).toBe(
+    expect(await css(knag.page.locator("[data-login] .wordmark .block"), "animation-name")).toBe(
       "knag-blink",
+    );
+  });
+
+  test("🔴 the ledge is a state change, not a second animation", async ({ knag }) => {
+    // The boundary the one-animation rule now draws (#139, CLAUDE.md). The ledge has to
+    // move — instant reads as a bug on a 120Hz screen — and the way it is allowed to is
+    // by being a control arriving at its state rather than motion: a transition, on the
+    // press tint's own token, with no keyframes and no travel.
+    //
+    // Asserted as a transition *and* as no animation, because either alone passes while
+    // the other one quietly becomes a keyframed slide.
+    await knag.seed(DAY);
+    const ledge = knag.page.locator("[data-ledge]");
+
+    expect(await css(ledge, "animation-name")).toBe("none");
+    expect(await css(ledge, "transition-property")).toBe("height");
+
+    // Compared in milliseconds rather than as strings: the token says `90ms` and every
+    // engine reports the resolved duration as `0.09s`, so a string comparison fails on a
+    // unit rather than on the thing being asserted.
+    const ms = (value: string) =>
+      value.endsWith("ms") ? Number.parseFloat(value) : Number.parseFloat(value) * 1000;
+
+    expect(ms(await css(ledge, "transition-duration"))).toBe(
+      ms(await css(knag.page.locator("[data-rows] li").first(), "--state-duration")),
     );
   });
 });
@@ -274,7 +310,7 @@ test.describe("glyphs", () => {
     // obviously wrong on the machine it was written on, which is what makes this worth a
     // test rather than a comment.
     await knag.seed("- [ ] a task");
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     for (const control of [".grip", ".copy", ".remove"]) {
       const el = knag.page.locator(`[data-rows] ${control}`).first();
@@ -282,11 +318,28 @@ test.describe("glyphs", () => {
       expect((await el.innerText()).trim(), `${control} still sets a glyph as text`).toBe("");
     }
 
-    for (const control of ["[data-reorder]", "[data-settings-open]"]) {
-      const el = knag.page.locator(`footer ${control}`);
+    // 🔴 The bar's controls now carry a label under the glyph (#139), so "no text at
+    // all" stopped being the right assertion — the label *is* text and is meant to be.
+    // What still has to hold is that the drawing is an SVG and the text is the word:
+    // a unicode glyph creeping back in would not equal the label.
+    await knag.openLedge();
+
+    for (const [control, label] of [
+      ["[data-reorder]", "arrange"],
+      ["[data-settings-open]", "settings"],
+      ["[data-copy-page]", "copy"],
+    ]) {
+      const el = knag.page.locator(`[data-ledge] ${control}`);
       await expect(el.locator("svg")).toHaveCount(1);
-      expect((await el.innerText()).trim(), `${control} still sets a glyph as text`).toBe("");
+      expect((await el.innerText()).trim(), `${control} sets something other than its label`).toBe(
+        label,
+      );
     }
+
+    // Tier 1's one glyph control has no label and must still have no text.
+    const toggle = knag.page.locator("[data-ledge-toggle]");
+    await expect(toggle.locator("svg")).toHaveCount(1);
+    expect((await toggle.innerText()).trim()).toBe("");
   });
 });
 

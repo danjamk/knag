@@ -1,5 +1,5 @@
 import type { Locator } from "@playwright/test";
-import { expect, test } from "./fixtures.js";
+import { type Knag, expect, test } from "./fixtures.js";
 
 /**
  * Text size and About (#92).
@@ -27,8 +27,8 @@ async function css(locator: Locator, property: string): Promise<string> {
 
 const px = (value: string) => Number.parseFloat(value);
 
-async function setSize(knag: { page: import("@playwright/test").Page }, size: number) {
-  await knag.page.locator("[data-settings-open]").click();
+async function setSize(knag: Knag, size: number) {
+  await knag.openSettings();
   await knag.page.locator(`[data-font-size="${size}"]`).click();
   await knag.page.keyboard.press("Escape");
 }
@@ -76,7 +76,7 @@ test.describe("text size", () => {
     knag,
   }) => {
     await knag.seed(DAY);
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
 
     // The control offers no step below the floor. It scales up from 16 or not at all —
     // anyone wanting smaller text wants a smaller device.
@@ -102,7 +102,7 @@ test.describe("text size", () => {
     const row = knag.page.locator("[data-rows] textarea").first();
     expect(px(await css(row, "font-size"))).toBe(18);
     // And the control shows which one is active when the sheet is reopened.
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
     await expect(knag.page.locator('[data-font-size="18"]')).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -110,35 +110,56 @@ test.describe("text size", () => {
   });
 });
 
-test.describe("the footer, after the bump", () => {
+test.describe("the bar, after the bump and the diet", () => {
   test("🔴 hits the 44px touch target, which is what 'too small' meant", async ({ knag }) => {
     await knag.seed(DAY);
 
     // It was 28px. Apple's HIG minimum for a touch target is 44pt, and the complaint that
     // the icons were too small on every device was a hit-target problem wearing a visual
     // complaint's clothes — so this is asserted against the standard, not against taste.
-    for (const control of ["[data-reorder]", "[data-settings-open]"]) {
+    //
+    // 🔴 The controls this named moved to the ledge (#139) and the assertion moved with
+    // them rather than being deleted, because the ledge is where a mis-tap is now most
+    // expensive: `wipe page` is on it.
+    await knag.openLedge();
+
+    for (const control of ["[data-ledge-toggle]", "[data-reorder]", "[data-settings-open]", "[data-copy-page]", "[data-wipe-all]"]) {
       const box = await knag.page.locator(control).boundingBox();
-      expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
-      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(box?.width ?? 0, control).toBeGreaterThanOrEqual(44);
+      expect(box?.height ?? 0, control).toBeGreaterThanOrEqual(44);
     }
+  });
+
+  test("🔴 got shorter without giving up a pixel of target", async ({ knag }) => {
+    await knag.seed(DAY);
+
+    // The other half of §3a. The first pass paid for the 44px target with bar height —
+    // 44 to 52 — and with four type tokens that had nothing to do with hit targets. The
+    // type went back and the targets now fill the bar instead of sitting inside its
+    // padding, so it is 46px and still legal. Asserted together, because either one
+    // alone is satisfiable by giving up the other.
+    const bar = await knag.page.locator(".bar").boundingBox();
+    expect(bar?.height).toBe(46);
+
+    const toggle = await knag.page.locator("[data-ledge-toggle]").boundingBox();
+    expect(toggle?.height ?? 0).toBeGreaterThanOrEqual(44);
   });
 
   test("does not follow the reading preference", async ({ knag }) => {
     await knag.seed(DAY);
-    const glyph = knag.page.locator("[data-settings-open]");
-    const before = await glyph.boundingBox();
+    const bar = knag.page.locator(".bar");
+    const before = await bar.boundingBox();
 
     await setSize(knag, 20);
 
-    expect((await glyph.boundingBox())?.height).toBe(before?.height);
+    expect((await bar.boundingBox())?.height).toBe(before?.height);
   });
 });
 
 test.describe("About", () => {
   test("says what knag is, and links out without duplicating Build", async ({ knag }) => {
     await knag.seed(DAY);
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
 
     const about = knag.page.locator("[data-settings] section", { hasText: "About" });
     await expect(about).toContainText("MIT");

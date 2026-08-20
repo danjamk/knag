@@ -53,7 +53,7 @@ test.describe("picking rows in Arrange", () => {
     await knag.rows().nth(0).click();
     expect(await knag.rows().nth(0).getAttribute("class")).not.toContain("picked");
 
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
     await knag.rows().nth(0).click();
     expect(await knag.rows().nth(0).getAttribute("class")).toContain("picked");
   });
@@ -67,7 +67,7 @@ test.describe("picking rows in Arrange", () => {
     // Every other test here asserts the `picked` class, which is why none of them caught
     // it. This one asserts something a person could actually perceive.
     await knag.seed("alpha\nbravo");
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     // Typed structurally: browser/tsconfig.json carries no DOM lib, because client/src
     // is the only place in the tree where DOM exists. Same trick as the fixtures.
@@ -94,7 +94,7 @@ test.describe("picking rows in Arrange", () => {
 
   test("a second tap puts it back", async ({ knag }) => {
     await knag.seed(DOC);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     const row = knag.rows().nth(1);
     await row.click();
@@ -107,7 +107,7 @@ test.describe("picking rows in Arrange", () => {
     // The grip is the drag initiator. A drag that failed to start would otherwise leave
     // the row picked, which is a selection nobody asked for.
     await knag.seed(DOC);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     await knag.rows().nth(0).locator(".grip").click();
     expect(await knag.rows().nth(0).getAttribute("class")).not.toContain("picked");
@@ -115,13 +115,11 @@ test.describe("picking rows in Arrange", () => {
 
   test("leaving Arrange clears the selection", async ({ knag }) => {
     await knag.seed(DOC);
-    const arrange = knag.page.locator("[data-reorder]");
-
-    await arrange.click();
+    await knag.arrange();
     await knag.rows().nth(0).click();
     await knag.rows().nth(2).click();
-    await arrange.click();          // out
-    await arrange.click();          // and back in
+    await knag.arrange();           // out
+    await knag.arrange();           // and back in
 
     expect(await knag.rows().nth(0).getAttribute("class")).not.toContain("picked");
     expect(await knag.rows().nth(2).getAttribute("class")).not.toContain("picked");
@@ -140,7 +138,7 @@ test.describe("the controls themselves", () => {
     // click targets the element centre and would hit the glyph either way; naming it is
     // what makes the test say what it is testing.
     await knag.seed("alpha\nbravo");
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     await knag.rows().nth(1).locator("[data-remove] svg").click();
 
@@ -153,7 +151,7 @@ test.describe("copying a selection", () => {
   test("🔴 copies every picked row, in document order", async ({ knag }) => {
     await knag.seed(DOC);
     await watchClipboard(knag.page);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     // Picked out of order on purpose; the copy is in document order regardless.
     await knag.rows().nth(3).click();
@@ -168,7 +166,7 @@ test.describe("copying a selection", () => {
     // copy that suddenly carried `- [ ] ` would make the two controls disagree.
     await knag.seed(DOC);
     await watchClipboard(knag.page);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     await knag.rows().nth(1).click();
     await knag.rows().nth(2).click();
@@ -180,7 +178,7 @@ test.describe("copying a selection", () => {
   test("copying an unpicked row copies only that row", async ({ knag }) => {
     await knag.seed(DOC);
     await watchClipboard(knag.page);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     await knag.rows().nth(0).click();       // picked
     await knag.rows().nth(4).locator("[data-copy]").click();   // not picked
@@ -192,7 +190,7 @@ test.describe("copying a selection", () => {
 test.describe("deleting a selection", () => {
   test("🔴 deletes every picked row in one edit", async ({ knag }) => {
     await knag.seed(DOC);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     await knag.rows().nth(1).click();
     await knag.rows().nth(3).click();
@@ -206,7 +204,7 @@ test.describe("deleting a selection", () => {
     // The failure removeMany exists to prevent: deleting index 1 then index 3 against a
     // shifting array removes the wrong second row.
     await knag.seed("a\nb\nc\nd\ne");
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     await knag.rows().nth(1).click();
     await knag.rows().nth(3).click();
@@ -218,7 +216,7 @@ test.describe("deleting a selection", () => {
 
   test("deleting an unpicked row deletes only that row", async ({ knag }) => {
     await knag.seed(DOC);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     await knag.rows().nth(0).click();       // picked
     await knag.rows().nth(4).locator("[data-remove]").click();   // not picked
@@ -229,7 +227,7 @@ test.describe("deleting a selection", () => {
 
   test("the selection does not survive its own delete", async ({ knag }) => {
     await knag.seed(DOC);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
 
     await knag.rows().nth(0).click();
     await knag.rows().nth(1).click();

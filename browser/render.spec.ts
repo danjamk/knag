@@ -97,36 +97,49 @@ test.describe("the toolbar", () => {
     // to be legible from the bar, because in it the page looks like a page you cannot
     // type in, which is exactly what it is.
     const button = knag.page.locator("[data-reorder]");
+    await knag.openLedge();
     const drawing = await button.locator("svg").innerHTML();
     await expect(button).toHaveAttribute("aria-pressed", "false");
 
-    await button.click();
+    await knag.arrange();
     await expect(button).toHaveAttribute("aria-pressed", "true");
     expect(await button.locator("svg").innerHTML()).toBe(drawing);
 
-    await button.click();
+    await knag.arrange();
     await expect(button).toHaveAttribute("aria-pressed", "false");
     expect(await button.locator("svg").innerHTML()).toBe(drawing);
   });
 
 
-  test("keeps the footer to three visible controls", async ({ knag }) => {
+  test("🔴 keeps tier 1 to two visible controls, ledge or no ledge", async ({ knag }) => {
     await knag.seed("- [x] done\nplain");
 
-    // 🔴 **Visible**, not present. The footer's markup carries conditional controls
-    // that ship `hidden` — clear-done, and the post-wipe undo (#59) — and counting
-    // elements would either block them or force this number up every time one is
-    // added. What the rule actually protects is how much chrome sits above the
-    // keyboard, and that is what is asserted.
+    // 🔴 **Visible**, not present. The bar's markup carries conditional controls that
+    // ship `hidden` — clear-done, and the post-wipe undo (#59) — and counting elements
+    // would either block them or force this number up every time one is added. What the
+    // rule actually protects is how much chrome sits above the keyboard, and that is
+    // what is asserted.
     //
-    // The markup-level half of the rule lives in `worker/test/shell.test.ts`, which
-    // pins that only two controls are permanent and that every other one ships hidden.
-    // Both halves are needed: this one cannot see the markup, that one cannot see the
-    // screen.
+    // The markup-level half of the rule lives in `worker/test/shell.test.ts`, which pins
+    // that only one control is permanent and that every other one ships hidden. Both
+    // halves are needed: this one cannot see the markup, that one cannot see the screen.
     //
-    // Three is the maximum, reached here because there is something to sweep:
-    // clear, reorder, settings.
-    await expect(knag.page.locator("footer button:visible")).toHaveCount(3);
+    // Two is the maximum, reached here because there is something to sweep: the wipe and
+    // the chevron. It was three — arrange and settings left for the ledge (#139), which
+    // costs one control and gives back two.
+    await expect(knag.page.locator(".bar button:visible")).toHaveCount(2);
+
+    // 🔴 Asserted on the ledge's own box, not on `footer button:visible`. A closed ledge
+    // is `height: 0` with `overflow: hidden`, and a clipped child still reports a 48px
+    // bounding box — so `:visible` counts all four of them and this test read 6. The
+    // container is the thing with no height, and it is what catches a ledge shipped
+    // open, which is the only way a second tier could quietly become permanent chrome
+    // above the keyboard. What keeps the clipped buttons out of reach is `inert`, pinned
+    // in `ledge.spec.ts`, because clipping alone leaves them in the tab order.
+    await expect(knag.ledge()).not.toBeVisible();
+
+    await knag.openLedge();
+    await expect(knag.page.locator("[data-ledge] button:visible")).toHaveCount(4);
   });
 
   test("shows no controls on a row until reorder mode", async ({ knag }) => {
@@ -135,7 +148,7 @@ test.describe("the toolbar", () => {
     await expect(knag.page.locator("[data-rows] .copy")).toHaveCount(0);
     await expect(knag.page.locator("[data-rows] .grip")).toHaveCount(0);
 
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
     await expect(knag.page.locator("[data-rows] .grip")).toHaveCount(1);
     await expect(knag.page.locator("[data-rows] .copy")).toHaveCount(1);
     await expect(knag.page.locator("[data-rows] .remove")).toHaveCount(1);
@@ -144,7 +157,7 @@ test.describe("the toolbar", () => {
 
 test.describe("settings", () => {
   test("opens, and switches board live", async ({ knag }) => {
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
     const dialog = knag.page.locator("[data-settings]");
     await expect(dialog).toBeVisible();
 
@@ -157,7 +170,7 @@ test.describe("settings", () => {
 
 
   test("carries the build info that used to sit in the footer", async ({ knag }) => {
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
 
     await expect(knag.page.locator("[data-build-version]")).toHaveText("0.0.0-browser");
     await expect(knag.page.locator("[data-build-env]")).toHaveText("local");

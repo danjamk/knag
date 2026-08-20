@@ -86,7 +86,7 @@ test.describe("wiping from the editing surface", () => {
     await knag.seed(fenced);
     await knag.useEditor();
 
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openLedge();
     void knag.page.locator("[data-wipe-all]").click();
     void knag.page.locator("[data-wipe-all]").click();
 
@@ -108,7 +108,7 @@ test.describe("wiping from the editing surface", () => {
 
   test("and still does not exist in raw view, which is the deliberate half", async ({ knag }) => {
     await knag.seed(DAY);
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openSettings();
     await knag.page.locator('[data-view-set="raw"]').click();
     await knag.page.keyboard.press("Escape");
 

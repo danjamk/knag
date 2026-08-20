@@ -685,10 +685,18 @@ grey OS dialog with a title bar, which is the loudest surface in an app whose
 whole voice is quiet.
 
 The **whole-page** wipe still confirms, because it takes work that was never
-finished — but by repetition rather than by dialog. It lives in Settings under
-`Page`, the label swaps to `again to confirm` on the first tap, and it disarms
-itself after a few seconds and whenever Settings closes. An armed control left
-armed is a trap for the next person who opens Settings for an unrelated reason.
+finished — but by repetition rather than by dialog. The label swaps to
+`again to confirm` on the first tap, and it disarms itself after a few seconds
+and whenever the ledge closes. An armed control left armed is a trap for the next
+person who reaches for the ledge for an unrelated reason.
+
+**Amended in #139: it lives on the ledge, not in Settings.** Both whole-page verbs
+left the sheet, and what keeps this one away from `wipe N` is now the tier rather
+than the depth — it is a rung out and past a hairline, alone at the far end. The
+confirmation stayed a repetition rather than becoming a dialog: a dialog was the
+right answer for a control being promoted to tier 1, and the ledge is not tier 1.
+It is a rung you reach for on purpose, which is the deliberateness that being
+three taps deep used to buy.
 
 ---
 

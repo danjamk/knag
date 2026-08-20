@@ -191,7 +191,7 @@ test.describe("Arrange, from the editing surface", () => {
     await knag.seed(DOC);
     await knag.useEditor();
 
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
     await expect(knag.rows()).toHaveCount(7);
     // 🔴 Destroyed, not hidden. Two live editing surfaces over one document is the
     // failure the two-rendering design exists to avoid.
@@ -202,9 +202,9 @@ test.describe("Arrange, from the editing surface", () => {
     await knag.seed(DOC);
     await knag.useEditor();
 
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
     await expect(knag.rows()).toHaveCount(7);
-    await knag.page.locator("[data-reorder]").click();
+    await knag.arrange();
     await expect(knag.surface()).toBeVisible();
     await knag.saved();
 
