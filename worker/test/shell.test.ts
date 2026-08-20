@@ -156,23 +156,55 @@ describe("PWA shell (spec §9)", () => {
     expect(tag).not.toContain("⌫");
   });
 
-  it("keeps the footer to three permanent controls", () => {
-    // 🔴 The footer is the only chrome in the app and sits right above the keyboard.
-    // Every control here is one the reader steps over to reach the document. Rare
-    // things belong in settings; this is the line that stops them creeping back.
+  it("🔴 keeps tier 1 to one permanent control, and the ledge is not tier 1", () => {
+    // 🔴 The bar sits right above the keyboard on a phone, and every control on it is
+    // one the reader steps over to reach the document. That budget is the reason the
+    // bar is thin, and it is the thing a second tier could quietly have spent (#139).
     //
     // Counted by what is *always there*, not by `<button>` count. The rule was always
     // about permanent chrome — `data-clear` has been conditional since it shipped — and
     // a bare count would have blocked the post-wipe undo (#59), which appears after an
     // action and then is gone. The stricter half is below: anything extra has to ship
     // `hidden`, so nothing permanent can arrive by calling itself transient.
-    const footer = /<footer>([\s\S]*?)<\/footer>/.exec(shell())?.[1] ?? "";
-    const buttons = footer.match(/<button[^>]*>/g) ?? [];
+    const bar = /<div class="bar">([\s\S]*?)<\/div>/.exec(shell())?.[1] ?? "";
+    const buttons = bar.match(/<button[^>]*/g) ?? [];
     const permanent = buttons.filter((button) => !button.includes("hidden"));
 
-    expect(permanent).toHaveLength(2);
-    // Three now, not four: the recovery line moved out of the bar entirely.
-    expect(buttons).toHaveLength(3);
+    // One: the control that opens the ledge. It went *down* — arrange and settings left
+    // for the ledge, and the wordmark left the bar entirely so the page's name has a
+    // permanent slot (#123). A second tier that cost tier 1 nothing is the whole claim.
+    expect(permanent).toHaveLength(1);
+    expect(permanent[0]).toContain("data-ledge-toggle");
+    expect(buttons).toHaveLength(2);
+  });
+
+  it("🔴 keeps the ledge closed and inert in the shipped shell", () => {
+    // The ledge is momentary: it opens when reached for and closes when anything else
+    // takes focus. Shipping it open would put a second permanent tier above the
+    // keyboard, which is exactly the cost the design refused to pay.
+    //
+    // 🔴 `inert` as well as closed. The closed state is a zero height with
+    // `overflow: hidden`, which hides the buttons from a reader and leaves every one of
+    // them in the tab order — a control you cannot see and can still tab to and press.
+    const ledge = /<div class="ledge"[^>]*>/.exec(shell())?.[0] ?? "";
+
+    expect(ledge).toContain("inert");
+    expect(ledge).not.toContain("data-open");
+  });
+
+  it("🔴 keeps the whole-page wipe off tier 1, and next to nothing", () => {
+    // The frequencies are not comparable: sweeping the done items is every morning,
+    // wiping the page is when a project ends. They may not become two similar buttons
+    // side by side, which was the risk in moving the destructive one out of the sheet.
+    //
+    // It is on the ledge, past a hairline, alone at the far end — one tier away from
+    // `wipe N` rather than one tap. It still arms by repetition; see `app.ts`.
+    const bar = /<div class="bar">([\s\S]*?)<\/div>/.exec(shell())?.[1] ?? "";
+    const ledge = /<div class="ledge"[^>]*>([\s\S]*?)<\/div>/.exec(shell())?.[1] ?? "";
+
+    expect(bar).not.toContain("data-wipe-all");
+    expect(ledge).toContain("data-wipe-all");
+    expect(ledge.indexOf("ledge-sep")).toBeLessThan(ledge.indexOf("data-wipe-all"));
   });
 
   it("🔴 keeps the recovery line out of the footer", () => {

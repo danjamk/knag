@@ -152,9 +152,66 @@ export class Knag {
   /** Wait for the save to land, so document() is not read mid-flight. */
   async saved(): Promise<void> {
     // Lowercase since the machine voice landed: `saved`, never `Saved ✓`.
+    //
+    // 🔴 `wiped` is accepted because a sweep is a save and leaves that on the status
+    // line — which also makes this **useless immediately after a wipe**: the status
+    // already matches, so it returns without waiting for the edit you just made. If a
+    // test types after a wipe and then depends on the save having landed, poll
+    // `document()` for the text instead. One test learned this in CI.
     await expect(this.page.locator("[data-save-status]")).toHaveText(/saved|wiped/, {
       timeout: 5_000,
     });
+  }
+
+  /** Tier 2 of the bar (#139). */
+  ledge() {
+    return this.page.locator("[data-ledge]");
+  }
+
+  /**
+   * Open the ledge the way a person does.
+   *
+   * 🔴 Not by setting `data-open` by hand. The opening *is* the code path — the ledge
+   * closes on any focus outside the bar, so a test that forced the attribute would keep
+   * passing after the toggle stopped working, and would never notice that the thing
+   * under it had closed the ledge again.
+   *
+   * Idempotent, because Arrange leaves it open and Settings does not: a modal moves
+   * focus into itself, which is exactly the condition that closes it.
+   */
+  async openLedge(): Promise<void> {
+    if ((await this.ledge().getAttribute("data-open")) === null) {
+      await this.page.locator("[data-ledge-toggle]").click();
+    }
+    await expect(this.ledge()).toBeVisible();
+
+    // 🔴 Then wait for it to finish opening. It becomes *visible* the moment the height
+    // leaves zero and takes 90ms to arrive, so anything that reads a bounding box right
+    // after this reads a partly-open ledge — which is how a "does the bar grow by 56px"
+    // assertion measured 18. `click` waits for stability on its own; a measurement does
+    // not, so it settles here once rather than in every test that measures.
+    let previous = -1;
+    await expect
+      .poll(async () => {
+        const height = (await this.ledge().boundingBox())?.height ?? 0;
+        const settled = height > 0 && height === previous;
+        previous = height;
+        return settled;
+      })
+      .toBe(true);
+  }
+
+  /** Settings, which is on the ledge now — one rung out, not three taps deep. */
+  async openSettings(): Promise<void> {
+    await this.openLedge();
+    await this.page.locator("[data-settings-open]").click();
+    await expect(this.page.locator("[data-settings]")).toBeVisible();
+  }
+
+  /** Toggle Arrange, which is on the ledge now. Toggles, so it also leaves the mode. */
+  async arrange(): Promise<void> {
+    await this.openLedge();
+    await this.page.locator("[data-reorder]").click();
   }
 
   /**
@@ -166,7 +223,7 @@ export class Knag {
    * another without losing the document.
    */
   async useEditor(): Promise<void> {
-    await this.page.locator("[data-settings-open]").click();
+    await this.openSettings();
     await this.page.locator('[data-view-set="editor"]').click();
     await this.page.keyboard.press("Escape");
     await expect(this.surface()).toBeVisible();

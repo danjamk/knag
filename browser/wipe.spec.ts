@@ -14,7 +14,7 @@ const MIXED = "keep me\n- [x] done one\n- [ ] not done\n- [x] done two";
 
 /** Arm and fire the whole-page wipe. Two taps, no dialog — see the tests below. */
 async function wipeThePage(knag: Knag): Promise<void> {
-  await knag.page.locator("[data-settings-open]").click();
+  await knag.openLedge();
   await knag.page.locator("[data-wipe-all]").click();
   await knag.page.locator("[data-wipe-all]").click();
 }
@@ -82,16 +82,25 @@ test.describe("wipe completed", () => {
 });
 
 test.describe("wipe the page", () => {
-  test("lives in settings, not on the footer", async ({ knag }) => {
+  test("🔴 lives on the ledge, a tier away from the everyday wipe", async ({ knag }) => {
     await knag.seed(MIXED);
 
-    // 🔴 The footer is capped at three controls and the rule is that rare things live
-    // in settings. Wiping everything is rare; sweeping the done items is not. If this
-    // ever moves to the bar it should be a decision, not a drift.
-    await expect(knag.page.locator("footer [data-wipe-all]")).toHaveCount(0);
+    // The frequencies are not comparable — sweeping the done items is every morning,
+    // wiping the page is when a project ends — and the thing that must never happen is
+    // the two becoming similar buttons side by side. It left Settings for the ledge
+    // (#139); what protects it now is the tier, not the depth.
+    await expect(knag.page.locator(".bar [data-wipe-all]")).toHaveCount(0);
+    await expect(knag.page.locator("[data-settings] [data-wipe-all]")).toHaveCount(0);
 
-    await knag.page.locator("[data-settings-open]").click();
-    await expect(knag.page.locator("[data-settings] [data-wipe-all]")).toBeVisible();
+    await knag.openLedge();
+    const wipeAll = knag.page.locator("[data-ledge] [data-wipe-all]");
+    await expect(wipeAll).toBeVisible();
+
+    // Past the hairline, alone at the far end. `copy` is the control a reader reaches
+    // for often, and it must never be one mis-tap from this one.
+    const separator = await knag.page.locator(".ledge-sep").boundingBox();
+    const box = await wipeAll.boundingBox();
+    expect(box?.x ?? 0).toBeGreaterThan(separator?.x ?? 0);
   });
 
   test("🔴 confirms by repetition rather than by dialog", async ({ knag }) => {
@@ -104,10 +113,10 @@ test.describe("wipe the page", () => {
     });
 
     await knag.seed(MIXED);
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openLedge();
 
     const control = knag.page.locator("[data-wipe-all]");
-    await expect(control).toHaveText(/wipe the page\s*4/);
+    await expect(control).toHaveText(/wipe page\s*4/);
 
     await control.click();
     await expect(control).toHaveAttribute("data-armed", "");
@@ -120,37 +129,58 @@ test.describe("wipe the page", () => {
   });
 
   test("🔴 disarms on its own, so it is not left loaded", async ({ knag }) => {
-    // An armed control that stayed armed would be a trap for the next person who opened
-    // settings for an unrelated reason — one tap, and the page is gone.
+    // An armed control that stayed armed would be a trap for the next person who
+    // reached for the ledge for an unrelated reason — one tap, and the page is gone.
     await knag.seed(MIXED);
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openLedge();
 
     const control = knag.page.locator("[data-wipe-all]");
     await control.click();
     await expect(control).toHaveAttribute("data-armed", "");
     await expect(control).toHaveText(/again to confirm/);
 
-    await expect(control).toHaveText(/wipe the page/, { timeout: 10_000 });
+    await expect(control).toHaveText(/wipe page/, { timeout: 10_000 });
     expect(await knag.document()).toBe(MIXED);
   });
 
-  test("🔴 disarms when settings closes", async ({ knag }) => {
-    // The same trap by another route: arm it, close the dialog, come back later, and one
-    // tap would wipe the page having forgotten the tap that armed it.
+  test("🔴 disarms when the ledge closes", async ({ knag }) => {
+    // The same trap by another route, and the route changed with the control: it used
+    // to be closing the sheet, and it is now closing the ledge. Arm it, close, come
+    // back, and one tap would wipe the page having forgotten the tap that armed it.
     await knag.seed(MIXED);
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openLedge();
 
     const control = knag.page.locator("[data-wipe-all]");
     await control.click();
     await expect(control).toHaveAttribute("data-armed", "");
-    await expect(control).toHaveText(/again to confirm/);
 
-    await knag.page.locator("[data-settings] .done").click();
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.page.locator("[data-ledge-toggle]").click();
+    await knag.openLedge();
 
-    await expect(control).toHaveText(/wipe the page/);
+    await expect(control).toHaveText(/wipe page/);
     await control.click();
-    expect(await knag.document(), "a re-opened dialog was still armed").toBe(MIXED);
+    expect(await knag.document(), "a re-opened ledge was still armed").toBe(MIXED);
+  });
+
+  test("🔴 disarms when the document takes focus, which also closes the ledge", async ({
+    knag,
+  }) => {
+    // The route that did not exist while this lived in a modal. Arm it, tap back into
+    // the page to read what you were about to throw away, and the ledge collapses —
+    // taking the armed state with it rather than leaving it loaded behind a chevron.
+    await knag.seed(MIXED);
+    await knag.openLedge();
+
+    const control = knag.page.locator("[data-wipe-all]");
+    await control.click();
+    await expect(control).toHaveAttribute("data-armed", "");
+
+    await knag.editor(0).click();
+    await expect(knag.ledge()).not.toBeVisible();
+
+    await knag.openLedge();
+    await expect(control).not.toHaveAttribute("data-armed", "");
+    expect(await knag.document()).toBe(MIXED);
   });
 
   test("brings the whole page back, including the unfinished lines", async ({ knag }) => {
@@ -158,19 +188,20 @@ test.describe("wipe the page", () => {
     await wipeThePage(knag);
     await expect.poll(() => knag.document()).toBe("");
 
-    // The settings dialog is modal, so the recovery line is inert until it closes —
-    // which is the platform doing its job, and worth going through rather than around.
-    await knag.page.locator("[data-settings] .done").click();
+    // 🔴 No dialog to dismiss first. While this lived in the sheet the recovery line was
+    // inert behind a modal backdrop, and the test had to close it to reach the undo.
+    // On the ledge the regret and the remedy are on screen together, which is where the
+    // line was always meant to be.
     await knag.page.locator("[data-restore]").click();
 
     await expect.poll(() => knag.document()).toBe(MIXED);
   });
 
   test("names the number it is about to throw away", async ({ knag }) => {
-    // "Wipe the page" and "throw away four things" land differently, and the second is
-    // the one that stops a mistake. It is on the control now rather than in a dialog.
+    // "Wipe page" and "throw away four things" land differently, and the second is the
+    // one that stops a mistake. It is on the control rather than in a dialog.
     await knag.seed(MIXED);
-    await knag.page.locator("[data-settings-open]").click();
+    await knag.openLedge();
 
     await expect(knag.page.locator("[data-wipe-all-count]")).toHaveText("4");
   });
@@ -202,7 +233,14 @@ test.describe("bringing it back (#59)", () => {
     // `- [ ] added after`. That is the editor behaving correctly and the expectation
     // below says so rather than asserting what would be convenient.
     await row.pressSequentially("\nadded after");
-    await knag.saved();
+
+    // 🔴 Not `knag.saved()`. That helper accepts `wiped` as well as `saved`, and the
+    // status still reads `wiped 2` from the sweep above — so it matched instantly and
+    // waited for nothing, and the restore raced the save of the line it is supposed to
+    // keep. It passed locally and failed once in CI, which is what a wait that is not a
+    // wait looks like. The precondition is that the typed row reached the server, and
+    // the server is the only thing that can answer that.
+    await expect.poll(() => knag.document()).toContain("added after");
 
     await knag.page.locator("[data-restore]").click();
 

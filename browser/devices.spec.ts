@@ -1,7 +1,7 @@
 import type { Locator } from "@playwright/test";
 import { TEST_PASSPHRASE } from "../playwright.config.js";
 import { request } from "@playwright/test";
-import { expect, test } from "./fixtures.js";
+import { type Knag, expect, test } from "./fixtures.js";
 
 /**
  * Log out and device revocation, on a real page (#125).
@@ -61,8 +61,8 @@ async function loginElsewhere(baseURL: string, label: string): Promise<string> {
 let elsewhere = 0;
 
 /** Open Settings and wait for the device list to have resolved past its placeholder. */
-async function openDevices(knag: { page: import("@playwright/test").Page }) {
-  await knag.page.locator("[data-settings-open]").click();
+async function openDevices(knag: Knag) {
+  await knag.openSettings();
   const list = knag.page.locator("[data-sessions]");
   await expect(list.locator("li")).not.toHaveText(["…"]);
   return list;

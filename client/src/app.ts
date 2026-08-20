@@ -80,6 +80,9 @@ const statusEl = document.querySelector<HTMLElement>("[data-save-status]");
 const settingsDialog = document.querySelector<HTMLDialogElement>("[data-settings]");
 const settingsOpen = document.querySelector<HTMLButtonElement>("[data-settings-open]");
 const copyPageButton = document.querySelector<HTMLButtonElement>("[data-copy-page]");
+const footerEl = document.querySelector<HTMLElement>("footer");
+const ledgeEl = document.querySelector<HTMLElement>("[data-ledge]");
+const ledgeToggle = document.querySelector<HTMLButtonElement>("[data-ledge-toggle]");
 const sessionsList = document.querySelector<HTMLUListElement>("[data-sessions]");
 const logoutButton = document.querySelector<HTMLButtonElement>("[data-logout]");
 const revokeOthersButton = document.querySelector<HTMLButtonElement>("[data-revoke-others]");
@@ -1584,7 +1587,7 @@ function paintWipeAll(): void {
   const label = document.querySelector<HTMLElement>("[data-wipe-all-label]");
   const count = document.querySelector<HTMLElement>("[data-wipe-all-count]");
 
-  if (label) label.textContent = armed ? "again to confirm" : "wipe the page";
+  if (label) label.textContent = armed ? "again to confirm" : "wipe page";
   if (count) {
     count.textContent = String(parse(body).length);
     count.toggleAttribute("hidden", armed);
@@ -1615,11 +1618,6 @@ wipeAllButton?.addEventListener("click", async () => {
   await requestWipe("all");
   paintWipeAll();
 });
-
-// Closing settings disarms it. Reopening later to a control that was still armed would
-// mean one tap wipes the page, having forgotten the tap that armed it — which is the
-// trap the timeout exists to avoid, arriving by another route.
-settingsDialog?.addEventListener("close", disarmWipeAll);
 
 /**
  * Bring the wiped lines back (#59).
@@ -2051,8 +2049,11 @@ async function revoke(path: string, method: string): Promise<void> {
  * byte-exact, and has since v0.8.0. What this replaces is four gestures and two menu waits
  * on a phone, where the selection callout is fiddly on a long page.
  *
- * The label carries the result rather than the save-status line, because the sheet is
- * modal and covers the footer — a confirmation the reader cannot see is not one.
+ * 🔴 The result goes to the save-status line, and it did not used to. While this lived
+ * in the sheet the label had to carry it, because a modal covers the footer and a
+ * confirmation the reader cannot see is not one. On the ledge the footer is what they
+ * are looking at, the machine slot is where the app already speaks about itself, and
+ * swapping a 4-character label for a 10-character one reflowed the whole ledge.
  */
 copyPageButton?.addEventListener("click", () => {
   void (async () => {
@@ -2067,10 +2068,7 @@ copyPageButton?.addEventListener("click", () => {
       said = "not copied";
     }
 
-    copyPageButton.textContent = said;
-    setTimeout(() => {
-      copyPageButton.textContent = "copy the page";
-    }, 1200);
+    setStatus(said);
   })();
 });
 
@@ -2094,6 +2092,58 @@ sessionsList?.addEventListener("click", (event) => {
 
   const id = target.closest<HTMLElement>("[data-revoke]")?.dataset.revoke;
   if (id) void revoke(`/api/sessions/${encodeURIComponent(id)}`, "DELETE");
+});
+
+/**
+ * The ledge — tier 2 of the bar (#139).
+ *
+ * 🔴 **It cannot be open while the keyboard is up**, and that single rule is what makes
+ * a second tier cost nothing. The bar is thin because it sits above the keyboard on a
+ * phone; a tier that persisted there would spend exactly the height the thinness was
+ * protecting. So it does not persist: anything that takes focus outside the bar closes
+ * it, and typing is the commonest way that happens.
+ *
+ * The consequence worth knowing before touching this: a ledge control must not
+ * `preventDefault` its own mousedown. That is the usual toolbar reflex for keeping an
+ * editor focused, and here it would be keeping focus in the document — which is the
+ * one thing that closes the ledge under the reader.
+ *
+ * Pin is deliberately not built. It only means anything with the keyboard down, which
+ * on a phone is the situation the tension does not exist in, so it is one boolean and a
+ * setting nobody has asked for yet.
+ */
+function setLedge(open: boolean): void {
+  if (!ledgeEl || open === ledgeEl.hasAttribute("data-open")) return;
+
+  ledgeEl.toggleAttribute("data-open", open);
+  // Both, always. `data-open` drives the 90ms height; `inert` is what keeps a
+  // zero-height button out of the tab order and out of hit-testing.
+  ledgeEl.toggleAttribute("inert", !open);
+  ledgeToggle?.setAttribute("aria-expanded", String(open));
+  // The glyph never changes — it turns over, and the title says which way. Same rule the
+  // Arrange control follows: only the state changes, never the drawing.
+  if (ledgeToggle) ledgeToggle.title = open ? "close the ledge" : "open the ledge";
+
+  // 🔴 Closing disarms the whole-page wipe. Reaching for the ledge later and finding a
+  // control still armed would mean one tap wipes the page, having forgotten the tap that
+  // armed it — the trap the arming timeout exists to avoid, arriving by another route.
+  // This replaced the settings dialog's `close` listener when the control moved.
+  if (!open) disarmWipeAll();
+}
+
+ledgeToggle?.addEventListener("click", () => {
+  setLedge(!ledgeEl?.hasAttribute("data-open"));
+});
+
+// 🔴 `focusin` rather than a keyboard-visibility guess. There is no keyboard API, and
+// every proxy for one — a `visualViewport` height delta, a user-agent test — is a guess
+// that is wrong on a tablet with a hardware keyboard or a phone in landscape. Focus is
+// the thing actually being asked about: the reader is either operating the bar or in
+// the document, and being in the document is what raises the keyboard.
+document.addEventListener("focusin", (event) => {
+  const target = event.target;
+  if (target instanceof Node && footerEl?.contains(target)) return;
+  setLedge(false);
 });
 
 settingsOpen?.addEventListener("click", () => {

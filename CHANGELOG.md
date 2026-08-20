@@ -13,6 +13,50 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-19
+
+The bar gets a second tier. Copying and wiping the page left Settings for it.
+
+### Added
+
+- **The ledge** — a second tier on the bar, opened by the chevron at its right edge. It
+  holds `copy`, `arrange`, `settings` and, alone at the far end past a hairline,
+  `wipe page`. Things that are not rare enough to be three taps and a scroll deep, and
+  not permanent enough to sit above the keyboard.
+
+  🔴 **It cannot be open while the keyboard is up**, and that is the whole reason a
+  second tier was affordable. The bar is thin because it sits above the keyboard on a
+  phone; anything permanent added there spends exactly the height that thinness was
+  protecting. So the ledge is momentary — anything that takes focus outside the bar
+  closes it, and typing is the commonest way that happens. A phone with the keyboard up
+  sees the bar it saw before, minus 6px.
+
+  There is deliberately **no pin**. It would only mean anything with the keyboard down,
+  which on a phone is the situation the tension does not exist in. It is one boolean and
+  it ships when someone using knag on an iPad asks for it.
+
+### Changed
+
+- **`copy the page` and `wipe the page` moved out of Settings** onto the ledge. Both are
+  operations rather than preferences, and the sheet had become the place anything without
+  a home went. `wipe page` still arms by repetition rather than growing a dialog: what
+  keeps it away from the everyday `wipe N` is now the tier rather than the depth.
+- **The copy confirmation moved to the machine slot.** It used to be written on the
+  button, because a modal sheet covers the footer and a confirmation the reader cannot
+  see is not one. On the ledge the footer is what they are looking at.
+- **The wordmark left the bar**, and the page's name took its slot — `today`, a status
+  display rather than a control until there is a second page to switch to. A wordmark
+  inside an app you have already opened is the least load-bearing element on it. The mark
+  survives on the login screen, the icon and the README.
+- **The bar is 46px rather than 52px, and the type went back to 13/11px with 18px
+  glyphs.** 0.11.0 fixed a real hit-target complaint by taking the touch target from 28px
+  to the HIG's 44px, and let the target drag four type tokens up with it. A 44px target
+  is 44px of touchable area; it is not 44px of ink. Every target is still 44px — they
+  fill the bar now instead of sitting inside its padding.
+
+All of the above is the design session's holistic pass, recorded in
+[docs/design/holistic-response.md](docs/design/holistic-response.md) §3a, §4 and §5.
+
 ## [0.11.1] — 2026-08-19
 
 Checkboxes keep their colour when the window loses focus.
@@ -942,7 +986,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/danjamk/knag/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/danjamk/knag/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/danjamk/knag/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/danjamk/knag/compare/v0.9.1...v0.10.0
