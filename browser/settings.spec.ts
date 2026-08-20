@@ -54,22 +54,26 @@ test.describe("text size", () => {
     expect(px(await css(status, "font-size"))).toBe(chromeBefore);
   });
 
-  test("🔴 moves the row list too, so switching views does not resize the page", async ({
-    knag,
-  }) => {
+  test("🔴 moves Arrange's rows too, so entering the mode does not resize the page",
+    async ({ knag }) => {
+    // 🔴 Rewritten for one surface (#113). This used to compare the *row list* against the
+    // editing surface, because switching views must not resize the document under the
+    // reader. There is no view to switch to — but Arrange still renders its own rows, and
+    // entering the mode is the same hazard wearing different clothes.
+    //
+    // Both read `--size-row`. If either kept a literal, the page would jump.
     await knag.seed(DAY);
     await setSize(knag, 20);
 
-    const row = knag.page.locator("[data-rows] textarea").first();
-    const inEditor = px(await css(row, "font-size"));
+    const inSurface = px(
+      await css(knag.page.locator("[data-surface] .cm-line").first(), "font-size"),
+    );
+    expect(inSurface).toBe(20);
 
-    await knag.useEditor();
-    const inSurface = px(await css(knag.page.locator("[data-surface] .cm-line").first(), "font-size"));
+    await knag.arrange();
+    const inArrange = px(await css(knag.page.locator("[data-rows] textarea").first(), "font-size"));
 
-    // Both surfaces read `--size-row`. If one had kept a literal, changing view would
-    // resize the document under the reader.
-    expect(inSurface).toBe(inEditor);
-    expect(inEditor).toBe(20);
+    expect(inArrange).toBe(inSurface);
   });
 
   test("🔴 never goes below 16px, because iOS zooms on focus and never returns", async ({
@@ -88,8 +92,9 @@ test.describe("text size", () => {
     await knag.page.reload();
     await expect(knag.page.locator("[data-editor]")).toBeVisible();
 
-    const row = knag.page.locator("[data-rows] textarea").first();
-    expect(px(await css(row, "font-size"))).toBe(16);
+    expect(px(await css(knag.page.locator("[data-surface] .cm-line").first(), "font-size"))).toBe(
+      16,
+    );
   });
 
   test("survives a reload, like the board does", async ({ knag }) => {
@@ -99,8 +104,9 @@ test.describe("text size", () => {
     await knag.page.reload();
     await expect(knag.page.locator("[data-editor]")).toBeVisible();
 
-    const row = knag.page.locator("[data-rows] textarea").first();
-    expect(px(await css(row, "font-size"))).toBe(18);
+    expect(px(await css(knag.page.locator("[data-surface] .cm-line").first(), "font-size"))).toBe(
+      18,
+    );
     // And the control shows which one is active when the sheet is reopened.
     await knag.openSettings();
     await expect(knag.page.locator('[data-font-size="18"]')).toHaveAttribute(

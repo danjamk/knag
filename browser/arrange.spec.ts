@@ -45,13 +45,17 @@ const copied = (page: import("@playwright/test").Page) =>
   page.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied);
 
 test.describe("picking rows in Arrange", () => {
-  test("🔴 a tap picks a row, and picks nothing outside the mode", async ({ knag }) => {
-    // Outside Arrange the row is a live input and a tap belongs to the caret. Inside it,
-    // the row is read-only and the gesture is free.
+  test("🔴 a tap picks a row, and there are no rows to tap outside the mode", async ({ knag }) => {
+    // 🔴 Rewritten for one surface (#113). The original tapped a row *outside* Arrange
+    // and asserted nothing got picked, because outside the mode a row was a live input
+    // and the tap belonged to the caret.
+    //
+    // There is no outside any more: `[data-rows]` is empty until Arrange builds it, which
+    // is a stronger version of the same guarantee — picking cannot happen outside the
+    // mode because the thing being picked does not exist there.
     await knag.seed(DOC);
 
-    await knag.rows().nth(0).click();
-    expect(await knag.rows().nth(0).getAttribute("class")).not.toContain("picked");
+    await expect(knag.rows()).toHaveCount(0);
 
     await knag.arrange();
     await knag.rows().nth(0).click();

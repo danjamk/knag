@@ -21,8 +21,8 @@ test.describe("a remote change arriving", () => {
 
     await knag.writeExternally("alpha\nbravo");
 
-    await expect(knag.rows()).toHaveCount(2, { timeout: SYNC_TIMEOUT });
-    await expect(knag.editor(1)).toHaveValue("bravo");
+    await expect(knag.lines()).toHaveCount(2, { timeout: SYNC_TIMEOUT });
+    await expect(knag.editor(1)).toHaveText("bravo");
   });
 
   test("🔴 appears while a row has focus, and does not move the caret", async ({ knag }) => {
@@ -32,22 +32,24 @@ test.describe("a remote change arriving", () => {
     // expiry and no signal. The page went stale precisely when you came back to it.
     await knag.seed("alpha\nbravo");
 
-    const row = knag.editor(0);
-    await row.click();
-    await row.press("End");
-    expect(await knag.caretOffset()).toBe(5);
+    await knag.caretAtEndOfLine(1);
 
     await knag.writeExternally("alpha\nbravo\ncharlie");
 
     // It must arrive without anyone clicking anything.
-    await expect(knag.rows()).toHaveCount(3, { timeout: SYNC_TIMEOUT });
-    await expect(knag.editor(2)).toHaveValue("charlie");
+    await expect(knag.lines()).toHaveCount(3, { timeout: SYNC_TIMEOUT });
+    await expect(knag.editor(2)).toHaveText("charlie");
 
     // 🔴 And the caret must not have moved — the whole reason the old code refused.
-    // Assigning a textarea's value resets the selection, so applying the update
-    // naively throws the cursor to the end of whatever row it lands in.
-    expect(await knag.focusedRowIndex()).toBe(0);
-    expect(await knag.caretOffset()).toBe(5);
+    //
+    // 🔴 Asserted by **typing**, not by reading a position (#113). "The caret did not
+    // move" is only ever a proxy for "the next keystroke lands where you left it", and
+    // that is the thing a reader actually loses. It is also the only form of the question
+    // that survived the row list: an offset into a `<textarea>` was readable, a
+    // contenteditable's caret is a DOM Range, and reaching into CodeMirror's internals to
+    // ask would be testing CodeMirror.
+    await knag.page.keyboard.type("!");
+    await expect.poll(() => knag.document()).toBe("alpha!\nbravo\ncharlie");
   });
 
   test("keeps the caret when the focused row's own text changed", async ({ knag }) => {
@@ -55,15 +57,16 @@ test.describe("a remote change arriving", () => {
     // clamped to the new length rather than left dangling past the end.
     await knag.seed("alpha\nbravo");
 
-    const row = knag.editor(1);
-    await row.click();
-    await row.press("End");
+    await knag.caretAtEndOfLine(2);
 
     await knag.writeExternally("alpha\nbr");
 
-    await expect(knag.editor(1)).toHaveValue("br", { timeout: SYNC_TIMEOUT });
-    expect(await knag.focusedRowIndex()).toBe(1);
-    expect(await knag.caretOffset()).toBeLessThanOrEqual(2);
+    await expect(knag.editor(1)).toHaveText("br", { timeout: SYNC_TIMEOUT });
+
+    // The offset was past the end of the rewritten line, so it is clamped rather than
+    // left dangling — and the proof is where the next keystroke goes.
+    await knag.page.keyboard.type("!");
+    await expect.poll(() => knag.document()).toBe("alpha\nbr!");
   });
 
   test("does not lose focus when the focused row disappears", async ({ knag }) => {
@@ -72,16 +75,15 @@ test.describe("a remote change arriving", () => {
     // left holding a stale `focused` flag that blocks every future one.
     await knag.seed("alpha\nbravo\ncharlie");
 
-    const row = knag.editor(2);
-    await row.click();
+    await knag.caretAtEndOfLine(3);
 
     await knag.writeExternally("alpha");
 
-    await expect(knag.rows()).toHaveCount(1, { timeout: SYNC_TIMEOUT });
+    await expect(knag.lines()).toHaveCount(1, { timeout: SYNC_TIMEOUT });
 
     // The proof that the flag was corrected: a *second* remote change still arrives.
     await knag.writeExternally("alpha\ndelta");
-    await expect(knag.rows()).toHaveCount(2, { timeout: SYNC_TIMEOUT });
+    await expect(knag.lines()).toHaveCount(2, { timeout: SYNC_TIMEOUT });
   });
 
   test("🔴 keeps arriving, poll after poll", async ({ knag }) => {
@@ -95,7 +97,7 @@ test.describe("a remote change arriving", () => {
       [4, "one\ntwo\nthree\nfour"],
     ] as const) {
       await knag.writeExternally(body);
-      await expect(knag.rows()).toHaveCount(n, { timeout: SYNC_TIMEOUT });
+      await expect(knag.lines()).toHaveCount(n, { timeout: SYNC_TIMEOUT });
     }
   });
 });
@@ -108,12 +110,10 @@ test.describe("a local edit racing a remote one", () => {
     await knag.seed("alpha");
     await knag.writeExternally("remote change");
 
-    const row = knag.editor(0);
-    await row.click();
-    await row.press("End");
-    await row.pressSequentially(" typed");
+    await knag.caretAtEndOfLine(1);
+    await knag.page.keyboard.type(" typed");
 
-    await expect(row).toHaveValue("alpha typed");
+    await expect(knag.editor(0)).toHaveText("alpha typed");
   });
 
   test("🔴 resolves to the server's copy, and says so", async ({ knag }) => {
@@ -131,15 +131,13 @@ test.describe("a local edit racing a remote one", () => {
     await knag.seed("alpha");
     await knag.writeExternally("remote change");
 
-    const row = knag.editor(0);
-    await row.click();
-    await row.press("End");
-    await row.pressSequentially(" typed");
+    await knag.caretAtEndOfLine(1);
+    await knag.page.keyboard.type(" typed");
 
     await expect(knag.page.locator("[data-save-status]")).toHaveText(/reloaded/, {
       timeout: SYNC_TIMEOUT,
     });
-    await expect(knag.editor(0)).toHaveValue("remote change");
+    await expect(knag.editor(0)).toHaveText("remote change");
     expect(await knag.document()).toBe("remote change");
   });
 });

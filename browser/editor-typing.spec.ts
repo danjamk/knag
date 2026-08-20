@@ -155,13 +155,40 @@ test.describe("typing (spec §7, ADR-003 §4)", () => {
   });
 });
 
-/**
- * Sync and offline, on the new surface.
- *
- * 🔴 `browser/sync.spec.ts` proves these for the **row list**, and none of it carries
- * over: the row model captured a row index and a caret offset by hand and restored them
- * after a repaint, while this maps the selection through a change. Different mechanism,
- * same promises, so the promises get asserted again rather than assumed.
- */
+test.describe("a burst of typing, ported from the row list (#113)", () => {
+  // 🔴 These two came from `editing.spec.ts`, which was deleted with the row list. They
+  // are here rather than gone because **neither was ever about rows** — both are about
+  // knag's save and poll cycle under fast input, and that cycle is unchanged. Deleting a
+  // file wholesale is how coverage is lost by accident; every test in it was read first,
+  // and these are the two with no equivalent above.
 
-/** The active poll tier is 4s, so allow a couple of rounds before calling it broken. */
+  test("🔴 never says the page changed elsewhere when nothing else touched it", async ({
+    knag,
+  }) => {
+    // `reloaded · it changed elsewhere` comes from a 409 and nowhere else. With one
+    // device and one operator there is nothing to conflict with — so seeing it at all
+    // means the app raced itself, and the "elsewhere" was its own keystroke.
+    await knag.seed("Thursday\n- [ ] call the accountant\n");
+    await knag.useEditor();
+    await knag.caretAtEndOfLine(1);
+
+    for (let i = 0; i < 6; i++) await knag.page.keyboard.press("Enter");
+    await knag.saved();
+
+    await expect(knag.page.locator("[data-save-status]")).not.toHaveText(/reloaded/);
+  });
+
+  test("🔴 lands every keystroke of a burst, in order", async ({ knag }) => {
+    // The half that matters more than the caret. A 409 resolves by loading the server's
+    // copy over the local one, so a save that lost the race takes its keystrokes with
+    // it — silently, because the status line calls it a reload rather than a loss.
+    await knag.seed("start");
+    await knag.useEditor();
+    await knag.caretAtEndOfLine(1);
+
+    await knag.page.keyboard.type("\nalpha\nbeta\ngamma", { delay: 15 });
+
+    await knag.saved();
+    await expect.poll(() => knag.document()).toBe("start\nalpha\nbeta\ngamma");
+  });
+});

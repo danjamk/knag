@@ -1,39 +1,32 @@
-import {
-  CHECKBOX,
-  type Block,
-  eolOf,
-  isCompleted,
-  parse,
-  serialize,
-} from "../../worker/src/blocks.js";
-import { displayText, stripCR } from "./view.js";
+import { CHECKBOX, isCompleted, parse } from "../../worker/src/blocks.js";
 
 /**
- * Typing operations over the block array — split, merge, and where the caret lands.
+ * The typing rules the platform does not know, as pure functions.
  *
- * 🔴 Pure, and that is the point. This is the work spec §7 originally declined —
+ * 🔴 Pure, and that is the point. This began as the work spec §7 declined —
  * "backspace-merges-previous-row, arrow-up-at-boundary… the source of every cursor
- * bug" — and the only defence available without a browser is to make every decision
- * a function that takes state and returns state. `app.ts` reads the caret, calls one
- * of these, and puts the caret where it says. No DOM here.
+ * bug" — and the only defence available without a browser was to make every decision a
+ * function that takes state and returns state. No DOM here.
  *
- * Offsets are indices into `displayText(block)`, never into `block.raw`. On a
- * checkbox those differ by the `- [ ] ` prefix (ADR-003, spec §7).
+ * 🔴 Most of it is gone (#113). Splitting rows, merging them, and stepping a caret across
+ * a boundary were all in service of making a *row* behave like a *line*. One document in
+ * one editing surface has real lines, and CodeMirror owns them.
+ *
+ * What survives is the part no platform knows: that Enter on a checkbox line continues
+ * the list, that `-- ` becomes a checkbox, and that the keystroke straight after can take
+ * it back. Those are knag's rules rather than a text editor's.
  */
 
-export type EditResult = {
-  /** The whole document after the edit. Serialize it; do not diff it. */
-  body: string;
-  /** Which row should hold focus afterwards. */
-  focusIndex: number;
-  /** Where the caret goes inside that row's editor. */
-  focusOffset: number;
-};
-
-/** Nothing changed. Returned rather than throwing, so callers stay branch-free. */
-function unchanged(blocks: Block[], index: number, offset: number): EditResult {
-  return { body: serialize(blocks), focusIndex: index, focusOffset: offset };
-}
+// 🔴 `EditResult`, `splitAt`, `mergeBackward` and `neighbor` were deleted with the row
+// list (#113). All four existed to make row boundaries behave like line boundaries: a
+// split that repaints and hands back where the caret should land, a merge that folds a
+// row into its neighbour, and a step across a boundary the platform did not know was one.
+//
+// On one document those *are* line boundaries and CodeMirror owns them. `splitLine` below
+// survives because the editing surface calls it for the one rule the platform does not
+// know — that Enter on a checkbox line continues the list.
+//
+// #84 and #88 were both bugs in `neighbor`'s callers. Neither has an equivalent now.
 
 /**
  * A plain hyphen or asterisk bullet: indentation, one marker, one space.
@@ -160,99 +153,7 @@ export function splitLine(line: string, offset: number): LineSplit {
   return { kind: "split", head: line.slice(0, at), tail: line.slice(at), caret: 0 };
 }
 
-export function splitAt(body: string, index: number, offset: number): EditResult {
-  const blocks = parse(body);
-  const block = blocks[index];
-  if (!block || block.kind === "fence") return unchanged(blocks, index, offset);
 
-  // 🔴 The adapter, and all this function is now. Offsets in the row model are into
-  // `displayText` — which strips a checkbox's marker — while the policy speaks in raw
-  // lines. Converting here is what lets both surfaces share one statement of the rules.
-  const raw = stripCR(block.raw);
-  const prefix = raw.length - displayText(block).length;
-  const split = splitLine(raw, Math.max(0, Math.min(offset, displayText(block).length)) + prefix);
-  const eol = eolOf(block);
-
-  if (split.kind === "clear") {
-    // The line survives and the marker does not, so the caret has nowhere to go but 0.
-    const next = blocks.map((b, i) => (i === index ? { ...b, raw: eol } : b));
-    return { body: serialize(next), focusIndex: index, focusOffset: 0 };
-  }
-
-  const next = [
-    ...blocks.slice(0, index),
-    // 🔴 The line ending moves to the *second* half. A split turns one line into two and
-    // the ending belonged to the end of the original, which is now the end of the tail.
-    // Leaving it on the head produces `hello\r\n world` — a stray carriage return
-    // mid-document that survives every round trip, because `raw` is honoured verbatim.
-    { ...block, raw: split.head },
-    // startLine/endLine are stale on both halves until the reparse. Nothing reads them
-    // between here and there — `serialize` only touches `raw`.
-    { ...block, raw: split.tail + eol },
-    ...blocks.slice(index + 1),
-  ];
-
-  return {
-    body: serialize(next),
-    focusIndex: index + 1,
-    // Back into `displayText` terms: past a checkbox's marker is offset 0, while a
-    // bullet's marker is ordinary text and the caret really does sit after it.
-    focusOffset: split.caret - checkPrefix(split.tail).length,
-  };
-}
-
-/**
- * `Backspace` at offset 0 — demote, then merge.
- *
- * 🔴 A checkbox **demotes to plain text first**, and only a second backspace merges
- * it upward. One keystroke that both strips a checkbox and joins two lines destroys
- * more structure than the user asked for, and this is the behaviour every list app
- * has trained them to expect.
- *
- * Merging into a fence is refused. Text joined onto a closing ``` would land *inside*
- * the code block, which is never what backspace meant — reorder mode's delete is the
- * way to remove a row next to a fence.
- */
-export function mergeBackward(body: string, index: number): EditResult {
-  const blocks = parse(body);
-  const block = blocks[index];
-  if (!block) return unchanged(blocks, index, 0);
-
-  // A fence's own textarea handles backspace natively; never merge one upward.
-  if (block.kind === "fence") return unchanged(blocks, index, 0);
-
-  if (block.kind === "checkbox") {
-    const demoted = blocks.map((b, i) =>
-      i === index ? { ...b, raw: `${displayText(b)}${b.eol ?? ""}` } : b,
-    );
-    return { body: serialize(demoted), focusIndex: index, focusOffset: 0 };
-  }
-
-  if (index === 0) return unchanged(blocks, index, 0);
-
-  const previous = blocks[index - 1] as Block;
-  if (previous.kind === "fence") return unchanged(blocks, index, 0);
-
-  // The previous line's ending is dropped and this line's kept — the two become one
-  // line, and a line has one ending.
-  const head = stripCR(previous.kind === "checkbox" ? previous.raw : previous.raw);
-  const joined = head + block.raw;
-
-  const next = [
-    ...blocks.slice(0, index - 1),
-    { ...previous, raw: joined },
-    ...blocks.slice(index + 1),
-  ];
-
-  // The caret lands at the join, expressed in the merged row's display text — which
-  // is shorter than `joined` when the previous row was a checkbox, because its
-  // prefix is not in the editor.
-  const merged = parse(serialize(next))[index - 1];
-  const mergedText = merged ? displayText(merged) : "";
-  const offset = Math.max(0, mergedText.length - displayText(block).length);
-
-  return { body: serialize(next), focusIndex: index - 1, focusOffset: offset };
-}
 
 // ── Checkbox shorthand (spec §7) ─────────────────────────────────────────────
 
@@ -312,26 +213,6 @@ export function revertShorthand(text: string, caret: number): Shorthand {
   return { text: `${indent}-- ${rest}`, caret: indent.length + 3 };
 }
 
-/**
- * `↑` / `↓` — the row to move to, and where the caret sits in it.
- *
- * Every row is focusable, blanks included. A blank line is a place you can type, and
- * skipping it would make the arrow keys disagree with what is on screen.
- */
-export function neighbor(body: string, index: number, direction: -1 | 1, offset: number): EditResult {
-  const blocks = parse(body);
-  const target = index + direction;
-  if (target < 0 || target >= blocks.length) return unchanged(blocks, index, offset);
-
-  const text = displayText(blocks[target] as Block);
-  return {
-    body: serialize(blocks),
-    focusIndex: target,
-    // Column is preserved where the line is long enough, clamped to its end where it
-    // is not — the same thing every text editor does.
-    focusOffset: Math.min(offset, text.length),
-  };
-}
 
 
 /**

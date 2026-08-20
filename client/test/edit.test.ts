@@ -1,15 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { parse } from "../../worker/src/blocks.js";
-import {
-  applyShorthand,
-  leavingLines,
-  mergeBackward,
-  neighbor,
-  revertShorthand,
-  splitAt,
-} from "../src/edit.js";
-import { displayText } from "../src/view.js";
+import { applyShorthand, leavingLines, revertShorthand, splitLine } from "../src/edit.js";
 
 /**
  * The typing model, tested as pure state transitions.
@@ -20,314 +11,101 @@ import { displayText } from "../src/view.js";
  * keyboard; that is #35 and a real device respectively.
  */
 
-describe("splitAt — Enter", () => {
-  it("splits a plain line at the caret", () => {
-    const result = splitAt("hello world", 0, 5);
+describe("splitLine — Enter, and the rules no platform knows", () => {
+  // 🔴 These are new, and they replace coverage rather than add it (#113). `splitLine`
+  // was only ever tested *through* `splitAt`, the row-model adapter over it — so deleting
+  // the row list would have silently left the one function the editing surface still
+  // calls with no tests at all. It is called on every Enter.
+  //
+  // Offsets here are into the **raw** line, marker included, which is the natural unit
+  // for one editing surface. The row model converted on the way in and out; nothing does
+  // now.
 
-    expect(result.body).toBe("hello\n world");
-    expect(result).toMatchObject({ focusIndex: 1, focusOffset: 0 });
+  it("splits a plain line where the caret is", () => {
+    expect(splitLine("buy milk", 3)).toEqual({ kind: "split", head: "buy", tail: " milk", caret: 0 });
   });
 
-  it("inserts an empty row when splitting at the end", () => {
-    expect(splitAt("done", 0, 4).body).toBe("done\n");
+  it("clamps an offset past the end rather than inventing text", () => {
+    expect(splitLine("ab", 99)).toEqual({ kind: "split", head: "ab", tail: "", caret: 0 });
+    expect(splitLine("ab", -5)).toEqual({ kind: "split", head: "", tail: "ab", caret: 0 });
   });
 
-  it("splits a checkbox into two checkboxes", () => {
-    // What every list app does, and what the `--` shorthand exists to make cheap.
-    const result = splitAt("- [ ] buy milk", 0, 3);
-
-    expect(result.body).toBe("- [ ] buy\n- [ ]  milk");
-    expect(result.focusIndex).toBe(1);
+  it("🔴 continues a checkbox, unchecked", () => {
+    // A line that has just been typed is not already done. Splitting a *checked* line
+    // still produces an unchecked one below.
+    expect(splitLine("- [x] pay it", 12)).toEqual({
+      kind: "split",
+      head: "- [x] pay it",
+      tail: "- [ ] ",
+      caret: 6,
+    });
   });
 
-  it("keeps the indent and marker on the new checkbox", () => {
-    expect(splitAt("\t  * [x] a", 0, 1).body).toBe("\t  * [x] a\n\t  * [ ] ");
+  it("🔴 clears the marker on Enter at an empty checkbox, rather than making another", () => {
+    // The way out of a list. Without this, Enter on an empty item makes an empty item
+    // forever and the only escape is backspacing a marker you did not type.
+    expect(splitLine("- [ ] ", 6)).toEqual({ kind: "clear" });
+    expect(splitLine("  * [ ] ", 8)).toEqual({ kind: "clear" });
   });
 
-  it("🔴 leaves the new checkbox unchecked even when splitting a checked one", () => {
-    // A line that has just been typed is not already done.
-    const result = splitAt("- [x] finished", 0, 8);
-
-    expect(parse(result.body)[1]?.checked).toBe(false);
+  it("🔴 never splits inside the marker, because the marker is one widget", () => {
+    // The caret can sit at the very start of the line — before the indent — and the
+    // marker is drawn as a single atomic control. Splitting inside six characters that
+    // render as one thing is not something anyone asked for; you get an empty checkbox
+    // above and your text below, which is what every list app does.
+    expect(splitLine("- [ ] milk", 0)).toEqual({
+      kind: "split",
+      head: "- [ ] ",
+      tail: "- [ ] milk",
+      caret: 6,
+    });
+    expect(splitLine("- [ ] milk", 3)).toEqual({
+      kind: "split",
+      head: "- [ ] ",
+      tail: "- [ ] milk",
+      caret: 6,
+    });
   });
 
-  it("🔴 exits the list when Enter lands on an empty checkbox", () => {
-    // Without this there is no way to stop making checkboxes except reaching for raw
-    // view — the exact mode-switch ADR-003 removed.
-    const result = splitAt("- [ ] a\n- [ ] ", 1, 0);
-
-    expect(result.body).toBe("- [ ] a\n");
-    expect(parse(result.body)[1]?.kind).toBe("blank");
-    expect(result).toMatchObject({ focusIndex: 1, focusOffset: 0 });
+  it("🔴 keeps the marker the line actually used, and its indentation", () => {
+    // `*` is not normalised to `-`. Principle 3: bytes in, bytes out — a continued line
+    // inherits the marker its neighbour was written with, whichever that was.
+    expect(splitLine("  * [ ] one", 11)).toEqual({
+      kind: "split",
+      head: "  * [ ] one",
+      tail: "  * [ ] ",
+      caret: 8,
+    });
   });
 
-  // ── Bullets (#85) ──────────────────────────────────────────────────────────
-
-  it("🔴 continues a hyphen bullet", () => {
-    // The bytes really do gain `- `. Nothing is rendered that the file does not say,
-    // which is what separates this from styling a bullet — the thing ADR-004 rules out
-    // and ADR-003 §4 declined to trigger on.
-    const result = splitAt("- milk", 0, 6);
-
-    expect(result.body).toBe("- milk\n- ");
-    // 🔴 Offset 2, not 0 — **after** the marker. A checkbox's prefix is stripped by
-    // `displayText` and is not in its editor, so 0 is already past it; a bullet is a
-    // plain text block whose first characters really are `- `, so 0 lands in front of
-    // them and the next keystroke produces `eggs- `. Found by a browser test, because
-    // the body is identical either way.
-    expect(result).toMatchObject({ focusIndex: 1, focusOffset: 2 });
+  it("🔴 derives the prefix from the grammar rather than counting six characters", () => {
+    // `CHECKBOX` separates with `\s`, so a tab is legal in both positions and
+    // `indent.length + 6` is wrong for a line nobody would think to type by hand.
+    const split = splitLine("-\t[ ]\tmilk", 99);
+    expect(split.kind).toBe("split");
+    if (split.kind !== "split") return;
+    expect(split.head).toBe("-\t[ ]\tmilk");
   });
 
-  it("🔴 copies the marker rather than normalising it", () => {
-    // A `*` bullet continues as `*`. Tidying it to `-` would be knag editing a line the
-    // user did not touch, which is principle 3.
-    expect(splitAt("* milk", 0, 6).body).toBe("* milk\n* ");
+  it("continues a bullet without duplicating its marker", () => {
+    // Splitting `- milk and eggs` mid-line must not produce `- ` followed by
+    // ` and eggs` with the marker written twice on a line that already has one.
+    expect(splitLine("- milk and eggs", 6)).toEqual({
+      kind: "split",
+      head: "- milk",
+      tail: "-  and eggs",
+      caret: 2,
+    });
   });
 
-  it("carries the indentation verbatim", () => {
-    expect(splitAt("    - nested", 0, 12).body).toBe("    - nested\n    - ");
-    expect(splitAt("\t- tabbed", 0, 9).body).toBe("\t- tabbed\n\t- ");
+  it("clears an empty bullet, the same way it clears an empty checkbox", () => {
+    expect(splitLine("- ", 2)).toEqual({ kind: "clear" });
   });
 
-  it("puts the tail on the new bullet when splitting mid-line", () => {
-    expect(splitAt("- milk and eggs", 0, 6).body).toBe("- milk\n-  and eggs");
-  });
-
-  it("🔴 exits the list when Enter lands on an empty bullet", () => {
-    // Same contract as the empty checkbox. Without it there is no way to stop making
-    // bullets except reaching for raw view — the mode-switch ADR-003 removed.
-    const result = splitAt("- milk\n- ", 1, 2);
-
-    expect(result.body).toBe("- milk\n");
-    expect(result).toMatchObject({ focusIndex: 1, focusOffset: 0 });
-  });
-
-  it("leaves a line that merely starts with a dash alone", () => {
-    // `-5 degrees` and `--` are not bullets. The space after the marker is the whole
-    // of the rule, and without it a minus sign starts a list.
-    expect(splitAt("-5 degrees", 0, 10).body).toBe("-5 degrees\n");
-    expect(splitAt("--", 0, 2).body).toBe("--\n");
-    expect(splitAt("—em dash", 0, 8).body).toBe("—em dash\n");
-  });
-
-  it("🔴 does not treat a checkbox as a bullet", () => {
-    // `- [ ] x` starts with `- `, so a naive bullet rule matches it and produces
-    // `- - [ ] ` on the next line. The checkbox branch owns those and runs first, but
-    // the pattern refuses them too rather than relying on ordering.
-    expect(splitAt("- [ ] task", 0, 10).body).toBe("- [ ] task\n- [ ] ");
-    expect(splitAt("- [x] done", 0, 10).body).toBe("- [x] done\n- [ ] ");
-  });
-
-  it("does not split a fence — its textarea handles Enter natively", () => {
-    const body = "```\ncode\n```";
-    expect(splitAt(body, 0, 2).body).toBe(body);
-  });
-
-  it("clamps an out-of-range caret rather than throwing", () => {
-    expect(splitAt("abc", 0, 99).body).toBe("abc\n");
-    expect(splitAt("abc", 0, -5).body).toBe("\nabc");
-    expect(splitAt("abc", 9, 0).body).toBe("abc");
-  });
-
-  it("preserves CRLF on both halves", () => {
-    // The line ending belongs to the line; splitting makes two lines.
-    const result = splitAt("hello world\r\nnext", 0, 5);
-    expect(result.body).toBe("hello\n world\r\nnext");
-  });
-});
-
-describe("mergeBackward — Backspace at offset 0", () => {
-  it("🔴 demotes a checkbox to plain text before merging anything", () => {
-    // One keystroke that both strips a checkbox and joins two lines destroys more
-    // structure than the user asked for.
-    const result = mergeBackward("first\n- [ ] second", 1);
-
-    expect(result.body).toBe("first\nsecond");
-    expect(result).toMatchObject({ focusIndex: 1, focusOffset: 0 });
-  });
-
-  it("merges on the second backspace, once it is plain text", () => {
-    const once = mergeBackward("first\n- [ ] second", 1);
-    const twice = mergeBackward(once.body, 1);
-
-    expect(twice.body).toBe("firstsecond");
-    expect(twice).toMatchObject({ focusIndex: 0, focusOffset: 5 });
-  });
-
-  it("puts the caret exactly at the join", () => {
-    const result = mergeBackward("abc\ndef", 1);
-
-    expect(result.body).toBe("abcdef");
-    expect(result.focusOffset).toBe(3);
-  });
-
-  it("merges into a checkbox with the caret in display coordinates", () => {
-    // 🔴 The merged row is a checkbox, so its editor shows "todo" rather than
-    // "- [ ] todo". An offset counted against `raw` would land six characters off.
-    const result = mergeBackward("- [ ] todo\nmore", 1);
-
-    expect(result.body).toBe("- [ ] todomore");
-    expect(result.focusIndex).toBe(0);
-    expect(result.focusOffset).toBe(4);
-    expect(displayText(parse(result.body)[0] as never)).toBe("todomore");
-  });
-
-  it("does nothing at the first row", () => {
-    expect(mergeBackward("only", 0).body).toBe("only");
-  });
-
-  it("refuses to merge into a fence", () => {
-    // Text joined onto a closing fence lands *inside* the code block, which is never
-    // what backspace meant.
-    const body = "```\ncode\n```\nafter";
-    expect(mergeBackward(body, 1).body).toBe(body);
-  });
-
-  it("does not merge a fence upward either", () => {
-    const body = "before\n```\ncode\n```";
-    expect(mergeBackward(body, 1).body).toBe(body);
-  });
-
-  it("absorbs a blank line", () => {
-    expect(mergeBackward("a\n\nb", 1).body).toBe("a\nb");
-  });
-
-  it("keeps the surviving line's ending when merging across CRLF", () => {
-    // Two lines become one, and a line has one ending.
-    expect(mergeBackward("abc\r\ndef\r\n", 1).body).toBe("abcdef\r\n");
-  });
-});
-
-describe("neighbor — arrow keys", () => {
-  it("moves between rows", () => {
-    expect(neighbor("a\nb\nc", 1, 1, 0).focusIndex).toBe(2);
-    expect(neighbor("a\nb\nc", 1, -1, 0).focusIndex).toBe(0);
-  });
-
-  it("stops at the ends rather than wrapping", () => {
-    expect(neighbor("a\nb", 0, -1, 0).focusIndex).toBe(0);
-    expect(neighbor("a\nb", 1, 1, 0).focusIndex).toBe(1);
-  });
-
-  it("preserves the column where the line is long enough", () => {
-    expect(neighbor("aaaaa\nbbbbb", 0, 1, 3).focusOffset).toBe(3);
-  });
-
-  it("clamps the column to the end of a shorter line", () => {
-    expect(neighbor("aaaaa\nb", 0, 1, 4).focusOffset).toBe(1);
-  });
-
-  it("counts the column in display text, not raw", () => {
-    // Moving onto a checkbox row, the editor holds "hi" — offset 5 clamps to 2, not
-    // to the length of "- [ ] hi".
-    expect(neighbor("aaaaaaa\n- [ ] hi", 0, 1, 5).focusOffset).toBe(2);
-  });
-
-  it("visits blank rows rather than skipping them", () => {
-    // A blank line is a place you can type; skipping it makes the arrows disagree
-    // with what is on screen.
-    expect(neighbor("a\n\nb", 0, 1, 0).focusIndex).toBe(1);
-  });
-
-  it("never changes the document", () => {
-    fc.assert(
-      fc.property(fc.string({ maxLength: 200, unit: "binary" }), fc.nat({ max: 10 }), (body, i) => {
-        expect(neighbor(body, i, 1, 0).body).toBe(body);
-        expect(neighbor(body, i, -1, 0).body).toBe(body);
-      }),
-      { numRuns: 500 },
-    );
-  });
-});
-
-describe("what typing may never do", () => {
-  const anyBody = fc.string({ maxLength: 200, unit: "binary" });
-
-  it("🔴 a split followed by a merge restores the document exactly", () => {
-    // The round trip that makes the whole model safe: Enter then Backspace is a
-    // no-op, on arbitrary documents, at arbitrary positions.
-    fc.assert(
-      fc.property(anyBody, fc.nat({ max: 20 }), fc.nat({ max: 40 }), (body, i, o) => {
-        const blocks = parse(body);
-        if (blocks.length === 0) return;
-        const index = i % blocks.length;
-        const block = blocks[index];
-        // Fences and empty checkboxes are deliberately not round trips — see their
-        // own tests above.
-        if (!block || block.kind === "fence") return;
-        if (block.kind === "checkbox" && displayText(block).length === 0) return;
-
-        const text = displayText(block);
-        const at = o % (text.length + 1);
-        // 🔴 Excluded, and not a bug: splitting immediately after a content `\r`
-        // leaves the head ending in `\r` followed by `\n`, which *is* a CRLF line
-        // ending by the parser's own rules. The two are indistinguishable in this
-        // representation, so the merge back reads it as an ending and drops it.
-        // Documented as its own test below rather than hidden by loosening this one.
-        if (text[at - 1] === "\r") return;
-
-        const split = splitAt(body, index, at);
-        const merged = mergeBackward(split.body, split.focusIndex);
-
-        // A checkbox split makes a checkbox, so the merge demotes first.
-        const settled =
-          block.kind === "checkbox" ? mergeBackward(merged.body, split.focusIndex).body : merged.body;
-
-        expect(settled).toBe(body);
-      }),
-      { numRuns: 2000 },
-    );
-  });
-
-  it("loses a lone carriage return split exactly at its edge — inherent, not a bug", () => {
-    // A line whose *content* contains `\r`, split immediately after it. The head then
-    // ends `\r` and is followed by `\n`, which the parser reads as a CRLF ending —
-    // correctly, because that is what it looks like and nothing distinguishes them.
-    //
-    // Recorded because the round-trip property excludes it, and an exclusion nobody
-    // can see is an exclusion nobody will question. A lone `\r` mid-line is
-    // pathological content; if it ever stops being pathological, the line model is
-    // the wrong shape and this is where that argument starts.
-    const split = splitAt("ab\rcd", 0, 3);
-    expect(split.body).toBe("ab\r\ncd");
-
-    expect(mergeBackward(split.body, 1).body).toBe("abcd");
-  });
-
-  it("🔴 never changes the total number of characters, only where the breaks are", () => {
-    // A split adds exactly one newline (plus a checkbox prefix when it makes one);
-    // it must never drop or duplicate content.
-    fc.assert(
-      fc.property(anyBody, fc.nat({ max: 20 }), fc.nat({ max: 40 }), (body, i, o) => {
-        const blocks = parse(body);
-        if (blocks.length === 0) return;
-        const index = i % blocks.length;
-        const block = blocks[index];
-        if (!block || block.kind === "fence" || block.kind === "checkbox") return;
-
-        const result = splitAt(body, index, o % (displayText(block).length + 1));
-        expect(result.body.replace(/\n/g, "")).toBe(body.replace(/\n/g, ""));
-      }),
-      { numRuns: 2000 },
-    );
-  });
-
-  it("🔴 a merge never loses a character either", () => {
-    fc.assert(
-      fc.property(anyBody, fc.nat({ max: 20 }), (body, i) => {
-        const blocks = parse(body);
-        if (blocks.length === 0) return;
-        const index = i % blocks.length;
-
-        const result = mergeBackward(body, index);
-        // Merging removes at most one newline and at most one `- [ ] ` prefix; it
-        // must never touch anything else.
-        expect(result.body.replace(/[\n\r]/g, "").length).toBeLessThanOrEqual(
-          body.replace(/[\n\r]/g, "").length,
-        );
-      }),
-      { numRuns: 1000 },
-    );
+  it("does not continue an ordered list, deliberately", () => {
+    // Continuing `1. ` means *renumbering*, which is the first edit knag would make to
+    // a line the user did not ask it to touch. It is treated as ordinary text.
+    expect(splitLine("1. first", 8)).toEqual({ kind: "split", head: "1. first", tail: "", caret: 0 });
   });
 });
 

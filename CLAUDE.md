@@ -19,16 +19,24 @@ Two things a newcomer gets wrong:
   is behind `EditorHandle` in `client/src/editor.ts`, which speaks only in document
   bytes ([ADR-007](docs/adr/ADR-007-one-editing-surface.md)). The row model leaked
   into `app.ts` through `editorIn`, `focusRow`, `captureCaret` and four arrow-key
-  branches, and that leak is why replacing it was a project rather than a change.
+  branches, and that leak is why replacing it was a project rather than a change —
+  all of it is gone now (#113), and the leak is the reason it took a release to remove.
   **No CodeMirror import belongs outside `editor.ts`.**
 - **CodeMirror never sees a `\r`.** `client/src/eol.ts` splits the document into
   LF-only text plus the CRLF line set and rejoins on the way out, because a lone
   carriage return inside the editor is a character the caret can sit past — which
   strands it mid-line, renders perfectly, and corrupts on save.
-- **Two editing surfaces exist during the transition** — the row list and the
-  CodeMirror one — and they must never be live at once. Arrange **destroys** the
-  editor rather than hiding it; hidden is not the same as not editing. The row list
-  goes once the replacement has survived real use.
+- **There is one editing surface.** The row list was deleted in #113 after it had a
+  release beside the replacement — every defect this project has shipped was found by a
+  person on a phone rather than by the suite, so the surface got used against the real
+  page before the old one went.
+
+  🔴 **`[data-rows]` still exists and holds only Arrange**, which builds its own rows
+  from the block array and is the reason replacing the editing surface did not cost the
+  sort mode ([ADR-007](docs/adr/ADR-007-one-editing-surface.md) §4). The two renderings
+  must never be live at once: Arrange **destroys** the editor rather than hiding it,
+  because hidden is not the same as not editing. A test that reads `[data-rows] li`
+  outside Arrange is reading an empty list and asserting nothing.
 - **`assets.run_worker_first` in `worker/wrangler.jsonc` lists the only paths
   that reach the Worker.** Everything else is static. A new route needs adding in
   both places, and forgetting the config half produces a 404 that looks like a

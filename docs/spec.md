@@ -454,22 +454,32 @@ stale by construction.
 
 ---
 
-## 7. Client — list view (default)
+## 7. Client — the editing surface
 
-> 🔴 **There are two editing surfaces during the transition to
-> [ADR-007](adr/ADR-007-one-editing-surface.md).** Everything in this section describes
-> the **row list**, which is still the default and still correct. Beside it, Settings →
-> View → **editor** is one CodeMirror document — same bytes, same checkboxes, same
-> Arrange, but a selection crosses lines because it is not one form control per row.
+> 🔴 **The row list is gone (#113).** It shipped *beside* the CodeMirror surface rather
+> than instead of it, because every defect this project has shipped was found by a person
+> on a phone rather than by the suite — so the replacement got used against the real page
+> first. It earned it, and a transition that does not end is two things to maintain plus a
+> mode question in Settings, which is what ADR-003 removed on evidence.
 >
-> The behaviours below are shared, not duplicated: `Enter`, the `--` shorthand and the
-> marker rules are stated once in `client/src/edit.ts` and adapted by both. What the row
-> list has and the surface does not need is everything about **crossing a row boundary** —
-> the four arrow rules, `client/src/caret.ts`, and the pixel-column preservation — because
-> on one document those are line boundaries and the platform owns them.
+> What went with it: `client/src/caret.ts` in full, the four arrow-key rules, `neighbor`,
+> `splitAt`, `mergeBackward`, the per-row `<textarea>` rendering, and the offline
+> exemption that kept one row live. All of it existed to make a **row boundary** behave
+> like a **line boundary**, and on one document those *are* line boundaries — the platform
+> owns them. #84 and #88 were both bugs in that code.
 >
-> The row list is deleted once the replacement has survived real use, and this section
-> goes with it.
+> What survives is stated once in `client/src/edit.ts` and called by the surface: `Enter`
+> continuing a checkbox or a bullet, the `--` shorthand, and its undo. Those are knag's
+> rules rather than a text editor's, which is why no platform knows them.
+>
+> **Arrange still renders rows** and is the only thing that does — a separate mode built
+> from the block array, read-only, never sharing an element with the surface
+> ([ADR-007](adr/ADR-007-one-editing-surface.md) §4). Raw view survives as the escape
+> hatch for a bulk paste; ADR-007 argues it should go too, as its own change.
+>
+> The section below describes what the surface renders. It was written for the row list
+> and the block-by-kind table still holds — the difference is that a fence is now three
+> lines rather than one row.
 
 Parse `body` into blocks (§14.1). Render each block by kind:
 
@@ -1088,10 +1098,15 @@ The first two cause silent data corruption if implemented naively.
 
 ### 14.1 Block model — rows are not lines
 
-**Rows in list view map to *blocks*, not to lines.** A fenced code block is one
-row spanning many lines. Any implementation that indexes rows directly into the
-line array will scramble the document on the first reorder involving a code
-block.
+**Blocks are not lines.** A fenced code block is one block spanning many lines. Any
+implementation that indexes blocks directly into the line array will scramble the
+document on the first reorder involving a code block.
+
+🔴 **Still true, and it now applies to Arrange and the wipe rather than to a row list**
+(#113). Arrange builds its rows from the block array — one row per block, a fence as
+one — while the editing surface renders one line per line. That is exactly why
+`leavingLines` exists: the wipe animates *lines*, and animating by block index faded the
+opening ` ``` ` and left the rest of the fence behind (#119).
 
 Lives in `worker/src/blocks.ts`. **One implementation, imported by both sides**
 (§2). Parse `body` into an array of blocks:

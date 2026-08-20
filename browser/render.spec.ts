@@ -18,74 +18,72 @@ const DOC = [
   "  - [ ] nested item",
 ].join("\n");
 
-test.describe("rows are actually visible", () => {
-  test("🔴 every row has non-zero height on first load", async ({ knag }) => {
-    // The bug: `autoGrow` sizes from `scrollHeight`, a hidden element reports 0, and
-    // the first paint happened before the container was shown — so every row was
-    // written `height: 0px`. Checkboxes survived; all text vanished.
-    //
-    // It looked exactly like the text failing to render, self-corrected on the first
-    // keystroke, and was invisible to the whole unit suite.
-    await knag.seed(DOC);
+test.describe("the page is actually visible", () => {
+  // 🔴 Rewritten for one surface (#113). These tested the row list: `autoGrow` sizing a
+  // `<textarea>` from `scrollHeight`, one row per *block* with a fence collapsing three
+  // lines into one, and a row shrinking back after a delete. None of that exists — the
+  // surface has one line per line and CodeMirror owns wrapping.
+  //
+  // What survives is the *question* each of them asked, which had nothing to do with
+  // rows: does the text render, does it wrap, and does a checked line stay where it was
+  // written. The original bug is worth keeping in mind — every row was written
+  // `height: 0px`, checkboxes survived, all text vanished, and it looked exactly like a
+  // render failure while being invisible to the entire unit suite.
 
-    const editors = knag.page.locator("[data-rows] .text, [data-rows] .fence");
-    const count = await editors.count();
+  test("🔴 every line has non-zero height on first load", async ({ knag }) => {
+    await knag.seed(DOC);
+    await knag.useEditor();
+
+    const lines = knag.page.locator("[data-surface] .cm-line");
+    const count = await lines.count();
     expect(count).toBeGreaterThan(0);
 
     for (let i = 0; i < count; i++) {
-      const box = await editors.nth(i).boundingBox();
-      expect(box, `row ${i} has no box`).not.toBeNull();
-      expect(box?.height ?? 0, `row ${i} is zero-height`).toBeGreaterThan(10);
+      const box = await lines.nth(i).boundingBox();
+      expect(box, `line ${i} has no box`).not.toBeNull();
+      expect(box?.height ?? 0, `line ${i} is zero-height`).toBeGreaterThan(10);
     }
   });
 
   test("shows the document's text, not just its structure", async ({ knag }) => {
     await knag.seed(DOC);
+    await knag.useEditor();
 
-    await expect(knag.editor(0)).toHaveValue("Weekend Chores");
-    await expect(knag.editor(1)).toHaveValue("shells credit protection");
-    // A checkbox row's editor holds the task text, never the `- [ ] ` prefix.
-    await expect(knag.editor(2)).toHaveValue("Laundry folding");
+    await expect(knag.editor(0)).toHaveText("Weekend Chores");
+    await expect(knag.editor(1)).toHaveText("shells credit protection");
+    // 🔴 The checkbox line shows its task text with the marker drawn as a widget over
+    // the bytes — the `- [ ] ` is still in the document, and ADR-004 is why the widget
+    // is a control rather than a rendering that replaces it.
+    await expect(knag.editor(2)).toContainText("Laundry folding");
   });
 
-  test("renders one row per block, with a fence as a single row", async ({ knag }) => {
+  test("🔴 one line per line, so a fence is three of them", async ({ knag }) => {
     await knag.seed(DOC);
+    await knag.useEditor();
 
-    // 8 lines, but the fence collapses 3 into 1 → 6 rows.
-    await expect(knag.rows()).toHaveCount(6);
-    await expect(knag.editor(4)).toHaveValue("```js\nconst x = 1;\n```");
+    // The row model made a fence *one* row, because a block was the unit. Here a line is
+    // the unit, which is the whole reason `leavingLines` exists for the wipe.
+    await expect(knag.page.locator("[data-surface] .cm-line")).toHaveCount(8);
   });
 
-  test("keeps a checked row struck through and in place", async ({ knag }) => {
+  test("keeps a checked line struck through and in place", async ({ knag }) => {
     await knag.seed(DOC);
+    await knag.useEditor();
 
     // No auto-sink: the checked item stays where it was written (spec §7).
-    await expect(knag.rows().nth(2)).toHaveClass(/checked/);
-    await expect(knag.editor(2)).toHaveCSS("text-decoration-line", "line-through");
+    await expect(knag.editor(2)).toHaveClass(/cm-done/);
   });
-});
 
-test.describe("wrapping", () => {
-  test("🔴 a long row grows instead of truncating", async ({ knag }) => {
+  test("🔴 a long line wraps instead of truncating", async ({ knag }) => {
     await knag.seed("short");
+    await knag.useEditor();
     const oneLine = (await knag.editor(0).boundingBox())?.height ?? 0;
 
     await knag.seed(`short\n${"a long line of prose that will certainly wrap ".repeat(6)}`);
+    await knag.useEditor();
     const wrapped = (await knag.editor(1).boundingBox())?.height ?? 0;
 
     expect(wrapped).toBeGreaterThan(oneLine * 1.5);
-  });
-
-  test("shrinks back when the text is deleted", async ({ knag }) => {
-    // The reset-to-auto-then-measure two-step. Measuring against the current height
-    // only ever grows, so a row would stay tall forever.
-    await knag.seed("x".repeat(400));
-    const tall = (await knag.editor(0).boundingBox())?.height ?? 0;
-
-    await knag.editor(0).fill("short again");
-    const short = (await knag.editor(0).boundingBox())?.height ?? 0;
-
-    expect(tall).toBeGreaterThan(short * 1.5);
   });
 });
 

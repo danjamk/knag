@@ -23,9 +23,10 @@ test.describe("wipe completed", () => {
   test("sweeps the checked rows and leaves the rest", async ({ knag }) => {
     await knag.seed(MIXED);
 
+    await knag.useEditor();
     await knag.page.locator("[data-clear]").click();
 
-    await expect(knag.rows()).toHaveCount(2);
+    await expect(knag.lines()).toHaveCount(2);
     expect(await knag.document()).toBe("keep me\n- [ ] not done");
   });
 
@@ -226,13 +227,17 @@ test.describe("bringing it back (#59)", () => {
     await knag.page.locator("[data-clear]").click();
     await expect.poll(() => knag.document()).toBe("keep me\n- [ ] not done");
 
-    const row = knag.editor(1);
-    await row.click();
-    await row.press("End");
-    // Enter on a checkbox row continues the list, so the new row arrives as
+    await knag.useEditor();
+    // 🔴 Wait for the surface to settle before typing. The wipe finishes by re-rendering
+    // the document, and a keystroke that lands mid-repaint goes into a line CodeMirror is
+    // about to replace — which reads as "the typing was lost" and is really "the typing
+    // was never in the document the test then read".
+    await expect(knag.lines()).toHaveCount(2);
+    await knag.caretAtEndOfLine(2);
+    // Enter on a checkbox line continues the list, so the new line arrives as
     // `- [ ] added after`. That is the editor behaving correctly and the expectation
     // below says so rather than asserting what would be convenient.
-    await row.pressSequentially("\nadded after");
+    await knag.page.keyboard.type("\nadded after");
 
     // 🔴 Not `knag.saved()`. That helper accepts `wiped` as well as `saved`, and the
     // status still reads `wiped 2` from the sweep above — so it matched instantly and

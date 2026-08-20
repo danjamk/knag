@@ -24,25 +24,42 @@ test.describe("going offline", () => {
     });
   });
 
-  test("refuses edits to rows that were not being typed into", async ({ knag }) => {
+  test("🔴 refuses edits to the whole surface", async ({ knag }) => {
+    // 🔴 Rewritten for one surface (#113). This used to say "rows that were not being
+    // typed into", because the row model could keep exactly the row you were mid-sentence
+    // in editable and freeze the rest. One contenteditable has no per-row anything, so
+    // offline freezes all of it — the exemption went with the row list.
+    //
+    // 🔴 Asserted on `contenteditable`, not on a rejected keystroke. `EditorState.readOnly`
+    // alone rejects changes while leaving `contenteditable="true"` — so iOS raises the
+    // keyboard, accepts taps and silently swallows everything, which is the "looks live,
+    // discards everything" failure #57 exists to prevent wearing a different hat.
     await knag.seed(PAGE);
     await knag.page.context().setOffline(true);
     await expect(knag.page.locator("[data-save-status]")).toHaveText(/offline/, {
       timeout: 15_000,
     });
 
-    await expect(knag.editor(0)).toHaveAttribute("readonly", "");
-    await expect(knag.editor(2)).toHaveAttribute("readonly", "");
+    await expect(knag.surface()).toHaveAttribute("contenteditable", "false");
   });
 
-  test("disables the checkbox, since ticking one is an edit too", async ({ knag }) => {
+  test("🔴 refuses a checkbox too, since ticking one is an edit", async ({ knag }) => {
+    // 🔴 Asserted on the *document*, not on a `disabled` attribute. The row list used a
+    // native checkbox and disabled it; the surface draws a widget over the bytes and
+    // guards the toggle on `state.readOnly` instead — so the control looks the same and
+    // does nothing, and the only honest question is whether the bytes moved.
     await knag.seed(PAGE);
+    await knag.useEditor();
     await knag.page.context().setOffline(true);
     await expect(knag.page.locator("[data-save-status]")).toHaveText(/offline/, {
       timeout: 15_000,
     });
 
-    await expect(knag.page.locator('[data-rows] input[type="checkbox"]')).toBeDisabled();
+    await knag.boxes().first().click({ force: true });
+    await knag.page.waitForTimeout(500);
+
+    await knag.page.context().setOffline(false);
+    expect(await knag.document()).toBe(PAGE);
   });
 
   test("🔴 leaves the page readable and selectable", async ({ knag }) => {
@@ -55,9 +72,11 @@ test.describe("going offline", () => {
       timeout: 15_000,
     });
 
+    // Selection survives read-only either way, and that is the half that must not be
+    // lost: offline has to leave the page readable and copyable, not merely uneditable.
+    await expect(knag.editor(0)).toHaveText("first line");
     await knag.editor(0).click();
-    await expect(knag.editor(0)).toBeFocused();
-    await expect(knag.editor(0)).toHaveValue("first line");
+    expect(await knag.selection()).toBe("");
   });
 });
 
@@ -103,7 +122,7 @@ test.describe("a browser claiming to be online when it is not", () => {
     expect(asked).not.toContain("/api/doc");
 
     // And it is still frozen, because nothing actually succeeded.
-    expect(await knag.editor(0).getAttribute("readonly")).not.toBeNull();
+    expect(await knag.surface().getAttribute("contenteditable")).toBe("false");
     expect(await knag.page.locator("[data-save-status]").textContent()).toContain("offline");
   });
 
@@ -118,7 +137,9 @@ test.describe("a browser claiming to be online when it is not", () => {
 
     // 🔴 The probe hits `/health` rather than `/api/doc`: it is unauthenticated, so a
     // flaky connection cannot bounce someone to the login screen while they wait.
-    await expect(knag.editor(0)).not.toHaveAttribute("readonly", "", { timeout: 20_000 });
+    await expect(knag.surface()).toHaveAttribute("contenteditable", "true", {
+      timeout: 20_000,
+    });
   });
 });
 
@@ -132,28 +153,34 @@ test.describe("coming back", () => {
 
     await knag.page.context().setOffline(false);
 
-    // Rows editable again, and the status is no longer claiming otherwise.
-    await expect(knag.editor(0)).not.toHaveAttribute("readonly", "", { timeout: 15_000 });
+    // Editable again, and the status is no longer claiming otherwise.
+    await expect(knag.surface()).toHaveAttribute("contenteditable", "true", {
+      timeout: 15_000,
+    });
     await expect(knag.page.locator("[data-save-status]")).not.toHaveText(/offline/);
   });
 
-  test("🔴 saves an edit that was made while the connection was gone", async ({ knag }) => {
-    // The row being typed into when the drop happened keeps working, which leaves
-    // exactly one unsaved row in existence. This is the test that it does not evaporate:
-    // on reconnect it goes as an ordinary versioned write.
+  test("🔴 saves an edit the drop caught mid-debounce", async ({ knag }) => {
+    // 🔴 Rewritten for one surface (#113). This used to type *while* offline, because the
+    // row model kept the row you were mid-sentence in editable and froze the rest. One
+    // contenteditable cannot make that distinction, so offline freezes all of it and
+    // there is nothing to type into.
+    //
+    // The property worth keeping is the one underneath: **unsaved work does not
+    // evaporate.** knag holds keystrokes for the length of the save debounce, and a drop
+    // inside that window leaves exactly one unsaved edit in existence — which on
+    // reconnect goes as an ordinary versioned write rather than a replay (spec §12).
     await knag.seed(PAGE);
+    await knag.useEditor();
+    await knag.caretAtEndOfLine(1);
 
-    const row = knag.editor(0);
-    await row.click();
-    await row.press("End");
+    await knag.page.keyboard.type(" edited");
 
+    // Inside the 800ms debounce, so the save has not left yet.
     await knag.page.context().setOffline(true);
     await expect(knag.page.locator("[data-save-status]")).toHaveText(/offline/, {
       timeout: 15_000,
     });
-
-    await row.pressSequentially(" edited");
-    await expect(row).toHaveValue("first line edited");
 
     await knag.page.context().setOffline(false);
 
@@ -163,14 +190,15 @@ test.describe("coming back", () => {
   });
 
   test("counts unsaved work rather than hiding it behind one word", async ({ knag }) => {
+    // Same shape as the test above: the edit lands inside the save debounce and the drop
+    // catches it there. Hiding that behind a single word is how someone closes a tab on
+    // work that never landed.
     await knag.seed(PAGE);
+    await knag.useEditor();
+    await knag.caretAtEndOfLine(1);
 
-    const row = knag.editor(0);
-    await row.click();
-    await row.press("End");
-
+    await knag.page.keyboard.type(" edited");
     await knag.page.context().setOffline(true);
-    await row.pressSequentially(" edited");
 
     await expect(knag.page.locator("[data-save-status]")).toHaveText("offline · 1 unsaved", {
       timeout: 20_000,

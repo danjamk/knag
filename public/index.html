@@ -427,18 +427,6 @@
          first item". A blank board is the feature. Only the cursor, because the page
          is live, sitting where the first row's text would begin. It goes the instant
          the row takes focus and the real caret takes over. */
-      [data-rows][data-empty]::before {
-        content: "";
-        position: absolute;
-        left: var(--row-pad-left);
-        top: calc(var(--space-3) + var(--row-pad-y));
-        width: 8px;
-        height: 17px;
-        background: var(--amber);
-        animation: knag-blink var(--cursor-blink) step-end infinite;
-      }
-      [data-rows][data-empty]:focus-within::before { display: none; }
-
       [data-rows] li {
         display: flex;
         /* 🔴 Not `center`. A wrapped row is several lines tall, and centring puts its
@@ -1593,10 +1581,17 @@
           </span>
         </div>
 
+        <!-- 🔴 `list` is gone (#113). The row list shipped beside the editing surface so
+             the replacement could be used against the real page first — every defect this
+             project has shipped was found by a person on a phone rather than by the suite
+             — and a transition that does not end is two things to maintain plus the mode
+             question ADR-003 removed on evidence.
+
+             `raw` survives as the escape hatch for a bulk paste. ADR-007 argues it should
+             go too once one surface has settled; that is its own change. -->
         <div class="pref">
           <span class="pref-label">view</span>
           <span class="choices">
-            <button type="button" data-view-set="list">list</button>
             <button type="button" data-view-set="editor">editor</button>
             <button type="button" data-view-set="raw">raw</button>
           </span>
