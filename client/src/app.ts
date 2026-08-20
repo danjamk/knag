@@ -87,6 +87,11 @@ const footerEl = document.querySelector<HTMLElement>("footer");
 const ledgeEl = document.querySelector<HTMLElement>("[data-ledge]");
 const ledgeToggle = document.querySelector<HTMLButtonElement>("[data-ledge-toggle]");
 const sessionsList = document.querySelector<HTMLUListElement>("[data-sessions]");
+const devicesScreen = document.querySelector<HTMLElement>("[data-devices-screen]");
+const devicesOpen = document.querySelector<HTMLElement>("[data-devices-open]");
+const devicesBack = document.querySelector<HTMLButtonElement>("[data-devices-back]");
+const devicesCount = document.querySelector<HTMLElement>("[data-devices-count]");
+const carbonLine = document.querySelector<HTMLElement>("[data-carbon]");
 const logoutButton = document.querySelector<HTMLButtonElement>("[data-logout]");
 const revokeOthersButton = document.querySelector<HTMLButtonElement>("[data-revoke-others]");
 const clearCountEl = document.querySelector<HTMLElement>("[data-clear-count]");
@@ -2046,6 +2051,11 @@ function sessionRow(session: SessionRow): HTMLLIElement {
 }
 
 function paintSessions(sessions: SessionRow[] | null): void {
+  // The sheet does not hold the list any more (#132) — it holds the count and a chevron,
+  // which is what makes "six rows, no scroll" true. Painted from the same read, so the
+  // number on the row and the list on the screen can never disagree.
+  if (devicesCount) devicesCount.textContent = sessions ? String(sessions.length) : "—";
+
   if (!sessionsList) return;
 
   if (!sessions) {
@@ -2220,13 +2230,80 @@ document.addEventListener("focusin", (event) => {
   setLedge(false);
 });
 
+/**
+ * How far back the record goes (#132).
+ *
+ * 🔴 Read from `/api/carbon`, which is **behind auth** — deliberately not a field on
+ * `/health`. The build line's other clauses are facts about the deployment and `/health`
+ * answers to anybody; the age of your document is a fact about your document.
+ *
+ * Fetched when the sheet opens rather than on the poll, because it changes once a day at
+ * most and the poll runs every few seconds.
+ */
+async function loadCarbon(): Promise<void> {
+  if (!carbonLine) return;
+
+  try {
+    const res = await fetch("/api/carbon", { credentials: "same-origin" });
+    if (!res.ok) {
+      carbonLine.textContent = "carbon · —";
+      return;
+    }
+
+    const { since } = (await res.json()) as { since: string | null };
+    const started = since ? new Date(since) : null;
+    if (!started || Number.isNaN(started.getTime())) {
+      carbonLine.textContent = "carbon · —";
+      return;
+    }
+
+    // Whole days, floored, and never below zero — a record that started this morning is
+    // `0 days`, which is true, rather than `1 day`, which is a rounding-up nobody asked
+    // for. Bare counts, per the machine voice: `carbon · 41 days`.
+    const days = Math.max(0, Math.floor((Date.now() - started.getTime()) / 86_400_000));
+    carbonLine.textContent = `carbon · ${days} ${days === 1 ? "day" : "days"}`;
+  } catch {
+    // Offline is a normal state here (spec §9). The line says nothing rather than lying.
+    carbonLine.textContent = "carbon · —";
+  }
+}
+
+/**
+ * The devices screen — a place you go, rather than a decision you dismiss.
+ *
+ * 🔴 Reached from the sheet and returning to it, because that is where you came from.
+ * The sheet closes on the way in: a screen behind a modal backdrop is neither, and the
+ * platform's focus trap would keep the list unreachable.
+ *
+ * 🔴 The list is re-read on the way in, never carried over from the sheet's read. A
+ * device list that is stale is worse than no device list — the whole point is answering
+ * "what still has access", and an answer from ten minutes ago is exactly the answer you
+ * cannot act on.
+ */
+function showDevices(on: boolean): void {
+  devicesScreen?.toggleAttribute("hidden", !on);
+  if (on) {
+    settingsDialog?.close();
+    void loadSessions();
+  } else {
+    settingsDialog?.showModal();
+  }
+}
+
+devicesOpen?.addEventListener("click", () => showDevices(true));
+devicesBack?.addEventListener("click", () => showDevices(false));
+
 settingsOpen?.addEventListener("click", () => {
   markChoices("[data-theme-set]", "themeSet", theme);
   markChoices("[data-view-set]", "viewSet", view);
   markChoices("[data-font-size]", "fontSize", String(fontSize));
   markChoices("[data-sound]", "sound", sound ? "on" : "off");
   settingsDialog?.showModal();
+  // The count on the devices row, and the age of the record on the build line. Both are
+  // read here rather than cached: the sheet is opened rarely and a stale number on a row
+  // that claims to be current is worse than a dash.
   void loadSessions();
+  void loadCarbon();
 });
 
 // Following the system means following it as it changes, not as it was at boot.

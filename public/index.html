@@ -1062,44 +1062,84 @@
       /* ── Settings ──────────────────────────────────────────────────────────
          Rare controls live here so the footer can stay short. The dialog is the only
          10px radius in the product and the only place a backdrop appears. */
+      /* 🔴 A bottom sheet of fixed, knowable length, and **it does not scroll** (#132,
+         holistic-response §7e). That is a constraint rather than an accident: a sheet
+         that scrolls is a junk drawer with a lid, and it is exactly how this one got the
+         way it did. The rule that keeps it short is a test rather than a layout — **a
+         preference has a current value.** If a proposed row *does* something it is not a
+         preference and it does not live here; if its length is not knowable it is a
+         screen. Both exceptions below are marked as exceptions. */
       dialog[data-settings] {
-        width: min(28rem, 100vw - 2rem);
+        width: min(28rem, 100vw);
+        /* Bottom-anchored: the sheet arrives from the edge the thumb is already at. */
+        margin: auto auto 0;
         padding: 0;
-        border: var(--hairline-width) solid var(--hairline);
-        border-radius: var(--radius-lg);
+        border: 0;
+        border-top: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
         background: var(--board);
         color: var(--ink);
       }
       dialog[data-settings]::backdrop { background: var(--backdrop); }
-      dialog[data-settings] form { padding: var(--space-5); }
-      dialog[data-settings] h2 {
-        margin: 0 0 18px;
-        font-family: var(--font-body);
-        font-size: 18px;
-        font-weight: 500;
+
+      .sheet-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--space-5) var(--row-pad-left) var(--space-3);
       }
-      dialog[data-settings] h3 {
-        margin: 0 0 var(--space-3);
+      .sheet-head span {
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        color: var(--dim);
+      }
+
+      /* Two groups is the whole information architecture, and it stays two when the
+         account rows arrive — they were always going to, and now they have somewhere. */
+      .group {
+        margin: 0;
+        padding: var(--space-5) var(--row-pad-left) 0;
         font-family: var(--font-mono);
         font-size: var(--size-micro);
-        font-weight: 400;
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--dim);
       }
-      dialog[data-settings] section { margin-bottom: var(--space-6); }
-      .choices { display: flex; gap: var(--space-3); flex-wrap: wrap; }
-      .choices button {
+
+      .pref {
+        display: flex;
+        align-items: center;
+        gap: var(--space-4);
+        min-height: 56px;
+        padding: 0 var(--row-pad-left);
+        border-bottom: var(--hairline-width) solid var(--hairline);
+      }
+      .pref-label {
         flex: 1;
-        min-width: 5rem;
-        padding: 9px 10px;
-        border-radius: var(--radius-md);
+        font-family: var(--font-body);
+        font-size: var(--size-control);
+        color: var(--ink);
+      }
+
+      /* 🔴 Options laid out flat, current one filled amber — never a toggle and never a
+         disclosure row that makes you tap to find out what a setting is currently set to.
+         A switch tells you a state; a pair of buttons tells you the state *and* the
+         alternative in the same glance, and it costs the same height. Three or fewer per
+         row, so they fit at 380px. */
+      .choices { display: flex; gap: var(--space-2); flex: none; }
+      .choices button {
+        min-width: var(--target);
+        height: var(--target);
+        padding: 0 10px;
+        border-radius: var(--radius-sm);
         border: var(--hairline-width) solid var(--hairline);
         background: transparent;
         color: var(--ink);
         font-family: var(--font-mono);
-        font-size: var(--size-control);
+        font-size: var(--size-machine);
         letter-spacing: var(--track-machine);
+        line-height: 1;
         cursor: pointer;
       }
       .choices button[aria-pressed="true"] {
@@ -1107,6 +1147,63 @@
         background: var(--amber-field);
         color: var(--amber-field-ink);
       }
+
+      /* 🔴 The one row that is a destination rather than a choice, and it is marked as
+         one — a count and the sheet's **only** chevron. Devices is the first thing in the
+         product whose length the design does not control, and a modal has no navigation
+         and no scroll that means anything, so the unbounded list is a screen and this
+         points at it. */
+      .pref[data-devices-open] { cursor: pointer; }
+      .pref[data-devices-open]:active { background: var(--press-tint); }
+      .pref .count {
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        color: var(--dim);
+      }
+      .pref .chev {
+        width: 20px;
+        text-align: right;
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        color: var(--dim);
+      }
+
+      /* 🔴 The other exception: a verb, in a sheet whose rule is that rows are choices.
+         It sits next to the identity it acts on, which is what earns it the place — and
+         it is the only place in the product that ends a session. */
+      .pref button[data-logout] {
+        flex: none;
+        min-width: var(--target);
+        height: var(--target);
+        padding: 0 10px;
+        border-radius: var(--radius-sm);
+        border: var(--hairline-width) solid var(--hairline);
+        background: transparent;
+        color: var(--dim);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        cursor: pointer;
+      }
+      .pref button[data-logout]:active { background: var(--press-tint); color: var(--ink); }
+
+      /* Unlabelled, in micro, at the bottom. Statements rather than settings, which is
+         why they sit with each other rather than in a group. `carbon` is the one fact
+         about knag a person occasionally needs and could not previously find anywhere. */
+      .build {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin: 0;
+        padding: var(--space-5) var(--row-pad-left) var(--space-6);
+        font-family: var(--font-mono);
+        font-size: var(--size-micro);
+        letter-spacing: var(--track-machine);
+        color: var(--dim);
+      }
+      .build .dot { opacity: 0.6; }
+      .build a { color: var(--dim); text-decoration: underline; text-underline-offset: 2px; }
       .note {
         margin: 10px 0 0;
         /* The machine voice's size — these paragraphs are the app explaining itself, and
@@ -1119,6 +1216,67 @@
       /* The device list (#125). Machine voice — every value in it is something the
          server knows and the user did not type, so it is mono and dim, and the only
          colour is the amber that marks which row is you. */
+      /* ── The devices screen (#132) ─────────────────────────────────────────
+         🔴 A place you go and come back from, not a decision you dismiss. That is the
+         difference between a screen and a dialog, and it is why this is a full surface
+         with a back affordance and a scroll of its own rather than a section in a sheet
+         that cannot hold it.
+
+         It covers the app rather than sitting beside it: knag has one page and this is a
+         detour from it, so there is nothing worth seeing behind. */
+      [data-devices-screen] {
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        background: var(--board);
+        padding: env(safe-area-inset-top) env(safe-area-inset-right)
+                 env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+      .screen-head {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        height: 46px;
+        padding: 0 var(--space-4) 0 var(--space-2);
+        border-bottom: var(--hairline-width) solid var(--hairline);
+      }
+      .screen-title {
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        color: var(--dim);
+      }
+      /* 🔴 The screen scrolls and the sheet does not, and that is the whole point of the
+         move: this is the surface whose length nobody controls. */
+      .screen-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: var(--space-5) var(--row-pad-left);
+      }
+      .screen-actions {
+        flex: none;
+        padding: var(--space-4) var(--row-pad-left);
+        border-top: var(--hairline-width) solid var(--hairline);
+      }
+      .screen-actions button {
+        width: 100%;
+        min-height: var(--target);
+        padding: 0 var(--space-3);
+        border: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--amber);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        cursor: pointer;
+      }
+      .screen-actions button:active { background: var(--press-tint); }
+
       .sessions {
         list-style: none;
         margin: 0 0 var(--space-3);
@@ -1166,18 +1324,29 @@
       }
       [data-build-detail] dt { color: var(--dim); }
       [data-build-detail] dd { margin: 0; color: var(--amber); word-break: break-all; }
-      .done {
-        width: 100%;
-        padding: 11px;
-        border-radius: var(--radius-md);
-        border: var(--hairline-width) solid var(--hairline);
+      /* 🔴 A close control at the head, not a `Done` bar at the foot. The sheet is
+         bottom-anchored now, so a full-width button under six rows put the largest target
+         on the screen furthest from what it closes — and Escape and the backdrop already
+         close it. This is the sheet's only glyph. */
+      .sheet-close {
+        width: var(--target);
+        height: var(--target);
+        /* Pulled back into the head's padding so the target overhangs rather than
+           widening the row it sits in. */
+        margin: -12px -10px -12px 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        border-radius: var(--radius-sm);
         background: transparent;
-        color: var(--ink);
-        font-family: var(--font-body);
+        color: var(--dim);
+        font-family: var(--font-mono);
         font-size: var(--size-control);
         cursor: pointer;
       }
-      .done:active { background: var(--press-tint); }
+      .sheet-close:active { background: var(--press-tint); color: var(--ink); }
 
       /* ── Login ─────────────────────────────────────────────────────────────
          One passphrase, an optional device label. No sign-up and no onboarding —
@@ -1361,126 +1530,141 @@
       </footer>
     </div>
 
+    <!-- 🔴 A screen, not a section (#132, holistic-response §3d). Devices is the first
+         thing in the product whose length the design does not control, and **a modal is
+         the one container that cannot hold an unbounded list** — it has no navigation and
+         no scroll of its own that means anything. At two rows it looked fine in the
+         sheet; at fifteen it was the sheet.
+
+         The general form of the symptom: anything list-shaped gets a screen and the sheet
+         only points at it. This is the first one, and history and manage-pages land in
+         the same shape — so the pattern is worth getting right here rather than inventing
+         twice.
+
+         A sibling toggled with `hidden`, like the login form, because knag has no router
+         and one screen does not justify inventing one. -->
+    <section data-devices-screen hidden>
+      <div class="screen-head">
+        <button type="button" class="bar-glyph" data-devices-back title="back">
+          <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M10 3 L5 8 L10 13"/></svg>
+        </button>
+        <span class="screen-title">devices</span>
+      </div>
+
+      <div class="screen-body">
+        <ul data-sessions class="sessions"><li class="note">&#8212;</li></ul>
+        <p class="note">
+          A session lasts a year, so it survives the weeks between logins. Revoking one
+          takes effect on that device&#8217;s next request. Changing the passphrase does not
+          &#8212; this is the only thing that ends a session.
+        </p>
+      </div>
+
+      <div class="screen-actions">
+        <button type="button" data-revoke-others>sign out everywhere else</button>
+      </div>
+    </section>
+
     <!-- <dialog> rather than a hand-rolled overlay: it gets the backdrop, Escape,
          focus trapping and inertness from the platform, all of which are easy to
          get subtly wrong and none of which are this project's problem. -->
     <dialog data-settings>
       <form method="dialog">
-        <h2>Settings</h2>
+        <div class="sheet-head">
+          <span>settings</span>
+          <button type="submit" class="sheet-close" title="close">&#215;</button>
+        </div>
+
+        <!-- 🔴 The page: the things that change how the page looks and behaves. Two
+             groups is the whole information architecture (#132, §7e), and it stays two
+             when the account rows arrive in 1.2 — they were always going to, and this is
+             where they land. -->
+        <p class="group">the page</p>
 
         <!-- 🔴 Board, not Theme. These are not themes — they are the two surfaces the
              product already had, finally told what they are. Slate is chalk on a
              blackboard; Whiteboard is marker on dry-erase. There is no third board. -->
-        <section>
-          <h3>Board</h3>
-          <div class="choices">
+        <div class="pref">
+          <span class="pref-label">board</span>
+          <span class="choices">
             <button type="button" data-theme-set="slate">slate</button>
-            <button type="button" data-theme-set="whiteboard">whiteboard</button>
+            <button type="button" data-theme-set="whiteboard">board</button>
             <button type="button" data-theme-set="system">system</button>
-          </div>
-        </section>
+          </span>
+        </div>
 
-        <section>
-          <h3>View</h3>
-          <div class="choices">
+        <div class="pref">
+          <span class="pref-label">view</span>
+          <span class="choices">
             <button type="button" data-view-set="list">list</button>
             <button type="button" data-view-set="editor">editor</button>
             <button type="button" data-view-set="raw">raw</button>
-          </div>
-          <p class="note">
-            Editor is the replacement being tried out — one surface, so selecting and
-            copying across lines works the way it does everywhere else. Arrange still
-            works from it. Raw is the escape hatch for a bulk paste. The page is where
-            you land.
-          </p>
-        </section>
+          </span>
+        </div>
 
-        <!-- 🔴 Under the page rather than under the reader, because it is a property of
-             the wipe rather than of you (#121, holistic-response §7e).
-
-             Off by default, and the default is the decision. The iOS silent switch mutes
-             Web Audio outright, so this can never be the moment — the motion is the
-             moment and this is a bonus for someone holding a phone with the ringer on.
-             A product that made a noise the first time you used it would be asking for
-             something it has not earned. -->
-        <section>
-          <h3>Sound</h3>
-          <div class="choices">
-            <button type="button" data-sound="off">off</button>
-            <button type="button" data-sound="on">on</button>
-          </div>
-          <p class="note">
-            One sound when the wipe starts, ending as the last gap closes. Synthesised, so
-            it is never a file that failed to load. Silent if your ringer is off, and
-            silent if you have asked the system for less motion.
-          </p>
-        </section>
-
-        <!-- 🔴 Devices, not Account. There is one owner (ADR-001) and no account to
-             manage — what this lists is the set of live credentials, which is a
-             different and more honest thing.
-
-             🔴 It is also the first thing in the product whose length the design does
-             not control, and a modal sheet is the one container that cannot hold an
-             unbounded list — it has no navigation and no scroll that means anything.
-             This becomes a screen the sheet points at (#132, holistic-response §3d).
-             Until then it is here and it is the reason the sheet still scrolls. -->
-        <section>
-          <h3>Devices</h3>
-          <ul data-sessions class="sessions"><li class="note">—</li></ul>
-          <div class="choices">
-            <button type="button" data-logout>log out</button>
-            <button type="button" data-revoke-others>sign out everywhere else</button>
-          </div>
-          <p class="note">
-            A session lasts a year, so it survives the weeks between logins. Revoking one
-            takes effect on that device's next request. Changing the passphrase does not
-            — this is the only thing that ends a session.
-          </p>
-        </section>
-
-        <!-- 🔴 Steps from 16, never below it: iOS zooms the viewport on focus under
-             16px and never zooms back. It moves the page text only — the footer and
-             every control hold at --size-control, because someone raising this wants
-             more room for the document, not a louder interface. -->
-        <section>
-          <h3>Text size</h3>
-          <div class="choices">
+        <!-- 🔴 Steps from 16, never below it: iOS zooms the viewport on focus under 16px
+             and never zooms back. It moves the page text only — every control holds at
+             --size-control, because someone raising this wants more room for the
+             document, not a louder interface. -->
+        <div class="pref">
+          <span class="pref-label">text size</span>
+          <span class="choices">
             <button type="button" data-font-size="16">16</button>
             <button type="button" data-font-size="18">18</button>
             <button type="button" data-font-size="20">20</button>
-          </div>
-          <p class="note">
-            The page only. Per device, like the board — never part of the document.
-          </p>
-        </section>
+          </span>
+        </div>
 
-        <!-- The human-voice half of Build, which sits below and says the same thing in
-             numbers. Neither should repeat the other. -->
-        <section>
-          <h3>About</h3>
-          <p class="note">
-            knag is one plain-text page, always live, edited from any device or by an
-            agent. MIT licensed.
-          </p>
-          <p class="note">
+        <!-- Under the page rather than under you, because it is a property of the wipe
+             rather than of the reader. Off by default: the iOS silent switch mutes Web
+             Audio outright, so this can never be the moment — the motion is the moment
+             and this is a bonus for someone holding a phone with the ringer on. -->
+        <div class="pref">
+          <span class="pref-label">sound</span>
+          <span class="choices">
+            <button type="button" data-sound="off">off</button>
+            <button type="button" data-sound="on">on</button>
+          </span>
+        </div>
+
+        <!-- 🔴 You: what is true about the person rather than about the page. One row
+             today and two in 1.2, when the address arrives above `log out`. -->
+        <p class="group">you</p>
+
+        <div class="pref">
+          <span class="pref-label">this device</span>
+          <button type="button" data-logout>log out</button>
+        </div>
+
+        <div class="pref" data-devices-open>
+          <span class="pref-label">devices</span>
+          <span class="count" data-devices-count>&#8212;</span>
+          <span class="chev" aria-hidden="true">&#8250;</span>
+        </div>
+
+        <!-- 🔴 "Is my change live?" cost a round trip before this existed, and "which
+             environment am I looking at" was not answerable at all — a deploy that looks
+             right and went to the wrong place is indistinguishable from one that failed.
+
+             Statements, not settings, which is why they sit unlabelled at the bottom
+             rather than in a group. The repo link lives here because About was deleted
+             (§7e names an about page in the list of things that never go in this sheet)
+             and a public MIT project should still keep one path back to the source. -->
+        <p class="build">
+          <span>
+            <span data-build-version>&#8212;</span>
+            <span class="dot">&#183;</span> <span data-build-env>&#8212;</span>
+            <span class="dot">&#183;</span>
             <a href="https://github.com/danjamk/knag" target="_blank" rel="noreferrer noopener"
-              >github.com/danjamk/knag</a
+              >github</a
             >
-          </p>
-        </section>
-
-        <section>
-          <h3>Build</h3>
-          <dl data-build-detail>
-            <dt>version</dt><dd data-build-version>—</dd>
-            <dt>environment</dt><dd data-build-env>—</dd>
-            <dt>commit</dt><dd data-build-commit>—</dd>
-            <dt>deployed</dt><dd data-build-when>—</dd>
-          </dl>
-        </section>
-
-        <button type="submit" class="done">Done</button>
+          </span>
+          <span>
+            <span data-build-commit>&#8212;</span>
+            <span class="dot">&#183;</span> <span data-build-when>&#8212;</span>
+          </span>
+          <span data-carbon>&#8212;</span>
+        </p>
       </form>
     </dialog>
 

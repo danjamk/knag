@@ -13,6 +13,64 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-08-20
+
+Settings is six rows and it fits on the screen.
+
+### Changed
+
+- **Settings is two groups, six rows, and it does not scroll.** `the page` holds board,
+  view, text size and sound; `you` holds log out and a `devices 3 ›` row.
+
+  🔴 The organising rule is a test rather than a layout: **a preference has a current
+  value.** If a proposed row *does* something it is not a preference; if its length is not
+  knowable it is a screen. That rule is the whole fix — the sheet became a junk drawer
+  because it was where anything without a home went, and the reason it could was that it
+  scrolled. **A sheet that scrolls is a junk drawer with a lid.**
+
+  Every choice is its options laid out flat with the current one filled amber, three or
+  fewer per row. No toggles and no disclosure rows that make you tap to find out what a
+  setting is currently set to: a switch tells you a state, a pair of buttons tells you the
+  state *and* the alternative in the same glance, and it costs the same height.
+
+- **The sheet is bottom-anchored**, and `Done` became a close glyph in its head. A
+  full-width button under six rows put the largest target furthest from what it closed.
+
+### Added
+
+- **Devices is a screen now**, and the sheet only points at it. It is the first thing in
+  the product whose length the design does not control, and a modal is the one container
+  that cannot hold an unbounded list — it has no navigation and no scroll that means
+  anything. At two rows it looked fine in the sheet; at fifteen it *was* the sheet.
+  `sign out everywhere else` went with it, since it acts on the list.
+
+- **`carbon · N days` on the build line** — how far back the record goes, which is the one
+  fact about knag a person occasionally needs and could not previously find anywhere.
+
+  🔴 It comes from a new authenticated `GET /api/carbon`, **not** from `/health`. That is
+  the one unauthenticated route in the product, and the age of your document is a fact
+  about your document rather than about the deployment; putting it there would have handed
+  a stranger the age of the page for the cost of a `curl`.
+
+### Removed
+
+- **About.** §7e names an about page directly in the list of things that never go in this
+  sheet, and the rule that removes it is the rule that keeps the sheet from filling up
+  again. The repo link survives on the build line — a public MIT project should not lose
+  its only path back to the source over a layout decision.
+
+### Fixed
+
+- **`oldestRevisionAt` read the newest revision under one condition.** `created_at` is
+  text and its two writers disagree on precision — revisions are `toISOString()` at
+  milliseconds, migration 0002's baseline is `strftime` at seconds — so
+  `...22.068Z` sorts before `...22Z` and `min()` returned the *newer* row inside a shared
+  second. It now orders by `id`, which is monotonic and has no format to disagree about.
+  Found by a test on the first run; in production it would have looked correct until
+  someone read the number on a page created that minute.
+
+Closes #132. Designed in [§7e](docs/design/holistic-response.md).
+
 ## [0.14.0] — 2026-08-20
 
 The wipe makes a sound now, if you ask it to.
@@ -1075,7 +1133,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/danjamk/knag/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/danjamk/knag/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/danjamk/knag/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/danjamk/knag/compare/v0.11.1...v0.12.0

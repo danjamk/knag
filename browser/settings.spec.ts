@@ -2,7 +2,7 @@ import type { Locator } from "@playwright/test";
 import { type Knag, expect, test } from "./fixtures.js";
 
 /**
- * Text size and About (#92).
+ * Text size, and the bar's targets (#92, #132).
  *
  * 🔴 `view.test.ts` already proves the preference *validates* — the floor holds against a
  * hostile stored value, storage throwing does not take the app down. None of that is
@@ -156,21 +156,27 @@ test.describe("the bar, after the bump and the diet", () => {
   });
 });
 
-test.describe("About", () => {
-  test("says what knag is, and links out without duplicating Build", async ({ knag }) => {
+test.describe("what About left behind", () => {
+  test("🔴 keeps one path back to the source, on the build line", async ({ knag }) => {
     await knag.seed(DAY);
     await knag.openSettings();
 
-    const about = knag.page.locator("[data-settings] section", { hasText: "About" });
-    await expect(about).toContainText("MIT");
-    await expect(about.locator("a")).toHaveAttribute("href", "https://github.com/danjamk/knag");
+    // 🔴 About was deleted in #132. §7e's list of what never goes in this sheet names an
+    // about page directly, and the rule that removes it — a preference has a current
+    // value — is the rule that keeps the sheet from filling up again.
+    //
+    // The link survives, because a public MIT project should not lose its only path back
+    // to the source over a layout decision. It moved onto the build line, which is
+    // already the machine speaking about itself.
+    const build = knag.page.locator("[data-settings] .build");
+    await expect(build.locator("a")).toHaveAttribute("href", "https://github.com/danjamk/knag");
 
     // 🔴 `rel` alongside `target="_blank"`, or the opened page gets a handle on this one
     // through `window.opener` — on a page that holds a live session.
-    await expect(about.locator("a")).toHaveAttribute("rel", /noopener/);
+    await expect(build.locator("a")).toHaveAttribute("rel", /noopener/);
 
-    // Build says version, environment, commit, deployed. About is the human-voice half of
-    // the same idea and must not repeat it.
-    await expect(about).not.toContainText("version");
+    // And the prose is gone rather than relocated. A sheet that explains itself is a
+    // sheet whose controls do not.
+    await expect(knag.page.locator("[data-settings]")).not.toContainText("MIT");
   });
 });

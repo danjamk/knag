@@ -385,6 +385,35 @@ export type RevisionPage = {
 };
 
 /**
+ * When the record starts — the timestamp of the oldest revision, or null on an empty log.
+ *
+ * 🔴 **Read behind authentication, never from `/health`.** How far back your record goes
+ * is a fact about your document, not about the deployment, and `/health` is the one route
+ * that answers to anybody. Putting it there would hand a stranger the age of the page for
+ * the cost of a `curl`, which is a small leak and still a leak.
+ *
+ * Cheap by construction: `min()` over an indexed integer primary key's table with no
+ * predicate is a single row read, and it is fetched when the sheet opens rather than on
+ * the poll that runs every few seconds.
+ */
+export async function oldestRevisionAt(env: Env): Promise<string | null> {
+  // 🔴 Ordered by `id`, **not** `min(created_at)`, and the difference is not stylistic.
+  // `created_at` is text, and the two writers in this file disagree on precision: every
+  // revision is `toISOString()` at milliseconds, while migration 0002's baseline row is
+  // `strftime` at seconds. `2026-08-20T12:50:22.068Z` sorts *before* `2026-08-20T12:50:22Z`
+  // because `.` is below `Z` — so inside a shared second `min()` returns the **newer**
+  // row. `revisionsInRange` documents the same trap; this walked into it and a test
+  // caught it.
+  //
+  // `id` is a monotonic integer primary key, so the oldest revision is simply the first
+  // one, and this is an index read rather than a scan.
+  const row = await env.DB.prepare(
+    "SELECT created_at AS at FROM revisions ORDER BY id ASC LIMIT 1",
+  ).first<{ at: string | null }>();
+  return row?.at ?? null;
+}
+
+/**
  * Revisions in `[since, until)`, capped.
  *
  * 🔴 Half-open, and that is what makes adjacent days tile. `until` resolved from a bare
