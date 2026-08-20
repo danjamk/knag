@@ -18,11 +18,14 @@ clears, promote the next one.** Nothing else decides what to pick up.
 This replaces the MVP plan's `#2 → #3 → #4 → #8`, which was true until it was
 not and stayed written down for a while afterwards.
 
-**Where it stands, 2026-08-19.** Phases 1, 3 and half of 2 and 4 have shipped —
-0.9.0 through 0.11.1, and prod is live on the same build as dev. What is left in
-1.0 is **#114** (a device test, not a branch), **#113** and **#115** (both waiting on
-the editor being the daily surface for a couple of weeks — their own issues say
-so), and phases 4 and 5, which now have a design.
+**Where it stands, 2026-08-20.** Phases 0 through 5 have shipped — 0.9.0 through 0.16.0,
+prod and dev on the same build, and the landing page live. **#114 is settled** (a device
+test, not a branch). What is left inside 1.0 is **#113** and **#115**, both waiting on the
+editor being the daily surface for a couple of weeks — their own issues say so, and neither
+is waiting on work.
+
+🔴 **1.0 is deliberately not cut yet.** It is a claim about *shape*, and the shape still has
+two editing surfaces in it. #113 is the hinge; 1.0 lands when it does.
 
 🔴 **The design session answered, and it reordered phase 4.** The holistic pass
 came back on 2026-08-19 and is recorded in
@@ -207,7 +210,7 @@ list are exactly two:
 | | |
 |---|---|
 | **#119** | The wipe does not animate in the editing surface. `animateWipe` resolves `li[data-index]` inside `[data-rows]`, which `paint()` empties in editor view. The surface is missing the product's signature moment. |
-| **#114** | Autocorrect-off-inside-fences is still provisional, pending one control test on a device. |
+| ~~**#114**~~ | ✅ **Settled on device, 2026-08-20.** The control test failed — autocapitalize does not fire in this surface at all — so §6 was re-argued rather than inherited. Its conclusion survives for a plainer reason than the one it gave: the risk it named does not occur. |
 
 Three PRs. #113 alone, because a ~400-line deletion deserves to be reviewable by
 itself. Natural **0.9.0**.

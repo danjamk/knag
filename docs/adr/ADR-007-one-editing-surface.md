@@ -185,14 +185,37 @@ much smaller than the bundle delta.
 both surfaces call. Two expressions of the same rules agree right up until someone fixes
 one of them — the argument `blocks.ts` already settles for parsing.
 
-**ADR-003 §6 provisionally holds, and the control test is outstanding.** §6 turns
-autocorrect on for prose and off inside fences, and says one element per block is *what
-makes the distinction possible*. One surface has one contenteditable, so the only route
-left is a per-line attribute. On a real iPhone, `const` typed inside a fence stayed
-lowercase — consistent with the attribute being honoured, and equally consistent with iOS
-not treating that position as a sentence start. **The control test is typing `const` at the
-start of a prose line.** If it is not capitalised there either, §6 is undecided and gets
-re-argued rather than inherited.
+**ADR-003 §6 was re-argued and settled on device, 2026-08-20 (#114).** The control test
+this paragraph called for — typing `const` at the start of a prose line on a real iPhone —
+was run, **and it was not capitalised**. By the criterion stated here, that put §6 undecided
+rather than merely unproven.
+
+Three measurements settled it, and the third is the one that mattered:
+
+| | Result |
+|---|---|
+| `autocapitalize` in prose, after an explicit sentence boundary | did not fire |
+| `autocorrect` in prose | fired, behaving as in any other app |
+| **`autocorrect` on pasted text** | **did not fire — `teh` survived a paste intact** |
+
+🔴 **§6's risk does not materialise, on two independent grounds.** §6 names the risk as
+autocapitalize turning `const` into `Const` inside a fence, and #114 framed it as *knag
+silently editing code the user pasted*. Autocapitalize is inert in this surface, so the
+first cannot happen; paste is never autocorrected, so the second cannot either. What
+remains is narrower than the ADR assumed: someone hand-typing code into a fence on a touch
+keyboard.
+
+**The per-line attributes stay, and stop claiming to be confirmed.** Whether iOS honours
+`autocorrect="off"` on a `.cm-line` inside one contenteditable is **still unverified** — the
+fence half of the autocorrect drill was not run, and there is no way to run it from a Mac.
+They are kept because they are the spec-correct expression of the intent, they cost three
+attributes on a decoration that already exists, and removing them would mean re-adding them
+later with no new information. What changed is the comment in `editor.ts`, which claimed a
+confirmation the evidence never supported.
+
+Turning autocorrect **off everywhere** — the MVP position §6 called over-cautious — was
+considered and rejected. It would cost working, expected behaviour in prose, which the
+device test confirmed is good, to guard a residual risk nobody has demonstrated.
 
 **Cross-row copy and Arrange's copy disagree.** A selection copy takes document text, so it
 carries `- [ ] `; Arrange's per-row copy strips it. Both behaviours are pinned by tests so

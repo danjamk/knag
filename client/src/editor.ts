@@ -264,8 +264,19 @@ function decorate(view: EditorView): DecorationSet {
       if (fenced) {
         // 🔴 ADR-003 §6 wants autocorrect on for prose and off inside fences, and says
         // one element per block is what makes that possible. One surface has one
-        // contenteditable, so the only route left is a per-line attribute. Confirmed
-        // working on iOS: `const` typed inside a fence is not capitalised.
+        // contenteditable, so the only route left is a per-line attribute.
+        //
+        // 🔴 **Unverified on iOS, and it used to say "confirmed".** What was actually
+        // observed was `const` staying lowercase inside a fence — which is equally
+        // consistent with the attribute working and with iOS never capitalising there.
+        // The control test settled that in #114: autocapitalize does not fire in this
+        // surface *at all*, so that observation was luck, not evidence.
+        //
+        // Kept anyway. It is the spec-correct expression of the intent, it costs three
+        // attributes on a decoration that already exists, and the risk §6 named turns out
+        // not to occur — autocapitalize is inert here and pasted text is never
+        // autocorrected. What is untested is autocorrect suppression while hand-typing
+        // into a fence, and it cannot be tested from a Mac.
         builder.add(
           line.from,
           line.from,
@@ -655,6 +666,13 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
 
         // ADR-003 §6. CodeMirror sets `spellcheck="false"` by default, so without this
         // autocorrect never fires and the product silently loses a decided behaviour.
+        //
+        // 🔴 `autocapitalize` is **inert on iOS here** and is kept as a declaration of
+        // intent rather than a working setting (#114). Measured on device: it does not
+        // fire in this surface even in prose after an explicit sentence boundary. It is
+        // left in because it is correct, costs nothing, and a future WebKit may honour it
+        // — not because it does anything today. `autocorrect` does work, and is the one
+        // that matters: it is what a person actually notices while typing.
         EditorView.contentAttributes.of({
           autocorrect: "on",
           autocapitalize: "sentences",
