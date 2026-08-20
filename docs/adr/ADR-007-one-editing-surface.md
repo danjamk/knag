@@ -221,6 +221,19 @@ device test confirmed is good, to guard a residual risk nobody has demonstrated.
 carries `- [ ] `; Arrange's per-row copy strips it. Both behaviours are pinned by tests so
 the disagreement is visible. One of them has to change and this ADR does not decide which.
 
+> 🔴 **Resolved 2026-08-20 (#115): neither changes.** "One of them has to change" was
+> the wrong frame. They are different gestures — a whole-row **verb**, which copies what
+> the row displays (spec §7), and a **selection**, which copies document text because that
+> is what a selection is. Each is already right for its own gesture, and the two options
+> that would unify them each pay something real: making the editor strip costs byte-truth
+> and makes the clipboard stop matching the selection; making Arrange carry costs the
+> thing the copy button is for.
+>
+> The question was never which is right in the abstract but whether a person would notice.
+> Both paths were used against a real page and nobody did. Ruled now rather than left
+> parked because it is a **single-document** question and #123 is next — once there are
+> several pages, copy acquires a cross-page paste and this gets designed twice.
+
 **Raw view's purpose evaporates.** Under one surface the editor *is* the bytes with
 decorations over them. Keep it through the transition — it is exactly the escape hatch it
 was designed to be — and remove it once the new surface has survived a month of real use.
