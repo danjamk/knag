@@ -174,8 +174,41 @@ test.describe("wiping the page", () => {
     expect(order).toEqual([3, 2, 1, 0]);
   });
 
+  test("🔴 holds an *empty* board through the beat â the page does not come back first", async ({
+    knag,
+  }) => {
+    await knag.seed(MIXED);
+    await knag.useEditor();
+
+    // 🔴 The beat is stretched so this can assert a **state** rather than a duration.
+    // Everything in the note below still stands â measuring 200ms across a network round
+    // trip is what produced three flaky tests â but "is the board empty while it is
+    // held" is not a measurement, and it is the thing that was actually broken.
+    await knag.page.addStyleTag({ content: ":root { --page-beat: 2500ms; }" });
+
+    await knag.openLedge();
+    await knag.page.locator("[data-wipe-all]").click();
+    await knag.page.locator("[data-wipe-all]").click();
+
+    const line = knag.page.locator("[data-surface] .cm-line").first();
+    // The collapse finishing is the start of the beat.
+    await expect.poll(async () => css(line, "max-height"), { timeout: 5000 }).toBe("0px");
+
+    // 🔴 And then it stays gone. `animateWipe` used to clear its decorations on its
+    // own resolve, so every wiped line snapped back to full height and opacity for the
+    // whole of the beat before the repaint took it away again â "wipe page seems to wipe
+    // it, then it flashes back and then goes away again" (#149). The beat was holding a
+    // *full* board, which means Â§6b's empty-board moment had never once run.
+    //
+    // A fixed wait rather than a poll, deliberately: the assertion is that nothing
+    // happens, and there is no event for that.
+    await knag.page.waitForTimeout(700);
+    expect(await css(line, "max-height")).toBe("0px");
+    expect(await css(line, "opacity")).toBe("0");
+  });
+
   /**
-   * 🔴 **The beat is deliberately not tested, and this is the record of why.**
+   * 🔴 **The beat's *length* is deliberately not tested, and this is the record of why.**
    *
    * `--page-beat` holds 200ms of empty board after the collapse and before the record
    * speaks. Three versions of a test for it were written and all three were removed:
@@ -192,8 +225,9 @@ test.describe("wiping the page", () => {
    *   offer, which survives a reload. That one measured −829ms.
    *
    * What is pinned instead: `--page-beat` exists and is collapsed under reduced motion
-   * (`worker/test/shell.test.ts`), and the two timings and both directions are asserted
-   * above. Whether 200ms is the right pause is a phone judgment, like the rest of the
+   * (`worker/test/shell.test.ts`), the two timings and both directions are asserted
+   * above, and the test directly above pins *what is on screen* while the beat runs —
+   * which turned out to be the half that was wrong. Whether 200ms is the right pause is a phone judgment, like the rest of the
    * feel, and a test that pretends otherwise is worse than an honest gap — a flaky one
    * gets re-run rather than read, which is how #107 cost two false reds.
    */

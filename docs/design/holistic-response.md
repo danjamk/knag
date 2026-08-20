@@ -166,6 +166,23 @@ navigation and no scroll of its own that means anything.
 > predict. The ledge fixes the frequency half of that. This is the other half —
 > the sheet holds fixed-size preferences, and anything list-shaped gets a screen.
 
+🔴 **Amended 2026-08-20 (#149), after use.** The diagnosis stands and the sheet's
+rule is unchanged; **"screen" turned out to be one word too strong.** It shipped as a
+full-bleed surface that closed the sheet on the way in, and the first report back was
+that it read as being thrown out of Settings rather than as going one level into it.
+
+What the argument above actually needs is a **scroll of its own and a knowable cap** —
+neither of which requires the full bleed, and both of which a second *pane* of the same
+dialog has. Devices is a pane now: same dialog, same backdrop, same focus trap, a back
+control where the close control was. The settings pane still does not scroll, which is
+the sentence that was ever load-bearing.
+
+The claim that did not survive contact is "a modal has no navigation": a pane with a
+back control **is** navigation. The claim about scroll was true of the *settings* pane
+and was over-generalised to the container.
+
+Manage-pages (§7f) and history inherit the pane, not the screen.
+
 ---
 
 ## §6 · The wipe — #121
@@ -402,12 +419,18 @@ did.
 
 | Group | Rows |
 |---|---|
-| **the page** | board · view · text size · **sound** (new, `off` by default) |
+| *(unlabelled)* | board · view · text size · **sound** (new, `off` by default) |
 | **you** | log out — gains the address in 1.2 · `devices  3  ›` |
 
-Two groups is the whole information architecture, and it stays two when 1.2 lands
-because the account rows were always going to arrive and now they have somewhere
+One boundary is the whole information architecture, and it stays where it is when 1.2
+lands because the account rows were always going to arrive and now they have somewhere
 to arrive.
+
+🔴 **Amended 2026-08-20 (#149).** This shipped with both groups labelled, and the
+first one was cut after use: `the page` sat directly under a head that says `settings`,
+above four rows visibly about the page, and named nothing the reader could not already
+see. `you` earns its line precisely because what follows it *is* a change of subject. The
+boundary is the information; the second label was the only one carrying any.
 
 **Every choice is its options laid out flat, current one filled in amber.** No
 toggles, no switches, no disclosure rows that make you tap to find out what a
@@ -420,7 +443,7 @@ setting is currently set to. Three or fewer options each, so they fit the row at
 `devices` is the one row that is a destination rather than a choice, and it is
 marked as one — a count and a chevron, **the only chevron in the sheet.**
 
-The build line stays at the bottom, unlabelled, in micro, and gains one clause:
+The build line stays at the bottom, unlabelled, and gains one clause:
 `carbon · 41 days`. How far back the record goes is the one fact about knag a
 person occasionally needs and currently cannot find anywhere. It is a statement,
 not a setting, which is why it sits with the version rather than in a group.
@@ -441,7 +464,7 @@ wipe the page      → the ledge, far end
 history            → the ledge, opens a screen
 new · rename page  → manage pages
 delete page        → manage pages
-devices            → a screen, pointed at here
+devices            → a second pane, pointed at here   (a screen until #149)
 ```
 
 **What does not go in here, ever.** Anything with a verb. Anything whose length

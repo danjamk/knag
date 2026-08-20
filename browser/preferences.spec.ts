@@ -19,6 +19,21 @@ const DAY = ["Thursday", "- [ ] call the accountant", "- [x] pay the invoice", "
 /** A phone, because that is the size the "no scroll" constraint is about. */
 const PHONE = { width: 393, height: 852 };
 
+/** Computed style, via `ownerDocument.defaultView` — browser/tsconfig has no DOM lib. */
+type Styled = { ownerDocument: { defaultView: unknown } };
+type View = { getComputedStyle: (e: unknown) => { getPropertyValue: (p: string) => string } };
+
+async function css(
+  locator: import("@playwright/test").Locator,
+  property: string,
+): Promise<string> {
+  return locator.evaluate(
+    (el: Styled, prop: string) =>
+      (el.ownerDocument.defaultView as View).getComputedStyle(el).getPropertyValue(prop),
+    property,
+  );
+}
+
 test.describe("the shape of the sheet", () => {
   test("🔴 does not scroll at phone size, which is the whole constraint", async ({ knag }) => {
     await knag.page.setViewportSize(PHONE);
@@ -39,15 +54,47 @@ test.describe("the shape of the sheet", () => {
     expect(overflow.scroll).toBeLessThanOrEqual(overflow.client);
   });
 
-  test("holds two groups and six rows", async ({ knag }) => {
+  test("holds one boundary and six rows", async ({ knag }) => {
     await knag.seed(DAY);
     await knag.openSettings();
 
-    // Two groups is the whole information architecture, and it stays two when the
-    // account rows arrive in 1.2 — they were always going to, and now they have
-    // somewhere to arrive.
-    await expect(knag.page.locator("[data-settings] .group")).toHaveText(["the page", "you"]);
+    // 🔴 One label, not two (#149). The boundary is still in the same place and still
+    // the whole information architecture â but `the page` sat under a head that says
+    // `settings`, above four rows that are visibly about the page, and named nothing the
+    // reader could not already see. `you` earns its line because what follows it *is* a
+    // change of subject, and it keeps the slot the account rows arrive above in 1.2.
+    await expect(knag.page.locator("[data-settings] .group")).toHaveText(["you"]);
     await expect(knag.page.locator("[data-settings] .pref")).toHaveCount(6);
+  });
+
+  test("🔴 the head says what this is and how to leave, legibly", async ({ knag }) => {
+    await knag.seed(DAY);
+    await knag.openSettings();
+
+    // 🔴 `--ink`, not `--dim`, on both (#149). Dim on the board is about 3.9:1 â under
+    // AA at any size â which is correct for a value at rest beside a label and wrong for
+    // the only two things on the row that say what the surface is and how to get out.
+    // "I was looking for a close button and it took a while."
+    const ink = await css(knag.page.locator("[data-editor]"), "color");
+    const head = knag.page.locator("[data-settings-pane] .sheet-head");
+    expect(await css(head.locator("span"), "color")).toBe(ink);
+    expect(await css(head.locator(".sheet-close"), "color")).toBe(ink);
+
+    // And it is a drawn glyph like every other control, rather than the text character Ã
+    // at whatever weight the mono face gives a multiplication sign.
+    await expect(head.locator(".sheet-close svg")).toHaveCount(1);
+  });
+
+  test("🔴 the build line is readable, at the size its own token names", async ({ knag }) => {
+    await knag.seed(DAY);
+    await knag.openSettings();
+
+    // `--size-machine` is documented in the token block as "save status, recovery line,
+    // build info". This was set to `--size-micro`, whose comment names the env badge and
+    // the ledge labels â 11px `--dim`, which put "is my change live" back to being a
+    // round trip (#149).
+    const machine = await css(knag.page.locator("[data-save-status]"), "font-size");
+    expect(await css(knag.page.locator("[data-settings] .build"), "font-size")).toBe(machine);
   });
 
   test("🔴 every choice shows its current value without being touched", async ({ knag }) => {
@@ -95,7 +142,10 @@ test.describe("the shape of the sheet", () => {
     // Everything with a verb left for the ledge in #139. This is the assertion that
     // notices one coming back — which is the actual failure mode, since every addition
     // to this sheet was individually reasonable.
-    const sheet = knag.page.locator("[data-settings]");
+    // 🔴 Scoped to the settings pane rather than to the dialog (#149). The device list
+    // is a second pane of the same dialog now, so `[data-settings]` would sweep in the
+    // controls that legitimately live over there and this would stop meaning anything.
+    const sheet = knag.page.locator("[data-settings-pane]");
     await expect(sheet.locator("[data-copy-page]")).toHaveCount(0);
     await expect(sheet.locator("[data-wipe-all]")).toHaveCount(0);
     await expect(sheet.locator("[data-reorder]")).toHaveCount(0);
@@ -106,8 +156,8 @@ test.describe("the shape of the sheet", () => {
   });
 });
 
-test.describe("devices, as a screen", () => {
-  test("🔴 opening it closes the sheet, because a screen behind a modal is neither", async ({
+test.describe("devices, as a second pane", () => {
+  test("🔴 stays in the dialog — the settings pane goes, the dialog does not", async ({
     knag,
   }) => {
     await knag.seed(DAY);
@@ -115,25 +165,45 @@ test.describe("devices, as a screen", () => {
 
     await knag.page.locator("[data-devices-open]").click();
 
-    await expect(knag.page.locator("[data-devices-screen]")).toBeVisible();
-    // The platform's focus trap would otherwise keep the list unreachable, and a backdrop
-    // over a screen is a dialog wearing a screen's clothes.
-    await expect(knag.page.locator("[data-settings]")).not.toBeVisible();
+    await expect(knag.page.locator("[data-devices-pane]")).toBeVisible();
+    // 🔴 The inversion of what this test used to assert (#149). Devices used to close
+    // the dialog and open a full-bleed screen, on the argument that a modal has no
+    // navigation and no scroll that means anything. A pane with a back control is
+    // navigation, and the scroll below is real — so what the full bleed was actually
+    // costing was the reader's place, for nothing.
+    await expect(knag.page.locator("[data-settings]")).toBeVisible();
+    await expect(knag.page.locator("[data-settings-pane]")).not.toBeVisible();
   });
 
   test("comes back to where you came from", async ({ knag }) => {
     await knag.seed(DAY);
     await knag.openSettings();
     await knag.page.locator("[data-devices-open]").click();
-    await expect(knag.page.locator("[data-devices-screen]")).toBeVisible();
+    await expect(knag.page.locator("[data-devices-pane]")).toBeVisible();
 
     await knag.page.locator("[data-devices-back]").click();
 
-    // A screen is a place you go, look around in, and **come back from** — which is the
-    // difference between it and a dialog, and the reason back lands on the sheet rather
-    // than dumping you on the board.
-    await expect(knag.page.locator("[data-devices-screen]")).not.toBeVisible();
-    await expect(knag.page.locator("[data-settings]")).toBeVisible();
+    // A place you go, look around in, and **come back from** — which is the difference
+    // between it and a section, and the reason back lands on the settings rows rather
+    // than dismissing the whole dialog.
+    await expect(knag.page.locator("[data-devices-pane]")).not.toBeVisible();
+    await expect(knag.page.locator("[data-settings-pane]")).toBeVisible();
+  });
+
+  test("🔴 reopening settings never lands you back on the device list", async ({ knag }) => {
+    await knag.seed(DAY);
+    await knag.openSettings();
+    await knag.page.locator("[data-devices-open]").click();
+    await expect(knag.page.locator("[data-devices-pane]")).toBeVisible();
+
+    // Out through Escape rather than back, which is the route that leaves the panes
+    // swapped: the platform closes the dialog and tells nobody which pane was showing.
+    await knag.page.keyboard.press("Escape");
+    await expect(knag.page.locator("[data-settings]")).not.toBeVisible();
+
+    await knag.openSettings();
+    await expect(knag.page.locator("[data-settings-pane]")).toBeVisible();
+    await expect(knag.page.locator("[data-devices-pane]")).not.toBeVisible();
   });
 
   test("🔴 is the surface allowed to scroll, which is why the list moved here", async ({
@@ -144,12 +214,12 @@ test.describe("devices, as a screen", () => {
     await knag.openSettings();
     await knag.page.locator("[data-devices-open]").click();
 
-    const body = knag.page.locator("[data-devices-screen] .screen-body");
+    const body = knag.page.locator("[data-devices-pane] .pane-body");
     await expect(body).toBeVisible();
 
-    // The sheet cannot hold something whose length nobody controls; this can. Asserted
-    // as a capability rather than as a measurement — the list is two rows in a test and
-    // fifteen on a real account, and it is the fifteen that this exists for.
+    // The settings pane cannot hold something whose length nobody controls; this can.
+    // Asserted as a capability rather than as a measurement — the list is two rows in a
+    // test and fifteen on a real account, and it is the fifteen that this exists for.
     expect(await body.evaluate((el: { scrollHeight: number }) => el.scrollHeight)).toBeGreaterThan(
       0,
     );
@@ -163,14 +233,33 @@ test.describe("devices, as a screen", () => {
     expect(overflow).toBe("auto");
   });
 
+  test("🔴 the pane is capped, so a long list cannot push the way back off screen", async ({
+    knag,
+  }) => {
+    await knag.page.setViewportSize(PHONE);
+    await knag.seed(DAY);
+    await knag.openSettings();
+    await knag.page.locator("[data-devices-open]").click();
+
+    const pane = knag.page.locator("[data-devices-pane]");
+    const height = (await pane.boundingBox())?.height ?? 0;
+    expect(height).toBeGreaterThan(0);
+    expect(height).toBeLessThanOrEqual(PHONE.height);
+
+    // The one thing the cap exists for: back is reachable no matter how many devices
+    // there are. A pane that grew past the viewport would put it above the top edge.
+    const back = (await knag.page.locator("[data-devices-back]").boundingBox())?.y ?? -1;
+    expect(back).toBeGreaterThanOrEqual(0);
+  });
+
   test("keeps the rare verb with the list it acts on", async ({ knag }) => {
     await knag.seed(DAY);
     await knag.openSettings();
     await knag.page.locator("[data-devices-open]").click();
 
     // `sign out everywhere else` is about the other devices, so it belongs where they
-    // are rather than in a sheet that no longer lists them.
-    await expect(knag.page.locator("[data-devices-screen] [data-revoke-others]")).toHaveCount(1);
-    await expect(knag.page.locator("[data-settings] [data-revoke-others]")).toHaveCount(0);
+    // are rather than among rows that are about the page and about you.
+    await expect(knag.page.locator("[data-devices-pane] [data-revoke-others]")).toHaveCount(1);
+    await expect(knag.page.locator("[data-settings-pane] [data-revoke-others]")).toHaveCount(0);
   });
 });

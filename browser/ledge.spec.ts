@@ -99,6 +99,46 @@ test.describe("the rule that makes it free", () => {
     await expect(knag.ledge()).not.toBeVisible();
   });
 
+  test("🔴 stays open for the recovery line, which is the bar and not the page", async ({
+    knag,
+  }) => {
+    await knag.seed(DAY);
+    await knag.useEditor();
+    await knag.openLedge();
+
+    // Wipe the page, which is the only route to the offer â and it is on the ledge, so
+    // the ledge is always open at the moment the offer appears below it.
+    await knag.page.locator("[data-wipe-all]").click();
+    await knag.page.locator("[data-wipe-all]").click();
+    await expect(knag.page.locator("[data-recovery]")).toBeVisible();
+
+    await knag.page.locator("[data-restore]").focus();
+
+    // 🔴 The cause of the bug rather than the symptom (#149). Closing here took 56px
+    // out of the layout **between the mousedown and the mouseup** on `bring back`, which
+    // moved the button out from under the pointer â so no `click` was ever dispatched and
+    // the first tap only closed the ledge. Desktop only, because iOS Safari does not
+    // focus a `<button>` on tap, which is exactly the shape of report that arrived.
+    //
+    // It is also just true: the offer is chrome the app wrote about a wipe you just
+    // took. The rule is that going back to the *page* closes the ledge, and reaching for
+    // `bring back` is not going back to the page.
+    await expect(knag.ledge()).toBeVisible();
+    await expect(knag.ledge()).not.toHaveAttribute("inert", "");
+  });
+
+  // 🔴 **The symptom itself is not testable here, and this is the record of why.**
+  //
+  // What was reported is that `bring back` needed two clicks. A test that opens the
+  // ledge, wipes the page and clicks the button once passes *with the bug present* â
+  // Playwright re-checks the hit target around a click and retries when the element has
+  // moved out from under the pointer, which is precisely the failure. It would be a test
+  // that documents nothing, so it was written, negative-verified, and deleted.
+  //
+  // That is also the answer to why 527 tests and a browser suite never saw this: the
+  // harness is more patient than a hand. The assertion above pins the cause instead, and
+  // the cause is the thing that can regress.
+
   test("closes when Settings takes focus, because a modal is somewhere else", async ({
     knag,
   }) => {

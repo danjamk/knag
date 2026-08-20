@@ -13,6 +13,55 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-08-20
+
+The first hour on 1.0, on a real desktop and a real phone.
+
+Six things, all reported by the operator and none by the suite — which is the pattern
+this project keeps repeating and keeps being right about. Two were defects with a shared
+shape: **something moved or came back when nothing should have.**
+
+### Fixed
+
+- **The page wipe flashed the page back before it went.** `animateWipe` released its
+  decorations on its own resolve, so every collapsed line snapped to full height and
+  opacity and sat there for the whole 200ms of `--page-beat` before the repaint took it
+  away again. The beat was holding a *full* board — which means §6b's empty-board moment,
+  the pause the whole `fall` timing was built around, had never once run. The surface now
+  holds the lines hidden until the caller releases them, in the same task as the repaint.
+
+  🔴 This is very likely the "the wipe page does not seem like the fall we designed"
+  from 0.13.0, which was carried on #121 as a tuning question. It was not a tuning
+  question.
+
+- **`bring back` needed two clicks on desktop.** `wipe page` lives on the ledge, so the
+  ledge is always open at the moment the recovery line appears below it — and focusing
+  the button closed the ledge, which took 56px out of the layout *between the mousedown
+  and the mouseup* and moved the button out from under the pointer. No `click` was ever
+  dispatched. The recovery line counts as chrome now, which is also just true of it.
+
+  iOS Safari does not focus a `<button>` on tap, which is why this was desktop-only.
+
+### Changed
+
+- **Devices is a second pane of the settings dialog, not a full-bleed screen.** Same
+  dialog, same backdrop, same focus trap, a back control where the close control is. The
+  argument that made it a screen (#132 §3d — a modal cannot hold a list whose length
+  nobody controls) needed a scroll and a cap, both of which a pane has; it did not need
+  to throw the reader out of Settings to get them. The settings pane still does not
+  scroll, which is the half of that rule that was ever load-bearing.
+- **The settings head and its close control are legible.** `--dim` on `--board` is about
+  3.9:1 — under AA at any size — which is right for a value at rest beside a label and
+  wrong for the two things that say what the surface is and how to leave it. The close is
+  a drawn glyph now, like every other control in the product, rather than the text
+  character `×`.
+- **The build line reads at `--size-machine`**, which is the size that token's own
+  comment has always assigned it. It was set to `--size-micro` — the env badge's size —
+  and 11px `--dim` put "is my change live" back to being a round trip.
+- **One group label in Settings, not two.** `the page` sat under a head that says
+  `settings`, above four rows visibly about the page. `you` stays, because what follows
+  it is a genuine change of subject.
+
 ## [1.0.0] — 2026-08-20
 
 One page, one editing surface. The row list is gone.
@@ -1244,7 +1293,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/danjamk/knag/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/danjamk/knag/compare/v0.16.0...v1.0.0
 [0.16.0]: https://github.com/danjamk/knag/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/danjamk/knag/compare/v0.14.0...v0.15.0

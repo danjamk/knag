@@ -75,7 +75,8 @@ const footerEl = document.querySelector<HTMLElement>("footer");
 const ledgeEl = document.querySelector<HTMLElement>("[data-ledge]");
 const ledgeToggle = document.querySelector<HTMLButtonElement>("[data-ledge-toggle]");
 const sessionsList = document.querySelector<HTMLUListElement>("[data-sessions]");
-const devicesScreen = document.querySelector<HTMLElement>("[data-devices-screen]");
+const settingsPane = document.querySelector<HTMLElement>("[data-settings-pane]");
+const devicesPane = document.querySelector<HTMLElement>("[data-devices-pane]");
 const devicesOpen = document.querySelector<HTMLElement>("[data-devices-open]");
 const devicesBack = document.querySelector<HTMLButtonElement>("[data-devices-back]");
 const devicesCount = document.querySelector<HTMLElement>("[data-devices-count]");
@@ -1230,6 +1231,13 @@ async function requestWipe(scope: WipeScope): Promise<void> {
     // the rest of your list, which never left.
     if (scope === "all") await hold(motionMs("--page-beat", 200));
 
+    // 🔴 Released here, in the same task as the repaint, and never before the beat
+    // (#149). The surface holds the wiped lines collapsed and transparent until it is
+    // told to let go — which is what makes the beat above a held *empty* board rather
+    // than the full one it was showing. Clearing on the animation's own resolve put the
+    // page back on screen for 200ms and then took it away again, so the fall read as a
+    // glitch: wiped, back, gone.
+    surface?.clearWipe();
     if (doc) render(doc);
 
     if (count === 0) {
@@ -1259,6 +1267,9 @@ async function requestWipe(scope: WipeScope): Promise<void> {
     // it, so the page a failed wipe left alone would fold up anyway. Both surfaces clear
     // themselves once it has finished.
     await leaving;
+    // Same rule as the success path: release and repaint in one task, so the lines the
+    // failed wipe faded do not flash before `paint` puts them back properly.
+    surface?.clearWipe();
     paint();
   }
 }
@@ -1640,7 +1651,6 @@ settingsDialog?.addEventListener("click", (event) => {
     writeFontSize(globalThis.localStorage, fontSize);
     applyFontSize();
     markChoices("[data-font-size]", "fontSize", String(fontSize));
-  markChoices("[data-sound]", "sound", sound ? "on" : "off");
     return;
   }
 
@@ -1898,7 +1908,20 @@ ledgeToggle?.addEventListener("click", () => {
 // the document, and being in the document is what raises the keyboard.
 document.addEventListener("focusin", (event) => {
   const target = event.target;
-  if (target instanceof Node && footerEl?.contains(target)) return;
+  // 🔴 The recovery line counts as the bar, and it has to (#149). `wipe page` lives in
+  // the ledge, so the ledge is open at the exact moment the offer appears below it — and
+  // closing it here took 56px out of the layout *between the mousedown and the mouseup* on
+  // `bring back`, which moves the button out from under the pointer and means no `click`
+  // is ever dispatched. The first tap closed the ledge and the second one restored, on
+  // desktop only, because iOS Safari does not focus a `<button>` on tap.
+  //
+  // It is also just true: the line is chrome the app wrote about a wipe you just took,
+  // not the document. The rule the ledge actually keeps is that going back to the page
+  // closes it, and reaching for `bring back` is not going back to the page.
+  const inChrome =
+    target instanceof Node &&
+    (footerEl?.contains(target) === true || recoveryLine?.contains(target) === true);
+  if (inChrome) return;
   setLedge(false);
 });
 
@@ -1941,11 +1964,18 @@ async function loadCarbon(): Promise<void> {
 }
 
 /**
- * The devices screen — a place you go, rather than a decision you dismiss.
+ * The devices pane — a place you go, rather than a decision you dismiss.
  *
- * 🔴 Reached from the sheet and returning to it, because that is where you came from.
- * The sheet closes on the way in: a screen behind a modal backdrop is neither, and the
- * platform's focus trap would keep the list unreachable.
+ * 🔴 **One dialog, two panes** (#149). This used to close the sheet and open a
+ * full-bleed screen, and the reason given was that a modal has no navigation and no
+ * scroll of its own that means anything. The first half was never true — a pane with a
+ * back control is navigation — and the second half is about the *settings* pane, which
+ * still does not scroll. What devices actually needed was a scroll and a height cap, and
+ * it has both; what it did not need was to throw the reader out of settings to get them.
+ *
+ * Swapping panes rather than closing and reopening also keeps the backdrop, the focus
+ * trap and Escape continuous, so the platform never sees the dialog go away and come
+ * back.
  *
  * 🔴 The list is re-read on the way in, never carried over from the sheet's read. A
  * device list that is stale is worse than no device list — the whole point is answering
@@ -1953,23 +1983,25 @@ async function loadCarbon(): Promise<void> {
  * cannot act on.
  */
 function showDevices(on: boolean): void {
-  devicesScreen?.toggleAttribute("hidden", !on);
-  if (on) {
-    settingsDialog?.close();
-    void loadSessions();
-  } else {
-    settingsDialog?.showModal();
-  }
+  settingsPane?.toggleAttribute("hidden", on);
+  devicesPane?.toggleAttribute("hidden", !on);
+  if (on) void loadSessions();
 }
 
 devicesOpen?.addEventListener("click", () => showDevices(true));
 devicesBack?.addEventListener("click", () => showDevices(false));
+
+// 🔴 Escape and the backdrop close the dialog from whichever pane is showing, and the
+// platform tells nobody which one that was. Reset on the way out, or the next tap on
+// `settings` opens a sheet that is still showing the device list.
+settingsDialog?.addEventListener("close", () => showDevices(false));
 
 settingsOpen?.addEventListener("click", () => {
   markChoices("[data-theme-set]", "themeSet", theme);
   markChoices("[data-view-set]", "viewSet", view);
   markChoices("[data-font-size]", "fontSize", String(fontSize));
   markChoices("[data-sound]", "sound", sound ? "on" : "off");
+  showDevices(false);
   settingsDialog?.showModal();
   // The count on the devices row, and the age of the record on the build line. Both are
   // read here rather than cached: the sheet is opened rarely and a stale number on a row

@@ -60,9 +60,25 @@ export type EditorHandle = {
    * so the leak that was allowed is the smaller one, and the timing still lives in
    * `app.ts` so both surfaces run one sequence rather than two that drift.
    *
-   * Resolves when the collapse has finished. Decides nothing about what is wiped.
+   * Resolves when the collapse has finished, **with the lines still hidden**. Decides
+   * nothing about what is wiped.
    */
   animateWipe(lines: number[], timings: WipeTimings): Promise<void>;
+  /**
+   * Release the wipe's picture, putting any line it still covers back on screen.
+   *
+   * 🔴 Separate from `animateWipe` on purpose, and the separation is a bug fix (#149).
+   * Clearing on resolve meant the wiped lines snapped back to full height and opacity
+   * for however long the caller took to repaint — a single frame for the daily sweep,
+   * and the whole 200ms of `--page-beat` for the page wipe, which is why the page
+   * visibly came back before it went. The caller now clears in the same task as the
+   * repaint, so nothing is painted in between.
+   *
+   * It must still be called: `setBody` computes a *minimal* change, so a line that
+   * survived the wipe keeps its position and would keep a stale `cm-wiping` class with
+   * it — rendering a line of the new document permanently invisible.
+   */
+  clearWipe(): void;
   focus(): void;
   destroy(): void;
 };
@@ -748,18 +764,22 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
         setTimeout(
           () => {
             view.dispatch({ effects: setWipe.of({ lines, closing: true, page }) });
-            setTimeout(() => {
-              // 🔴 Cleared here rather than left for the repaint. `setBody` computes a
-              // *minimal* change, so a line that survives the wipe keeps its position —
-              // and would keep a stale `cm-wiping` class with it, rendering a line of
-              // the new document permanently invisible.
-              view.dispatch({ effects: setWipe.of(null) });
-              resolve();
-            }, timings.collapse);
+            // 🔴 Resolves with the marks still applied — the board is empty and stays
+            // empty until the caller repaints. `clearWipe` is what releases them, and it
+            // is the caller's job precisely so the release and the repaint land in one
+            // task. See `clearWipe` above for what clearing early looked like.
+            setTimeout(resolve, timings.collapse);
           },
           timings.duration + (lines.length - 1) * timings.stagger,
         );
       });
+    },
+
+    clearWipe(): void {
+      // Cheap to call unconditionally: an effect-only transaction on an already-empty
+      // field changes nothing, and the alternative is every caller knowing whether a
+      // wipe ran.
+      view.dispatch({ effects: setWipe.of(null) });
     },
 
     focus: () => view.focus(),

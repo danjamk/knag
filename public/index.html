@@ -1075,12 +1075,18 @@
         align-items: center;
         justify-content: space-between;
         padding: var(--space-5) var(--row-pad-left) var(--space-3);
+        border-bottom: var(--hairline-width) solid var(--hairline);
       }
+      /* 🔴 `--ink` at `--size-control`, not `--dim` at `--size-machine` (#149). This is
+         the machine naming a surface, so it stays mono — but `--dim` on `--board` is
+         about 3.9:1, which is under AA at any size and well under it at 13px. Dim is
+         correct for a value at rest next to a label; it is not correct for the only two
+         things on the row that say what the surface is and how to leave it. */
       .sheet-head span {
         font-family: var(--font-mono);
-        font-size: var(--size-machine);
+        font-size: var(--size-control);
         letter-spacing: var(--track-machine);
-        color: var(--dim);
+        color: var(--ink);
       }
 
       /* Two groups is the whole information architecture, and it stays two when the
@@ -1182,16 +1188,21 @@
       .build {
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 3px;
         margin: 0;
         padding: var(--space-5) var(--row-pad-left) var(--space-6);
         font-family: var(--font-mono);
-        font-size: var(--size-micro);
+        /* 🔴 `--size-machine`, which is what that token's own comment has always said
+           this line is for — "save status, recovery line, build info". It was set to
+           `--size-micro`, whose comment names the env badge and the ledge labels, and
+           11px `--dim` is unreadable enough that the answer to "is my change live" was
+           back to being a round trip (#149). */
+        font-size: var(--size-machine);
         letter-spacing: var(--track-machine);
-        color: var(--dim);
+        color: var(--ink);
       }
-      .build .dot { opacity: 0.6; }
-      .build a { color: var(--dim); text-decoration: underline; text-underline-offset: 2px; }
+      .build .dot { color: var(--dim); }
+      .build a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
       .note {
         margin: 10px 0 0;
         /* The machine voice's size — these paragraphs are the app explaining itself, and
@@ -1204,53 +1215,49 @@
       /* The device list (#125). Machine voice — every value in it is something the
          server knows and the user did not type, so it is mono and dim, and the only
          colour is the amber that marks which row is you. */
-      /* ── The devices screen (#132) ─────────────────────────────────────────
-         🔴 A place you go and come back from, not a decision you dismiss. That is the
-         difference between a screen and a dialog, and it is why this is a full surface
-         with a back affordance and a scroll of its own rather than a section in a sheet
-         that cannot hold it.
+      /* ── The devices pane (#132, reshaped by #149) ─────────────────────────
+         🔴 A place you go and come back from, not a decision you dismiss — **and it is
+         a second pane of the same dialog rather than a surface that replaces the app.**
 
-         It covers the app rather than sitting beside it: knag has one page and this is a
-         detour from it, so there is nothing worth seeing behind. */
-      [data-devices-screen] {
-        position: fixed;
-        inset: 0;
-        z-index: 2;
+         The rule §3d was defending is still here and still load-bearing: devices is the
+         first thing in the product whose length the design does not control, and a sheet
+         that has to hold it is a junk drawer with a lid. What that argument actually
+         needed was *a scroll of its own and a height that is capped* — both of which a
+         pane has. It did not need the full bleed, and the full bleed is what read as
+         being thrown out of settings to somewhere else (#149).
+
+         The settings pane does **not** scroll and that has not changed. This one does,
+         which is the whole reason it is not a section over there. */
+      [data-devices-pane] {
         display: flex;
         flex-direction: column;
-        background: var(--board);
-        padding: env(safe-area-inset-top) env(safe-area-inset-right)
-                 env(safe-area-inset-bottom) env(safe-area-inset-left);
+        /* The dialog is bottom-anchored, so a taller pane grows upward from the thumb.
+           Capped so that fifteen devices cannot push the back control off the top. */
+        max-height: min(72vh, 560px);
       }
-      .screen-head {
+      .pane-head {
         flex: none;
         display: flex;
         align-items: center;
-        gap: var(--space-3);
-        height: 46px;
-        padding: 0 var(--space-4) 0 var(--space-2);
-        border-bottom: var(--hairline-width) solid var(--hairline);
+        gap: var(--space-2);
+        /* Left-aligned behind the back control, where the sheet's head is spread. */
+        justify-content: flex-start;
+        padding: var(--space-5) var(--row-pad-left) var(--space-3) var(--space-4);
       }
-      .screen-title {
-        font-family: var(--font-mono);
-        font-size: var(--size-machine);
-        letter-spacing: var(--track-machine);
-        color: var(--dim);
-      }
-      /* 🔴 The screen scrolls and the sheet does not, and that is the whole point of the
+      /* 🔴 The pane scrolls and the sheet does not, and that is the whole point of the
          move: this is the surface whose length nobody controls. */
-      .screen-body {
+      .pane-body {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
         padding: var(--space-5) var(--row-pad-left);
       }
-      .screen-actions {
+      .pane-actions {
         flex: none;
-        padding: var(--space-4) var(--row-pad-left);
+        padding: var(--space-4) var(--row-pad-left) var(--space-6);
         border-top: var(--hairline-width) solid var(--hairline);
       }
-      .screen-actions button {
+      .pane-actions button {
         width: 100%;
         min-height: var(--target);
         padding: 0 var(--space-3);
@@ -1263,7 +1270,7 @@
         letter-spacing: var(--track-machine);
         cursor: pointer;
       }
-      .screen-actions button:active { background: var(--press-tint); }
+      .pane-actions button:active { background: var(--press-tint); }
 
       .sessions {
         list-style: none;
@@ -1299,29 +1306,21 @@
       }
       .sessions button[disabled] { opacity: 0.4; cursor: default; }
 
-      /* Build info: one tap from anywhere, because "is my change live" cost a round
-         trip once already. Moved off the footer, not buried. The values are the
-         machine speaking, so they are amber. */
-      [data-build-detail] {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: var(--space-2) var(--space-5);
-        margin: 0;
-        font-family: var(--font-mono);
-        font-size: var(--size-machine);
-      }
-      [data-build-detail] dt { color: var(--dim); }
-      [data-build-detail] dd { margin: 0; color: var(--amber); word-break: break-all; }
       /* 🔴 A close control at the head, not a `Done` bar at the foot. The sheet is
          bottom-anchored now, so a full-width button under six rows put the largest target
          on the screen furthest from what it closes — and Escape and the backdrop already
-         close it. This is the sheet's only glyph. */
-      .sheet-close {
+         close it.
+
+         🔴 A **drawn** glyph at `--ink`, and both halves of that are #149. It was the
+         text character × in `--dim`, which made the one control every reader looks for
+         first the only control in the product not using the glyph system — lighter than
+         the label beside it, and at whatever weight the mono face happens to give a
+         multiplication sign. Same 18px and same 1.5 stroke as every other glyph. */
+      .sheet-close,
+      .pane-back {
         width: var(--target);
         height: var(--target);
-        /* Pulled back into the head's padding so the target overhangs rather than
-           widening the row it sits in. */
-        margin: -12px -10px -12px 0;
+        flex: none;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1329,12 +1328,15 @@
         border: 0;
         border-radius: var(--radius-sm);
         background: transparent;
-        color: var(--dim);
-        font-family: var(--font-mono);
-        font-size: var(--size-control);
+        color: var(--ink);
         cursor: pointer;
       }
-      .sheet-close:active { background: var(--press-tint); color: var(--ink); }
+      /* Pulled back into the head's padding so the target overhangs rather than
+         widening the row it sits in. */
+      .sheet-close { margin: -12px -10px -12px 0; }
+      .pane-back { margin: -12px 0 -12px -10px; }
+      .sheet-close:active,
+      .pane-back:active { background: var(--press-tint); }
 
       /* ── Login ─────────────────────────────────────────────────────────────
          One passphrase, an optional device label. No sign-up and no onboarding —
@@ -1518,56 +1520,35 @@
       </footer>
     </div>
 
-    <!-- 🔴 A screen, not a section (#132, holistic-response §3d). Devices is the first
-         thing in the product whose length the design does not control, and **a modal is
-         the one container that cannot hold an unbounded list** — it has no navigation and
-         no scroll of its own that means anything. At two rows it looked fine in the
-         sheet; at fifteen it was the sheet.
-
-         The general form of the symptom: anything list-shaped gets a screen and the sheet
-         only points at it. This is the first one, and history and manage-pages land in
-         the same shape — so the pattern is worth getting right here rather than inventing
-         twice.
-
-         A sibling toggled with `hidden`, like the login form, because knag has no router
-         and one screen does not justify inventing one. -->
-    <section data-devices-screen hidden>
-      <div class="screen-head">
-        <button type="button" class="bar-glyph" data-devices-back title="back">
-          <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M10 3 L5 8 L10 13"/></svg>
-        </button>
-        <span class="screen-title">devices</span>
-      </div>
-
-      <div class="screen-body">
-        <ul data-sessions class="sessions"><li class="note">&#8212;</li></ul>
-        <p class="note">
-          A session lasts a year, so it survives the weeks between logins. Revoking one
-          takes effect on that device&#8217;s next request. Changing the passphrase does not
-          &#8212; this is the only thing that ends a session.
-        </p>
-      </div>
-
-      <div class="screen-actions">
-        <button type="button" data-revoke-others>sign out everywhere else</button>
-      </div>
-    </section>
-
     <!-- <dialog> rather than a hand-rolled overlay: it gets the backdrop, Escape,
          focus trapping and inertness from the platform, all of which are easy to
-         get subtly wrong and none of which are this project's problem. -->
+         get subtly wrong and none of which are this project's problem.
+
+         🔴 **Two panes, one dialog** (#132, reshaped by #149). Devices was a full-bleed
+         screen that closed the sheet on the way in, and it read as being thrown out of
+         settings rather than as going one level into it. It is a pane now: same dialog,
+         same backdrop, same focus trap, a back control instead of a close, and its own
+         scroll — which was the only thing the screen was ever really buying.
+
+         The rule that produced the screen still stands where it matters: **the settings
+         pane does not scroll.** Anything list-shaped gets its own pane with its own cap,
+         and history lands in the same shape. -->
     <dialog data-settings>
-      <form method="dialog">
+      <form method="dialog" data-settings-pane>
         <div class="sheet-head">
           <span>settings</span>
-          <button type="submit" class="sheet-close" title="close">&#215;</button>
+          <button type="submit" class="sheet-close" title="close" aria-label="close">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M4 4 L12 12 M12 4 L4 12"/></svg>
+          </button>
         </div>
 
-        <!-- 🔴 The page: the things that change how the page looks and behaves. Two
-             groups is the whole information architecture (#132, §7e), and it stays two
-             when the account rows arrive in 1.2 — they were always going to, and this is
-             where they land. -->
-        <p class="group">the page</p>
+        <!-- 🔴 One group label, not two (#132 §7e, corrected by #149). There is still
+             one boundary in here and it is still in the same place — but it turns out
+             only the second half needed naming. `the page` sat directly under a head
+             that says `settings`, above four rows that are visibly about the page, and
+             named nothing the reader could not see. `you` earns its line precisely
+             because what follows *is* a change of subject, and it keeps the slot the
+             account rows arrive above in 1.2. -->
 
         <!-- 🔴 Board, not Theme. These are not themes — they are the two surfaces the
              product already had, finally told what they are. Slate is chalk on a
@@ -1661,6 +1642,30 @@
           <span data-carbon>&#8212;</span>
         </p>
       </form>
+
+      <!-- 🔴 Outside the form, deliberately. `method="dialog"` means every button
+           inside it submits and closes; the back control has to leave the dialog open. -->
+      <div data-devices-pane hidden>
+        <div class="sheet-head pane-head">
+          <button type="button" class="pane-back" data-devices-back title="back" aria-label="back">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M10 3 L5 8 L10 13"/></svg>
+          </button>
+          <span>devices</span>
+        </div>
+
+        <div class="pane-body">
+          <ul data-sessions class="sessions"><li class="note">&#8212;</li></ul>
+          <p class="note">
+            A session lasts a year, so it survives the weeks between logins. Revoking one
+            takes effect on that device&#8217;s next request. Changing the passphrase does not
+            &#8212; this is the only thing that ends a session.
+          </p>
+        </div>
+
+        <div class="pane-actions">
+          <button type="button" data-revoke-others>sign out everywhere else</button>
+        </div>
+      </div>
     </dialog>
 
     <script type="module" src="/app.js"></script>
