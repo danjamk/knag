@@ -19,15 +19,27 @@ This replaces the MVP plan's `#2 → #3 → #4 → #8`, which was true until it 
 not and stayed written down for a while afterwards.
 
 **Where it stands, 2026-08-19.** Phases 1, 3 and half of 2 and 4 have shipped —
-0.9.0 through 0.11.0. What is left in 1.0 is **#114** (a device test, not a
-branch), **#113** and **#115** (both waiting on the editor being the daily surface
-for a couple of weeks — their own issues say so), and **#120 · #121 · #90**, which
-share one design-session request.
+0.9.0 through 0.11.1, and prod is live on the same build as dev. What is left in
+1.0 is **#114** (a device test, not a branch), **#113** and **#115** (both waiting on
+the editor being the daily surface for a couple of weeks — their own issues say
+so), and phases 4 and 5, which now have a design.
+
+🔴 **The design session answered, and it reordered phase 4.** The holistic pass
+came back on 2026-08-19 and is recorded in
+[design/holistic-response.md](design/holistic-response.md). It introduced one piece
+of work that did not exist — **the ledge** (#139), a second tier on the bar —
+subsumed #120 into it, designed #132 outright, and put both ahead of #121. The
+reason is one sentence: *motion work on a bar that is about to change composition
+gets done twice.*
 
 🔴 **#107 is open and #74 did not close it.** The instrumentation eliminated four
-hypotheses; the third occurrence, on 2026-08-19, moved the finding from *identity*
-to **position** — failures land in the last or second-to-last spec file whichever
-file that happens to be.
+hypotheses. The third occurrence pointed at *position*; the fourth refuted it —
+`editor.spec.ts`, seventh of thirteen — and moved the finding to **duration**:
+every dead-server failure landed in whichever file was slowest at the time. The
+answer was to make no file slow. `editor.spec.ts` was split three ways in 0.11.1
+and the suite's worst file is now ~32s. **The next few CI runs are the
+experiment** — if dead servers stop, the finding is confirmed by absence and the
+issue closes on evidence rather than on a fix. The mechanism is still unexplained.
 
 ---
 
@@ -117,15 +129,23 @@ The lesson worth carrying: an instrument must not add a pipe to the path it
 measures. Capturing output through `tee` took the flake from two occurrences in
 weeks to six CI runs out of six; a file redirect went green.
 
-🔴 **#107 and #74 now look like one issue, so do #74 first.** What remains
-unexplained is a dev server dying while printing an *empty* `✘ [ERROR]` and
-recording nothing in its own log. That is what an alpha runtime does. #74 was
-filed as tidying-up and may close #107 outright.
+🔴 **#74 shipped and did not close #107.** The theory was that they were one
+issue — a dev server dying while printing an *empty* `✘ [ERROR]` and recording
+nothing in its own log is what an alpha runtime does, and #74 unified the two
+miniflare majors onto one. It did not stop the failures. What did was the fourth
+occurrence pointing at **duration** rather than identity or position, and the
+answer to that was splitting `editor.spec.ts` three ways in 0.11.1 so no file runs
+long enough to be the one that dies. #107 stays open, back in Backlog, and closes
+on evidence — see the header.
 
-**Also start #4 now.** It is wall-clock, not work: the iOS cookie clock needs
-seven days of *not* touching the phone. It has been deferred since 2026-08-15
-and should be running in the background underneath every phase here, not
-scheduled into one.
+**#4 is running.** It is wall-clock, not work: the iOS cookie clock needs seven
+days of *not* touching the phone. Started 2026-08-19 on the iPad against **dev**,
+which is the only device-and-environment pair nobody uses, and it runs to
+2026-08-27. Prod is the dogfood on every device and a different cookie jar, so
+using it freely does not disturb the measurement. 🔴 **Keep migrations additive
+until then** — `deploy-dev.yml` redeploys the subject on every merge to `main`, and
+a destructive migration would end the test silently by making the iPad ask for a
+passphrase, which reads as an ITP failure rather than a self-inflicted one.
 
 ### Phase 1 · Sessions you can revoke — ~~#125~~ · ✅ **done, 0.9.0**
 
@@ -187,23 +207,46 @@ armchair."* The editing surface shipped 2026-08-18. There is nothing to build
 that answers a question about how a gesture feels; what #115 gained from 0.10.0
 is that there are now three paths to rule on and the third is already decided.
 
-### Phase 4 · The wipe and Settings — #120, ~~#92~~, #121
+### Phase 4 · The bar, the wipe and the sheet — #139, #121, #132, ~~#92~~, ~~#120~~
 
-**Open this phase with one request to the design session**, covering wipe motion,
-wipe sound, where #120's control goes, and #90's landing-page brief — which is
-written and already waiting. One session, four answers. Design decisions come
-from there and not from here; motion is named explicitly in `CLAUDE.md`.
+**The design session answered on 2026-08-19** and the phase was rebuilt around what
+came back. Everything below is specified in
+[design/holistic-response.md](design/holistic-response.md), and the numbers there
+are the numbers to apply.
 
-#120 and #92 both edit the Settings dialog — #120 removes its `Page` section — so
-they paired. **#92 shipped in 0.11.0**, taking the footer's touch target from 28px
-to the 44px HIG minimum along the way, and filing **#132** for the Settings
-redesign once the sheet stops changing shape. #121 is unblocked by #119 and lands
-after #113 so the animation is written once, against one surface.
+Three PRs, and the order is not arbitrary:
+
+| | | |
+|---|---|---|
+| **#139** | **The ledge** — a second tier on the bar, opened on demand, plus the bar's diet (§3a). Closes #120 | first |
+| **#121** | The wipe — `sweep` daily, `fall` for the page, sound behind a switch | after #139 |
+| **#132** | Settings becomes preferences — two groups, six rows, no scroll | after both |
+
+🔴 **The ledge is first because every other surface needs somewhere to live.** It
+is tokens plus one container, it subsumes #120 entirely and most of #132, and
+motion work on a bar that is about to change composition gets done twice.
+
+**#92 shipped in 0.11.0 and the response reverses half of it.** The 44px touch
+target was right and stays; the four type tokens it dragged up go back (§3a), and
+About is deleted outright (§7e). Neither is a mistake being corrected — a hit
+target and the ink inside it were conflated, and the sheet's rule now excludes
+anything without a current value. Both are recorded on the issues.
+
+Ship #121's motion alone if the sound needs a week of living with. The sound's
+length is computed from the motion tokens rather than fixed, so it costs nothing
+to maintain once it exists.
 
 ### Phase 5 · Show it — #90 · **ships 1.0**
 
 After #121, so the landing page has the good wipe to demonstrate. That is #121's
 own argument for existing.
+
+**The line and the hero are decided** ([§8](design/holistic-response.md)): the page
+says **"Throwing it away is the feature."**, the board arrives full and the wipe
+runs once on scroll-into-view rather than on load, and it is **slate only** — which
+answers decision 3 on the issue. The brief's own framing (*a behavior, not an app,
+not a task list*) was ruled a sentence for us rather than for the reader and moves
+to the top of [philosophy.md](philosophy.md).
 
 **This is 1.0.** A landing page is the point at which this stops being a thing you
 use and becomes a thing you show people, and it is the last item that belongs to
@@ -214,12 +257,32 @@ the single-document product.
 Ships independently of auth; §17 is explicit that it "can ship long before
 tenancy does". Before #91, per finding 1.
 
+**Designed in [§7](design/holistic-response.md).** The selector is a drop-up from
+the tier-1 slot the ledge frees, and the manage-pages screen ships **in the same
+PR** — it is where the destructive per-page verbs live, so shipping the selector
+alone means new · rename · delete land in the sheet first and move later.
+
+🔴 **The rule that keeps this from becoming a file manager: knag has no index.**
+There is no screen that lists your pages, only a control that switches between
+them, and it is never the thing you land on. Launch opens the last page you were
+on. The list is **capped at nine and never scrolls** — a tripwire, not a limit.
+Search arrives the moment the list stops fitting, then folders because search
+implies a namespace, then a home screen because a namespace needs a root; all
+three are on [§12](spec.md)'s Out list, and the cap is the one decision that keeps
+them unnecessary rather than merely forbidden.
+
 ### Phase 7 · Recovery and history — #91 · **ships 1.1**
 
 Designed per-page, **once** — which is why it sits here rather than in 1.0. See
 the release shape above: the bring-back and the agent-readable history already
 work, so what this revisits is the screen, and a screen designed for one page and
 then redesigned for several is the waste finding 1 exists to avoid.
+
+**And it is a screen, not a dialog** ([§7](design/holistic-response.md)) — a place
+you go and come back from, reached from the ledge, opening on *yesterday* rather
+than today. Its action says `add 3 to the page`, never "restore", because the page
+does not go back to how it was and that is the one thing it cannot be ambiguous
+about.
 
 ### Phase 8 · Multi-user — #122 · **ships 1.2**
 
@@ -236,6 +299,15 @@ Note also that #122 is scoped as **spike and ADR, not build**. It is
 [ADR-001](adr/ADR-001-passphrase-auth.md)'s stated trigger firing — *a second
 human, not a feature count* — and §17 already decided the first move is an auth
 spike rather than a schema change.
+
+**The design session recommends an email link** and argues it against the
+alternatives in [§7](design/holistic-response.md): the login surface stays one
+field, the identifier is one nobody can lose, recovery *is* the login flow, and it
+costs exactly one added state. An identity provider puts another company's logo on
+the only screen that is not the page. Two questions the spike has to answer: does
+the link land you on **the page** rather than a "logged in" screen, and does an
+existing session survive a new link on the same device — it must, or every
+re-login costs a device row.
 
 ---
 
