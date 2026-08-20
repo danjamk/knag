@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>knag — throwing it away is the feature</title>
+    <meta
+      name="description"
+      content="One plain-text page, always live, edited from any device and by an agent. Wiped every morning."
+    />
+
+    <!-- 🔴 Slate only, and it is a decision rather than an omission (#90, holistic-response
+         §8). The app has two boards because it is read for hours; a landing page is read
+         for forty seconds. Committing to one halves the work and loses nothing. There is
+         no `prefers-color-scheme` block below and there should not be one. -->
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#11150f" />
+
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="canonical" href="https://danjamk.github.io/knag/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="knag — throwing it away is the feature" />
+    <meta
+      property="og:description"
+      content="One plain-text page, always live, edited from any device and by an agent. Wiped every morning."
+    />
+    <meta property="og:image" content="https://danjamk.github.io/knag/og.png" />
+    <meta property="og:url" content="https://danjamk.github.io/knag/" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Ahead of the stylesheet, so the fetch starts with the parse rather than when the
+         @font-face rule is reached. That is the difference between a swap you notice and
+         one you do not. -->
+    <link
+      rel="preload"
+      href="fonts/familjen-grotesk-latin-var.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    <style>
+      /* 🔴 The fonts are referenced **relatively** and served from this directory. No CDN,
+         no build step, no npm — GitHub Pages gets a folder. `site/fonts/` is a copy of
+         `public/fonts/`, kept honest by a test that compares the bytes: a drift there is
+         invisible, because the page renders in a fallback stack and looks merely wrong
+         rather than broken. */
+      @font-face {
+        font-family: "DM Mono";
+        src: url("fonts/dm-mono-latin-300.woff2") format("woff2");
+        font-weight: 300;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "DM Mono";
+        src: url("fonts/dm-mono-latin-400.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Familjen Grotesk";
+        src: url("fonts/familjen-grotesk-latin-var.woff2") format("woff2-variations");
+        font-weight: 400 700;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      /* The app's slate, verbatim. Same palette family, different volume — the page is
+         allowed to run hot where the app never does, and `--amber-loud` is the whole of
+         that permission. It appears here and never in the app. */
+      :root {
+        --board: #11150f;
+        --ink: #d8d6cd;
+        --dim: #6e7568;
+        --hairline: #242a20;
+        --checkbox-rest: #4a5246;
+        --amber: #ffb000;
+        --amber-loud: #ff8a00;
+
+        --font-body: "Familjen Grotesk", system-ui, sans-serif;
+        --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+        /* The wipe, at the app's own numbers. A landing page that demonstrates the wipe
+           and demonstrates it *differently* is showing you something else. */
+        --wipe-duration: 260ms;
+        --wipe-stagger: 14ms;
+        --wipe-collapse: 130ms;
+        --wipe-travel: -28px;
+        --wipe-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        :root {
+          --wipe-duration: 1ms;
+          --wipe-stagger: 0ms;
+          --wipe-collapse: 1ms;
+          --wipe-travel: none;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        background: var(--board);
+      }
+      body {
+        margin: 0;
+        background: var(--board);
+        color: var(--ink);
+        font-family: var(--font-body);
+        /* Dark-mode bloom correction, scoped the way the app scopes it. Light text on a
+           dark ground blooms; this is the same three-part fix, minus the fence exception
+           because there are no fences here. */
+        letter-spacing: 0.012em;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      .wordmark {
+        position: fixed;
+        top: max(28px, env(safe-area-inset-top));
+        left: max(24px, env(safe-area-inset-left));
+        z-index: 2;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 3px;
+        font-family: var(--font-mono);
+        font-weight: 300;
+        font-size: 15px;
+        letter-spacing: 0.01em;
+        color: var(--ink);
+      }
+      .wordmark .block {
+        display: inline-block;
+        width: 7px;
+        height: 10px;
+        background: var(--amber);
+        animation: knag-blink 1.06s step-end infinite;
+      }
+      @keyframes knag-blink {
+        0%,
+        48% {
+          opacity: 1;
+        }
+        49%,
+        100% {
+          opacity: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .wordmark .block {
+          animation: none;
+        }
+      }
+
+      /* 🔴 The board is what you arrive on, and it is a real day rather than lorem. The
+         whole hero is "here is the thing, and here is it being thrown away" — a board of
+         placeholder text throws away nothing. */
+      .board {
+        min-height: 100svh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0;
+        margin: 0;
+        padding: 96px 24px 96px max(24px, env(safe-area-inset-left));
+        list-style: none;
+      }
+      .board li {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 7px 0;
+        font-size: clamp(17px, 2.6vw, 26px);
+        line-height: 1.4;
+      }
+      .board .box {
+        flex: none;
+        width: 0.72em;
+        height: 0.72em;
+        margin-top: 0.3em;
+        border: 1.5px solid var(--checkbox-rest);
+        border-radius: 3px;
+      }
+      .board li[data-done] {
+        color: var(--dim);
+      }
+      .board li[data-done] .box {
+        border-color: var(--amber);
+        background: var(--amber);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .board li[data-done] .box::after {
+        content: "";
+        width: 0.2em;
+        height: 0.4em;
+        margin-top: -0.1em;
+        border: solid var(--board);
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+      .board li[data-done] .text {
+        text-decoration: line-through;
+      }
+
+      /* The two stages, exactly as the app runs them: the lines go transparent in place
+         holding their height, and only then does one collapse close the gap. */
+      .board li.wiping {
+        animation: knag-wipe var(--wipe-duration) var(--wipe-ease) forwards;
+        animation-delay: calc(var(--i) * var(--wipe-stagger));
+      }
+      .board li.closing {
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        overflow: hidden;
+        transition:
+          max-height var(--wipe-collapse) var(--wipe-ease),
+          padding var(--wipe-collapse) var(--wipe-ease);
+      }
+      @keyframes knag-wipe {
+        from {
+          opacity: 1;
+          translate: none;
+        }
+        to {
+          opacity: 0;
+          translate: var(--wipe-travel);
+        }
+      }
+
+      /* 🔴 Below the fold on purpose, so nobody arrives after the joke. The wipe fires
+         when this scrolls into view, which means the reader is looking at the board at
+         the moment it empties rather than at a page that already emptied itself. */
+      .say {
+        min-height: 100svh;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 28px;
+        padding: 96px 24px max(56px, env(safe-area-inset-bottom))
+          max(24px, env(safe-area-inset-left));
+      }
+
+      .wiped {
+        margin: 0;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        letter-spacing: 0.02em;
+        color: var(--amber);
+        opacity: 0;
+      }
+      .wiped[data-shown] {
+        opacity: 1;
+        transition: opacity 90ms var(--wipe-ease);
+      }
+      .wiped .dot {
+        opacity: 0.6;
+      }
+      .wiped .back {
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      /* 🔴 The outdoor voice, and it is 600 rather than a fourth font file. Familjen
+         Grotesk's axis stops at 700 and the brief asked whether "heavier condensed type"
+         meant shipping another face. It does not: 600 at this size, with the leading
+         pulled under 1 and the tracking negative, is what does the work. */
+      h1 {
+        margin: 0;
+        max-width: 14ch;
+        font-weight: 600;
+        font-size: clamp(40px, 9vw, 88px);
+        line-height: 0.98;
+        letter-spacing: -0.025em;
+        text-wrap: balance;
+        color: var(--ink);
+      }
+
+      .foot {
+        display: flex;
+        align-items: baseline;
+        gap: 24px;
+        flex-wrap: wrap;
+      }
+      .sub {
+        margin: 0;
+        font-size: clamp(18px, 2.4vw, 22px);
+        color: var(--ink);
+      }
+      /* The only thing the page asks for, because knag has nothing to sign up to. */
+      .foot a {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        letter-spacing: 0.02em;
+        color: var(--dim);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .foot a:hover,
+      .foot a:focus-visible {
+        color: var(--amber-loud);
+      }
+    </style>
+  </head>
+  <body>
+    <span class="wordmark">knag<span class="block" aria-hidden="true"></span></span>
+
+    <ol class="board" data-board>
+      <li><span class="box" aria-hidden="true"></span><span class="text">call the accountant</span></li>
+      <li data-done><span class="box" aria-hidden="true"></span><span class="text">book the van</span></li>
+      <li><span class="box" aria-hidden="true"></span><span class="text">reply to Marta about the roof</span></li>
+      <li data-done><span class="box" aria-hidden="true"></span><span class="text">cancel the second subscription</span></li>
+      <li data-done><span class="box" aria-hidden="true"></span><span class="text">pay the invoice</span></li>
+      <li><span class="box" aria-hidden="true"></span><span class="text">find the passport</span></li>
+      <li data-done><span class="box" aria-hidden="true"></span><span class="text">move the standing order</span></li>
+      <li data-done><span class="box" aria-hidden="true"></span><span class="text">ask about the bike rack</span></li>
+      <li data-done><span class="box" aria-hidden="true"></span><span class="text">send the deposit</span></li>
+    </ol>
+
+    <section class="say" data-say>
+      <p class="wiped" data-wiped>
+        wiped 6 <span class="dot" aria-hidden="true">·</span> <span class="back">bring back</span>
+      </p>
+      <h1>Throwing it away is the feature.</h1>
+      <div class="foot">
+        <p class="sub">One page. Wiped every morning.</p>
+        <a href="https://github.com/danjamk/knag">github</a>
+      </div>
+    </section>
+
+    <script>
+      /* 🔴 Once, on scroll-into-view, and never on a loop.
+       *
+       * Autoplay on load costs the joke — it fires above the fold before anyone is
+       * looking, and the reader arrives at a board that has already emptied itself with
+       * no idea what it held. A button makes them opt into a four-second wait for
+       * something they have not been told is worth it. Scroll is the one trigger that
+       * guarantees the reader is looking at the full board at the moment it goes.
+       *
+       * A loop turns the one expressive moment in the product into wallpaper. */
+      (function () {
+        var board = document.querySelector("[data-board]");
+        var say = document.querySelector("[data-say]");
+        var wiped = document.querySelector("[data-wiped]");
+        if (!board || !say || !wiped) return;
+
+        var lines = Array.prototype.slice.call(board.querySelectorAll("li[data-done]"));
+        var reduced =
+          window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        /* Under the preference the board arrives already empty with the line in place —
+         * the same picture, without the four seconds. Not a still of the *before*: the
+         * after-state is what the page is about, and showing the before would leave a
+         * reader who cannot have motion looking at a list nobody threw away. */
+        if (reduced) {
+          lines.forEach(function (li) {
+            li.remove();
+          });
+          wiped.setAttribute("data-shown", "");
+          return;
+        }
+
+        var ms = function (name) {
+          var raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+          var value = parseFloat(raw);
+          if (!isFinite(value)) return 0;
+          return raw.slice(-2) === "ms" ? value : value * 1000;
+        };
+
+        var run = function () {
+          var duration = ms("--wipe-duration");
+          var stagger = ms("--wipe-stagger");
+          var collapse = ms("--wipe-collapse");
+
+          lines.forEach(function (li, order) {
+            li.style.setProperty("--i", String(order));
+            li.classList.add("wiping");
+          });
+
+          setTimeout(
+            function () {
+              /* One height read per line, written back before the class lands, so the
+               * transition has somewhere to go from — `max-height: auto` does not
+               * animate. */
+              lines.forEach(function (li) {
+                li.style.maxHeight = li.offsetHeight + "px";
+              });
+              void board.offsetHeight;
+              lines.forEach(function (li) {
+                li.classList.add("closing");
+              });
+
+              /* The amber line arrives as the collapse ends rather than being simply
+               * there. The board empties, and then the record speaks. */
+              setTimeout(function () {
+                wiped.setAttribute("data-shown", "");
+              }, collapse);
+            },
+            duration + (lines.length - 1) * stagger,
+          );
+        };
+
+        if (!window.IntersectionObserver) {
+          run();
+          return;
+        }
+
+        var seen = false;
+        var watcher = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (entry) {
+              if (!entry.isIntersecting || seen) return;
+              seen = true;
+              watcher.disconnect();
+              run();
+            });
+          },
+          { threshold: 0.25 },
+        );
+        watcher.observe(say);
+      })();
+    </script>
+  </body>
+</html>

@@ -15,6 +15,8 @@ declare global {
       TEST_MIGRATIONS: D1Migration[];
       /** `public/index.html`, read at config time. Miniflare does not serve assets. */
       TEST_SHELL: string;
+      TEST_SITE: string;
+      TEST_FONT_DIGESTS: string;
     }
   }
 }

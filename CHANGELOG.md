@@ -13,6 +13,51 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-08-20
+
+knag has a landing page.
+
+### Added
+
+- **The landing page**, at `site/` and served from GitHub Pages. One screen of a real
+  day's board, and the hero *is* the wipe: scroll it into view and six lines go, once,
+  never on a loop. Then the line — **"Throwing it away is the feature."**
+
+  The mechanics are decisions rather than defaults. **Scroll-into-view** rather than
+  autoplay, because autoplay fires above the fold before anyone is looking and the reader
+  arrives at a board that emptied itself with no idea what it held — and rather than a
+  button, which asks someone to opt into a four-second wait for something nobody has told
+  them is worth it. **Once**, because a wipe that replays every eight seconds is
+  wallpaper. **Slate only**, because the app has two boards for something read over hours
+  and this is read for forty seconds.
+
+  Under `prefers-reduced-motion` the board arrives already empty with the amber line in
+  place: the same picture, without the four seconds. Not a still of the *before* — the
+  after-state is what the page is about.
+
+- **An OG card** at 1200×630, which is what actually gets seen when the link is pasted.
+  `site/og.png` is committed output; `site/og.html` beside it is how to change it, and
+  `scripts/og-card.sh` regenerates it through the browser the repo already ships.
+
+- **`.github/workflows/pages.yml`** — uploads a folder and does nothing else. The page is
+  static and self-contained by design: no framework, no npm dependency, no CDN, and the
+  fonts referenced relatively from `site/fonts/`. If that workflow ever grows a build
+  step, the constraint the page was designed under has been dropped.
+
+- **Nine static checks on the page** (`worker/test/site.test.ts`), because nothing else in
+  the suite ever looks at it — it has no route and no request. Every constraint on it
+  fails silently: a CDN reference works on the machine that added it, a drifted font copy
+  renders in a fallback stack, a word off the kill list reads fine to whoever typed it.
+  🔴 One of them counts the checked lines on the board and compares them to the number the
+  amber line claims, so the page cannot state a total the picture above it contradicts.
+
+The type answers the brief's one open question. "Heavier condensed type" does **not** mean
+a fourth font file: Familjen Grotesk at **600**, with the leading under 1 and the tracking
+negative, is what does the work — and it does not even need the 700 the axis stops at.
+Decisions and the hero cut are [§8 of the design response](docs/design/holistic-response.md).
+
+Closes #90.
+
 ## [0.15.0] — 2026-08-20
 
 Settings is six rows and it fits on the screen.
@@ -1133,7 +1178,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/danjamk/knag/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/danjamk/knag/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/danjamk/knag/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/danjamk/knag/compare/v0.12.0...v0.13.0

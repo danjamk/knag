@@ -1,0 +1,50 @@
+name: Publish the landing page
+
+# 🔴 A folder, not a build. The page is static and self-contained by design (#90): the
+# fonts are in-repo and referenced relatively, there is no framework, no npm dependency
+# and no CDN. So this workflow uploads `site/` and does nothing else — if it ever grows a
+# build step, the constraint the page was designed under has been quietly dropped.
+#
+# 🔴 Separate from `deploy-dev.yml` on purpose. That one ships the *app* on every merge
+# and runs backup → migrate → deploy → health → verify against a live database. This ships
+# a static page and can touch nothing. Merging them would put the landing page's copy
+# edits behind a deploy that takes a backup of the production document.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# The permissions Pages needs and nothing else. `id-token` is for the deployment's OIDC
+# handshake, not for anything this repo does with a token of its own.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One at a time, and do not cancel one that is running: a half-published site is worse
+# than a stale one, and the page changes rarely enough that queueing costs nothing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
