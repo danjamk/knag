@@ -237,13 +237,51 @@
 
         /* 🔴 The wipe is the only animation in the product. Everything else is still.
            These are read back by `app.ts` through getComputedStyle, which makes the
-           media query below the single place reduced motion is handled. */
-        --wipe-duration: 420ms;
-        --wipe-stagger: 26ms;
-        --wipe-collapse: 160ms;
+           media query below the single place reduced motion is handled.
+
+           🔴 Retuned in #121, and the reasoning is worth keeping: a fade with a leftward
+           slide is the motion of something *leaving the screen* — how a dismissed card
+           behaves, and a dismissed card is a thing you sent somewhere. Nothing goes
+           anywhere here; the line stops being on the board. The board metaphor already
+           owns the right gesture and it is not smooth. 28px of travel is what makes it
+           read as leaving the board rather than nudging, and 14ms of stagger is where
+           the lines stop being six events and become one motion. */
+        --wipe-duration: 260ms;
+        --wipe-stagger: 14ms;
+        --wipe-collapse: 130ms;
+        /* 🔴 A `translate` value, not a length, so the token carries the **axis** as
+           well as the distance. That is what lets the page wipe reuse this keyframe at
+           a second timing rather than needing a second animation (§9). */
+        --wipe-travel: -28px;
         --wipe-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
         --state-duration: 90ms; /* press and checked — a state change, not motion */
         --cursor-blink: 1.06s;
+
+        /* 🔴 Wiping the page is a different sentence, so it is the same animation at a
+           second timing (#121, §6b). Wiping completed lines is many small removals and
+           should read as a list being processed; wiping the page is **one removal of one
+           thing** — a project ending. Played as the daily motion at greater length it
+           says "that was thirty lines" when it should say "that was the page".
+
+           Down, and 18px rather than off the bottom of the screen: the lines fade while
+           they drop, so nothing is ever seen arriving anywhere. A page that visibly exits
+           downward is a page going into a bin; a page that dissolves on its way down is a
+           page being let go. The ease is the product's own and must **never** become an
+           ease-in — a discarded thing accelerates away, a released thing starts
+           immediately and eases out, and that curve is the whole difference. */
+        --page-duration: 380ms;
+        --page-stagger: 16ms; /* bottom-up */
+        --page-travel: 0 18px;
+        --page-collapse: 200ms;
+        /* The empty board, held. Long enough to register as silence, short enough that
+           nobody thinks it broke — and it is what stops the fall reading as a deletion,
+           because the record speaks right after it. */
+        --page-beat: 200ms;
+
+        /* The recovery line arrives *after* the release rather than being simply there,
+           which is what gives the moment a downbeat: the board empties, and then the
+           record speaks. Opacity only, no travel. */
+        --recovery-in: var(--state-duration);
 
         /* 🔴 The ledge opens on the press tint's own token, because it is a control
            arriving at its state rather than motion — the boundary CLAUDE.md now draws
@@ -264,12 +302,28 @@
           --wipe-duration: 1ms;
           --wipe-stagger: 0ms;
           --wipe-collapse: 1ms;
+          --wipe-travel: none;
+          --page-duration: 1ms;
+          --page-stagger: 0ms;
+          --page-collapse: 1ms;
+          --page-travel: none;
+          --page-beat: 0ms;
         }
       }
 
+      /* 🔴 One keyframe, and the travel is a token so the *direction* is a token too.
+         The page wipe redefines `--wipe-travel` on the element and gets the same
+         animation going down instead of left — which is the difference between a second
+         timing and a second animation, and the rule says there is one of those. */
       @keyframes knag-wipe {
-        from { opacity: 1; transform: none; }
-        to { opacity: 0; transform: translateX(-10px); }
+        from { opacity: 1; translate: none; }
+        to { opacity: 0; translate: var(--wipe-travel); }
+      }
+      /* Opacity only. It is the machine speaking after the release, not another thing
+         moving on a board that has just been cleared. */
+      @keyframes knag-arrive {
+        from { opacity: 0; }
+        to { opacity: 1; }
       }
       @keyframes knag-blink {
         0%, 48% { opacity: 1; }
@@ -703,6 +757,22 @@
           padding var(--wipe-collapse) var(--wipe-ease);
       }
 
+      /* 🔴 The page wipe is the same animation at a second timing (#121, §6b), and this
+         is the whole implementation of that claim: four tokens redefined **on the
+         element**, so the rules above read the page's numbers without knowing they
+         exist. Same keyframe, same ease, same two stages, same collapse — a different
+         length and a different direction, both of which are values.
+
+         If a future change needs a second `@keyframes` here, it is no longer a second
+         timing and §9 has to be re-argued rather than quietly widened. */
+      li.wiping.page,
+      .cm-line.cm-wiping.cm-page {
+        --wipe-duration: var(--page-duration);
+        --wipe-stagger: var(--page-stagger);
+        --wipe-collapse: var(--page-collapse);
+        --wipe-travel: var(--page-travel);
+      }
+
       /* ── The recovery line ─────────────────────────────────────────────────
          🔴 Chrome, never a line in the document. Writing "wiped 6 · bring back" into
          the page would put the app's words in the user's file and break byte
@@ -716,6 +786,12 @@
         display: flex;
         align-items: center;
         gap: var(--space-3);
+        /* 🔴 Arrives rather than being simply there. `[hidden]` is `display: none`, so
+           un-hiding restarts this — no JS involved, and it re-runs on a reload that
+           finds the offer still standing, which is the same event from the reader's
+           side. The beat before it is the page wipe's, and it is in `app.ts` because it
+           is a pause between two stages rather than a property of this element. */
+        animation: knag-arrive var(--recovery-in) var(--wipe-ease) both;
         padding: 10px var(--row-pad-left);
         font-family: var(--font-mono);
         font-size: var(--size-machine);

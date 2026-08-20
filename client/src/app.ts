@@ -1385,6 +1385,12 @@ function motionMs(name: string, fallback: number): number {
   return raw.endsWith("ms") ? value : value * 1000;
 }
 
+/** A pause, in the sequence's own units. Zero is honoured as zero rather than a frame. */
+function hold(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** The block indices a wipe of this scope is about to remove. */
 function leavingRows(scope: WipeScope): number[] {
   const blocks = parse(body);
@@ -1409,11 +1415,24 @@ function leavingRows(scope: WipeScope): number[] {
  * back, never a row that vanished from the page without leaving the document.
  */
 function animateWipe(scope: WipeScope): Promise<void> {
-  const timings = {
-    duration: motionMs("--wipe-duration", 420),
-    stagger: motionMs("--wipe-stagger", 26),
-    collapse: motionMs("--wipe-collapse", 160),
-  };
+  // 🔴 Two timings, one animation (#121, §6b). Wiping completed lines is many small
+  // removals; wiping the page is one removal of one thing, and the same motion at
+  // greater length says "that was thirty lines" when it should say "that was the page".
+  // Everything that differs is a token — length, direction, order — which is what keeps
+  // this a second timing rather than a second animation.
+  const page = scope === "all";
+  const timings = page
+    ? {
+        duration: motionMs("--page-duration", 380),
+        stagger: motionMs("--page-stagger", 16),
+        collapse: motionMs("--page-collapse", 200),
+        page: true,
+      }
+    : {
+        duration: motionMs("--wipe-duration", 260),
+        stagger: motionMs("--wipe-stagger", 14),
+        collapse: motionMs("--wipe-collapse", 130),
+      };
 
   // 🔴 The surface takes it when there is one, and it takes *lines* rather than block
   // indices. One block is one <li> here, so the two were interchangeable — but a fence
@@ -1432,8 +1451,11 @@ function animateWipe(scope: WipeScope): Promise<void> {
   const { duration, stagger, collapse } = timings;
 
   leaving.forEach((el, order) => {
-    el.style.setProperty("--i", String(order));
+    // Bottom-up for the page, top-down for the daily sweep — the page leaves as one
+    // object rather than as a list being processed from the top.
+    el.style.setProperty("--i", String(page ? leaving.length - 1 - order : order));
     el.classList.add("wiping");
+    if (page) el.classList.add("page");
   });
 
   return new Promise((resolve) => {
@@ -1466,9 +1488,8 @@ async function requestWipe(scope: WipeScope): Promise<void> {
   const preWipe = body;
 
   // Started before the request and awaited after it, so the network round trip happens
-  // *inside* the 632ms the animation takes rather than after it. The rows are already
-  // leaving by the time the server answers, which is what makes the tap feel immediate
-  // on a phone.
+  // *inside* the animation rather than after it. The rows are already leaving by the
+  // time the server answers, which is what makes the tap feel immediate on a phone.
   const leaving = animateWipe(scope);
 
   try {
@@ -1502,6 +1523,18 @@ async function requestWipe(scope: WipeScope): Promise<void> {
     // elements that are animating and the wipe simply does not happen on a fast
     // connection, which is every connection the author develops on.
     await leaving;
+
+    // 🔴 Then the beat, and only for the page (§6b). The collapse has finished, so what
+    // is on screen is the board with nothing on it — and **the empty board is part of
+    // the animation** rather than what is left when it stops. Holding it is where the
+    // drama is available honestly: no confetti, no flourish, nothing new on screen, the
+    // same board given a moment of silence. It is also what stops the fall reading as a
+    // deletion, because the record speaks right after it.
+    //
+    // A daily sweep gets none of this. It has nothing to hold *for* — what follows is
+    // the rest of your list, which never left.
+    if (scope === "all") await hold(motionMs("--page-beat", 200));
+
     if (doc) render(doc);
 
     if (count === 0) {

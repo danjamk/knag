@@ -145,6 +145,68 @@ describe("PWA shell (spec §9)", () => {
     expect(shell()).not.toContain('data-theme-set="dark"');
   });
 
+  it("🔴 keeps one wipe keyframe — the page timing is tokens, not a second animation", () => {
+    // 🔴 §9's boundary, made mechanical. The page wipe is allowed to exist because it is
+    // the *same* animation at a second timing: same keyframes, same ease, page-scoped
+    // tokens. A second `@keyframes` for it would be a second animation, which the house
+    // rule forbids and which nothing else in the suite would catch — it would render
+    // beautifully and pass every test.
+    //
+    // Three keyframes, and each one has to earn its place:
+    //   knag-blink   the cursor in the mark. The mark, not the interface.
+    //   knag-wipe    the one animation.
+    //   knag-arrive  the recovery line's 90ms opacity, which is the wipe's own last
+    //                beat rather than a second animation — it runs only at the end of a
+    //                wipe, on `--state-duration`, with no travel and no stagger. It is a
+    //                keyframe only because CSS cannot transition out of `display: none`.
+    const names = (styles().match(/@keyframes\s+([\w-]+)/g) ?? []).map((k) => k.split(/\s+/)[1]);
+    expect(names.sort()).toEqual(["knag-arrive", "knag-blink", "knag-wipe"]);
+  });
+
+  it("🔴 gives the page wipe its timing by redefining tokens on the element", () => {
+    // The implementation of the claim above. Four redefinitions and nothing else — no
+    // `animation`, no second keyframe reference. If this rule ever grows one, the page
+    // wipe has stopped being a second timing and §9 has to be re-argued rather than
+    // quietly widened.
+    const variant =
+      /li\.wiping\.page,\s*\.cm-line\.cm-wiping\.cm-page\s*\{([^}]*)\}/.exec(styles())?.[1] ??
+      "";
+
+    expect(variant, "the page variant rule is missing").not.toBe("");
+    for (const token of ["--wipe-duration", "--wipe-stagger", "--wipe-collapse", "--wipe-travel"]) {
+      expect(variant, token).toContain(`${token}: var(--page`);
+    }
+    expect(variant).not.toContain("animation");
+  });
+
+  it("🔴 collapses every motion token under reduced motion, page wipe included", () => {
+    // The media query is the single place reduced motion is handled — `app.ts` reads
+    // these back through `getComputedStyle`, so collapsing them here collapses the
+    // sequence in both surfaces and in the JS that paces it.
+    //
+    // 🔴 The page tokens are the ones that would be forgotten. A retune that adds a
+    // timing and not its reduced-motion counterpart leaves someone who asked for less
+    // motion watching the longest animation in the product, and nothing fails.
+    const query = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n      \}/.exec(
+      styles(),
+    )?.[1];
+
+    expect(query, "the reduced-motion query is missing").toBeTruthy();
+    for (const token of [
+      "--wipe-duration",
+      "--wipe-stagger",
+      "--wipe-collapse",
+      "--wipe-travel",
+      "--page-duration",
+      "--page-stagger",
+      "--page-collapse",
+      "--page-travel",
+      "--page-beat",
+    ]) {
+      expect(query, token).toContain(token);
+    }
+  });
+
   it("🔴 keeps the wipe control a word, and the count inside it", () => {
     // `⌫` was the wrong promise: a backspace glyph says the bytes are gone, and the
     // whole argument of the product is that they are not. The count goes *inside* the

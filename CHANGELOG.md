@@ -13,6 +13,48 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-08-19
+
+The wipe stops being polite. Sound is not in this one.
+
+### Changed
+
+- **The daily wipe is a sweep now** — 260ms rather than 420, a 14ms stagger rather than
+  26, and 28px of travel rather than 10.
+
+  🔴 **It did not feel like anything because it was the wrong verb.** A fade with a
+  leftward slide is how a *dismissed card* behaves, and a dismissed card is a thing you
+  sent somewhere. Nothing goes anywhere here — the line stops being on the board. At a
+  14ms stagger the lines stop being six events and become one motion, which is what a
+  sweep is, and 28px is what makes it read as leaving the board rather than nudging.
+- **Wiping the page is the same animation at a second timing.** Wiping completed lines is
+  many small removals and reads top-down, like a list being processed. Wiping the page is
+  one removal of one thing — a project ending, a week closed — so it falls, **bottom-up**,
+  18px down while fading, over 380ms.
+
+  The direction is the risk and the curve is what answers it: down is also the direction
+  of deletion, so the motion has to say *released* rather than *discarded*. A discarded
+  thing accelerates away; a released thing starts immediately and eases out. It keeps the
+  ease the product already owns and must never become an ease-in. The travel is 18px
+  rather than off the bottom of the screen, so nothing is ever seen arriving anywhere.
+- **The empty board is held for 200ms** after a page wipe, before the recovery line
+  arrives. The empty board is part of the animation rather than what is left when it
+  stops — no confetti, no flourish, the same board given a moment of silence. It is also
+  what stops the fall reading as a deletion, because the record speaks right after it.
+- **The recovery line arrives rather than being simply there**, over 90ms of opacity with
+  no travel. A daily sweep gets the arrival; the page wipe gets the beat first.
+
+### Added
+
+- `--wipe-travel`, `--page-duration`, `--page-stagger`, `--page-travel`, `--page-collapse`,
+  `--page-beat` and `--recovery-in`. 🔴 The travel token is a `translate` value rather
+  than a length, so it carries the **axis** as well as the distance — which is how the
+  page wipe reuses the one keyframe instead of needing a second animation. Pinned by a
+  test that allows exactly three `@keyframes` in the stylesheet and names why each exists.
+
+Motion only, per [the design's own build order](docs/design/holistic-response.md) — the
+sound is #121's other half and lands separately. Sequencing and numbers are §6 and §6b.
+
 ## [0.12.0] — 2026-08-19
 
 The bar gets a second tier. Copying and wiping the page left Settings for it.
@@ -986,7 +1028,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/danjamk/knag/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/danjamk/knag/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/danjamk/knag/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/danjamk/knag/compare/v0.10.0...v0.11.0

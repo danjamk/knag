@@ -67,8 +67,19 @@ export type EditorHandle = {
   destroy(): void;
 };
 
-/** Durations read once from the stylesheet by `app.ts`, so the tokens stay the source. */
-export type WipeTimings = { duration: number; stagger: number; collapse: number };
+/**
+ * Durations read once from the stylesheet by `app.ts`, so the tokens stay the source.
+ *
+ * `page` selects the whole-page timing (#121, §6b): the same animation, a second set of
+ * tokens, and the stagger runs **bottom-up** — the page leaves as one object rather than
+ * as a list being processed from the top.
+ */
+export type WipeTimings = {
+  duration: number;
+  stagger: number;
+  collapse: number;
+  page?: boolean;
+};
 
 export type EditorOptions = {
   initial: string;
@@ -313,7 +324,7 @@ function decorate(view: EditorView): DecorationSet {
 // collapse. `--i` carries the stagger index so the CSS can use the same expression the
 // row list already uses, from the same tokens.
 
-type WipeMark = { lines: number[]; closing: boolean } | null;
+type WipeMark = { lines: number[]; closing: boolean; page: boolean } | null;
 
 const setWipe = StateEffect.define<WipeMark>();
 
@@ -331,18 +342,23 @@ const wipeField = StateField.define<DecorationSet>({
       // derives these from a parse that could in principle hand them over unordered.
       const lines = [...mark.lines].sort((a, b) => a - b);
 
+      const base = mark.page ? "cm-wiping cm-page" : "cm-wiping";
+
       for (const [order, line] of lines.entries()) {
         // 🔴 Guarded. A line number past the end throws inside `doc.line`, and these
         // arrive from a parse of `body` which can be a repaint behind the document if a
         // remote update landed between the tap and the dispatch.
         if (line < 0 || line >= tr.state.doc.lines) continue;
         const at = tr.state.doc.line(line + 1).from;
+        // Bottom-up for the page, top-down for the daily sweep. The order is the only
+        // difference; the CSS reads `--i` and does not know which wipe it is running.
+        const i = mark.page ? lines.length - 1 - order : order;
         builder.add(
           at,
           at,
           Decoration.line({
-            class: mark.closing ? "cm-wiping cm-closing" : "cm-wiping",
-            attributes: { style: `--i: ${order}` },
+            class: mark.closing ? `${base} cm-closing` : base,
+            attributes: { style: `--i: ${i}` },
           }),
         );
       }
@@ -704,7 +720,8 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
     animateWipe(lines: number[], timings: WipeTimings): Promise<void> {
       if (lines.length === 0) return Promise.resolve();
 
-      view.dispatch({ effects: setWipe.of({ lines, closing: false }) });
+      const page = timings.page === true;
+      view.dispatch({ effects: setWipe.of({ lines, closing: false, page }) });
 
       return new Promise((resolve) => {
         // Two stages, and the separation is the point — the lines go transparent in
@@ -712,7 +729,7 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
         // Doing both at once makes the page jump under the thumb that just tapped.
         setTimeout(
           () => {
-            view.dispatch({ effects: setWipe.of({ lines, closing: true }) });
+            view.dispatch({ effects: setWipe.of({ lines, closing: true, page }) });
             setTimeout(() => {
               // 🔴 Cleared here rather than left for the repaint. `setBody` computes a
               // *minimal* change, so a line that survives the wipe keeps its position —
