@@ -58,15 +58,18 @@ import {
   linkify,
   move,
   readFontSize,
+  readSound,
   readTheme,
   readView,
   removeMany,
   rows,
   themeColor,
   writeFontSize,
+  writeSound,
   writeTheme,
   writeView,
 } from "./view.js";
+import { knockAt, play as playWipeSound, unlock as unlockSound } from "./sound.js";
 
 type Doc = { body: string; version: number; updated_at: string };
 
@@ -145,6 +148,8 @@ let theme: Theme = "system";
 
 /** Reading size for the page text only, per device (#92). Never part of the document. */
 let fontSize: FontSize = 16;
+/** Off until someone turns it on, and re-read from storage at boot. See `readSound`. */
+let sound = false;
 
 /** The version we believe we are editing. Every write carries it (spec §6). */
 let baseVersion = 0;
@@ -1434,6 +1439,19 @@ function animateWipe(scope: WipeScope): Promise<void> {
         collapse: motionMs("--wipe-collapse", 130),
       };
 
+  // 🔴 Fired here, from the same clock the sequence is paced by, and **once**. The knock
+  // is placed from the motion's own numbers so the sound ends on the frame the last gap
+  // finishes closing — which is why it takes the line count rather than a duration.
+  //
+  // Deliberately not waited for and deliberately not `animationstart`: both surfaces
+  // apply their classes synchronously on this tick, so the CSS animation and the JS
+  // timers already share a `t0` to within a frame, and a listener would buy 16ms of
+  // alignment for a race condition.
+  if (sound) {
+    const count = surface ? leavingLines(body, scope).length : leavingRows(scope).length;
+    playWipeSound(page ? "page" : "daily", knockAt(timings, count));
+  }
+
   // 🔴 The surface takes it when there is one, and it takes *lines* rather than block
   // indices. One block is one <li> here, so the two were interchangeable — but a fence
   // is one block and several lines, and animating by index there would fade the opening
@@ -1585,6 +1603,13 @@ clearButton?.addEventListener("click", async () => {
   const completed = parse(body).filter(isCompleted).length;
   if (completed === 0) return;
 
+  // 🔴 Before the await, not inside `animateWipe`. iOS unlocks audio on a user gesture
+  // and the unlock does not survive an `await` — and `requestWipe` flushes the pending
+  // save before it animates. Put this any later and the first wipe after a page load is
+  // silent while every one after it works, which is the most confusing shape a bug can
+  // have. Only when the preference is on: a context nobody asked for is not free.
+  if (sound) unlockSound();
+
   await requestWipe("completed");
 });
 
@@ -1648,6 +1673,9 @@ wipeAllButton?.addEventListener("click", async () => {
   }
 
   disarmWipeAll();
+  // Same reason as the sweep above, and this one is the second tap of an arming pair —
+  // so it is still a gesture and still the last synchronous moment before the flush.
+  if (sound) unlockSound();
   await requestWipe("all");
   paintWipeAll();
 });
@@ -1935,6 +1963,19 @@ settingsDialog?.addEventListener("click", (event) => {
     writeFontSize(globalThis.localStorage, fontSize);
     applyFontSize();
     markChoices("[data-font-size]", "fontSize", String(fontSize));
+  markChoices("[data-sound]", "sound", sound ? "on" : "off");
+    return;
+  }
+
+  const chosenSound = target.closest<HTMLElement>("[data-sound]")?.dataset.sound;
+  if (chosenSound) {
+    sound = chosenSound === "on";
+    writeSound(globalThis.localStorage, sound);
+    markChoices("[data-sound]", "sound", sound ? "on" : "off");
+    // 🔴 Turning it on *is* a gesture, so unlock here — otherwise the first wipe after
+    // enabling it is silent on iOS and every one after it works, which reads as the
+    // feature being broken exactly once.
+    if (sound) unlockSound();
     return;
   }
 
@@ -2183,6 +2224,7 @@ settingsOpen?.addEventListener("click", () => {
   markChoices("[data-theme-set]", "themeSet", theme);
   markChoices("[data-view-set]", "viewSet", view);
   markChoices("[data-font-size]", "fontSize", String(fontSize));
+  markChoices("[data-sound]", "sound", sound ? "on" : "off");
   settingsDialog?.showModal();
   void loadSessions();
 });
@@ -2325,6 +2367,8 @@ applyTheme();
 // and jumps to the reader's size a frame later.
 fontSize = readFontSize(globalThis.localStorage);
 applyFontSize();
+
+sound = readSound(globalThis.localStorage);
 
 view = readView(globalThis.localStorage);
 

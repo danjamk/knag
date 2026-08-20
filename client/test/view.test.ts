@@ -5,12 +5,14 @@ import {
   BOARD_SLATE,
   BOARD_WHITEBOARD,
   FONT_SIZE_KEY,
+  SOUND_KEY,
   THEME_KEY,
   VIEW_KEY,
   linkify,
   move,
   nextTheme,
   readFontSize,
+  readSound,
   readTheme,
   readView,
   removeAt,
@@ -18,6 +20,7 @@ import {
   rows,
   themeColor,
   writeFontSize,
+  writeSound,
   writeTheme,
   writeView,
 } from "../src/view.js";
@@ -628,6 +631,77 @@ describe("writeFontSize", () => {
           },
         },
         20,
+      ),
+    ).not.toThrow();
+  });
+});
+
+describe("readSound", () => {
+  const stored = (value: string | null) => ({ getItem: () => value, setItem: () => {} });
+
+  it("🔴 is off unless the answer is exactly `on`", () => {
+    // Every other preference here falls back to something sensible. This one falls back
+    // to silence, and the asymmetry is the point: a corrupt value, a half-written key or
+    // a truncated string must never be the reason a phone makes a noise in a meeting.
+    // Opting in has to be something the person did.
+    expect(readSound(stored(null))).toBe(false);
+    expect(readSound(stored(""))).toBe(false);
+    expect(readSound(stored("true"))).toBe(false);
+    expect(readSound(stored("ON"))).toBe(false);
+    expect(readSound(stored("on "))).toBe(false);
+    expect(readSound(stored("1"))).toBe(false);
+    expect(readSound(undefined)).toBe(false);
+  });
+
+  it("is on when it was turned on", () => {
+    expect(readSound(stored("on"))).toBe(true);
+  });
+
+  it("🔴 survives storage throwing, because Safari throws rather than returning null", () => {
+    const hostile = {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => {},
+    };
+    expect(readSound(hostile)).toBe(false);
+  });
+});
+
+describe("writeSound", () => {
+  it("stores a word rather than a boolean, so the key reads as what it is", () => {
+    const written: Record<string, string> = {};
+    const store = { getItem: () => null, setItem: (k: string, v: string) => void (written[k] = v) };
+
+    writeSound(store, true);
+    expect(written[SOUND_KEY]).toBe("on");
+    writeSound(store, false);
+    expect(written[SOUND_KEY]).toBe("off");
+  });
+
+  it("round-trips through the reader", () => {
+    const written: Record<string, string> = {};
+    const store = {
+      getItem: (k: string) => written[k] ?? null,
+      setItem: (k: string, v: string) => void (written[k] = v),
+    };
+
+    writeSound(store, true);
+    expect(readSound(store)).toBe(true);
+    writeSound(store, false);
+    expect(readSound(store)).toBe(false);
+  });
+
+  it("swallows a storage failure rather than taking the app down", () => {
+    expect(() =>
+      writeSound(
+        {
+          getItem: () => null,
+          setItem: () => {
+            throw new Error("QuotaExceededError");
+          },
+        },
+        true,
       ),
     ).not.toThrow();
   });

@@ -690,6 +690,15 @@ finished — but by repetition rather than by dialog. The label swaps to
 and whenever the ledge closes. An armed control left armed is a trap for the next
 person who reaches for the ledge for an unrelated reason.
 
+**The wipe has a sound, added in #121, and it is off by default.** One per wipe, never
+one per line, synthesised rather than shipped as a file. Its length is derived from the
+motion — `knockAt = duration + stagger × (n − 1) + collapse` — so the noise band closes on
+the frame the last gap does, and a two-line sweep and a nine-line page wipe are the same
+event at two lengths. `prefers-reduced-motion` silences it without a special case: the
+tokens collapse to 1ms, the formula yields a few milliseconds, and a sound that short is
+not played. The iOS silent switch mutes it outright and is not worked around — the motion
+carries the moment and the sound is a bonus.
+
 **Amended in #139: it lives on the ledge, not in Settings.** Both whole-page verbs
 left the sheet, and what keeps this one away from `wipe N` is now the tier rather
 than the depth — it is a rung out and past a hairline, alone at the far end. The
