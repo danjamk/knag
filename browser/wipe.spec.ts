@@ -233,7 +233,14 @@ test.describe("bringing it back (#59)", () => {
     // `- [ ] added after`. That is the editor behaving correctly and the expectation
     // below says so rather than asserting what would be convenient.
     await row.pressSequentially("\nadded after");
-    await knag.saved();
+
+    // 🔴 Not `knag.saved()`. That helper accepts `wiped` as well as `saved`, and the
+    // status still reads `wiped 2` from the sweep above — so it matched instantly and
+    // waited for nothing, and the restore raced the save of the line it is supposed to
+    // keep. It passed locally and failed once in CI, which is what a wait that is not a
+    // wait looks like. The precondition is that the typed row reached the server, and
+    // the server is the only thing that can answer that.
+    await expect.poll(() => knag.document()).toContain("added after");
 
     await knag.page.locator("[data-restore]").click();
 

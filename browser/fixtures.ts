@@ -152,6 +152,12 @@ export class Knag {
   /** Wait for the save to land, so document() is not read mid-flight. */
   async saved(): Promise<void> {
     // Lowercase since the machine voice landed: `saved`, never `Saved ✓`.
+    //
+    // 🔴 `wiped` is accepted because a sweep is a save and leaves that on the status
+    // line — which also makes this **useless immediately after a wipe**: the status
+    // already matches, so it returns without waiting for the edit you just made. If a
+    // test types after a wipe and then depends on the save having landed, poll
+    // `document()` for the text instead. One test learned this in CI.
     await expect(this.page.locator("[data-save-status]")).toHaveText(/saved|wiped/, {
       timeout: 5_000,
     });
