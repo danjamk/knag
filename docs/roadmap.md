@@ -40,10 +40,26 @@ answer was to make no file slow. `editor.spec.ts` was split three ways in 0.11.1
 
 🔴 **That did not remove the condition — it moved it.** The first *local* reproduction,
 on 2026-08-19, died on `sync.spec.ts`, which at 43s is now the longest file in the suite
-and was not before the split. The finding survives and the fix did not: the answer is a
-cap on how long any one file runs, not one split. Recorded with the numbers on the issue.
-The mechanism — an empty `✘ [ERROR]` and a crash log containing no error — is still
-unexplained.
+and was not before the split. Two more followed within a day, always on the same file, and
+one of them blocked a release.
+
+**Contained rather than fixed, 2026-08-20.** The mechanism — an empty `✘ [ERROR]` and a
+crash log containing no error — is still unexplained, and guessing at it had cost three
+suite runs and a release. So the runner now **retries a dead-server file once**, loudly and
+counted, and keeps the run's output and how far into the file it got in
+`test-results/dead-server/`. CI uploads that on green runs too, because with the retry the
+commonest occurrence *is* a green run.
+
+That is a deliberate change of stance. A red build was the right answer while nobody knew
+what this was — it was the only way to see it. It is the wrong answer now: the classifier
+identifies it confidently, and a red build for a known infrastructure defect trains
+everybody to re-run reds, which is how a real failure eventually gets re-run instead of
+read.
+
+**The next few occurrences are the experiment, and they are now free.** The evidence
+records seconds-to-death, which separates the two explanations that have been confused
+twice: a server that dies twelve seconds into every file is a different defect from one
+that dies near the end of whichever file runs longest.
 
 ---
 
