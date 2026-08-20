@@ -36,10 +36,14 @@ gets done twice.*
 hypotheses. The third occurrence pointed at *position*; the fourth refuted it —
 `editor.spec.ts`, seventh of thirteen — and moved the finding to **duration**:
 every dead-server failure landed in whichever file was slowest at the time. The
-answer was to make no file slow. `editor.spec.ts` was split three ways in 0.11.1
-and the suite's worst file is now ~32s. **The next few CI runs are the
-experiment** — if dead servers stop, the finding is confirmed by absence and the
-issue closes on evidence rather than on a fix. The mechanism is still unexplained.
+answer was to make no file slow. `editor.spec.ts` was split three ways in 0.11.1.
+
+🔴 **That did not remove the condition — it moved it.** The first *local* reproduction,
+on 2026-08-19, died on `sync.spec.ts`, which at 43s is now the longest file in the suite
+and was not before the split. The finding survives and the fix did not: the answer is a
+cap on how long any one file runs, not one split. Recorded with the numbers on the issue.
+The mechanism — an empty `✘ [ERROR]` and a crash log containing no error — is still
+unexplained.
 
 ---
 
