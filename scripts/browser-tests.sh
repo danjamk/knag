@@ -68,7 +68,12 @@ PORT=8788
 
 FAILED=()
 DEAD=()
+RETRIED=()
 PASSED=0
+
+# Where a dead server leaves its evidence, so the next occurrence is data rather than
+# scrollback somebody has already closed (#107).
+EVIDENCE=test-results/dead-server
 
 # Failure signatures that mean "the dev server went away", not "an assertion failed".
 DEAD_SERVER='Could not connect to|socket hang up|ECONNREFUSED|Connection refused|Network connection lost|browserContext.newPage'
@@ -191,29 +196,90 @@ echo ""
 
 probe "baseline"
 
+# One spec file, against its own dev server. Returns playwright's status; leaves the
+# output in $log and the run's wall-clock seconds in $ELAPSED.
+#
+# 🔴 Redirected to a file and printed afterwards, NOT piped through tee.
+# A pipe the reader does not drain fast enough blocks the writer, and the thing being
+# investigated here is a dev server dying under exactly that kind of pressure — so the
+# instrument must not add a pipe to the path it measures. The cost is that output
+# appears per spec file rather than streaming live, which in CI is no cost at all.
+run_spec() {
+  local spec="$1" started ended
+  shift
+  started=$(date +%s)
+  pnpm exec playwright test "$spec" "$@" > "$log" 2>&1
+  local status=$?
+  ended=$(date +%s)
+  ELAPSED=$((ended - started))
+  return $status
+}
+
+# 🔴 Keep what died, because the next occurrence is otherwise scrollback in a closed tab.
+# The three things that have actually been wanted after the fact, every time: the run's
+# own output including the interleaved `[WebServer]` lines, how far into the file it got,
+# and what the probe read immediately after.
+keep_evidence() {
+  local spec="$1" slug dir
+  slug=$(echo "$spec" | tr '/.' '--')
+  dir="${EVIDENCE}/${slug}"
+  mkdir -p "$dir"
+  cp "$log" "${dir}/run.log" 2>/dev/null || true
+  {
+    echo "spec:        ${spec}"
+    echo "died after:  ${ELAPSED}s"
+    echo "known good:  see the durations in the run summary above"
+    echo ""
+    echo "🔴 The number that matters is 'died after'. A server that dies twelve seconds"
+    echo "   into every file is a different defect from one that dies near the end of"
+    echo "   whichever file runs longest, and those two have been confused twice."
+  } > "${dir}/notes.txt"
+  echo "   Evidence kept in ${dir}/"
+}
+
 for spec in "${SPECS[@]}"; do
   echo "── ${spec}"
 
-  # 🔴 Redirected to a file and printed afterwards, NOT piped through tee.
-  # A pipe the reader does not drain fast enough blocks the writer, and the thing being
-  # investigated here is a dev server dying under exactly that kind of pressure — so the
-  # instrument must not add a pipe to the path it measures. The cost is that output
-  # appears per spec file rather than streaming live, which in CI is no cost at all.
   log="$(mktemp)"
-  if pnpm exec playwright test "$spec" "$@" > "$log" 2>&1; then
+  if run_spec "$spec" "$@"; then
     cat "$log"
     PASSED=$((PASSED + 1))
+  elif grep -qE "$DEAD_SERVER" "$log"; then
+    cat "$log"
+    echo ""
+    echo "🔴 ${spec} failed with a DEAD DEV SERVER after ${ELAPSED}s, not a failing"
+    echo "   assertion (#107). A connection error is what a dead server looks like from"
+    echo "   inside a test, and reading it as a broken test is what makes these expensive."
+    keep_evidence "$spec"
+
+    # 🔴 Retried **once**, and the change of stance is deliberate. This used to be a red
+    # build on purpose, which was right while nobody knew what it was: a red build was
+    # the only way to see it at all. It is not right any more. The classifier identifies
+    # this with high confidence, every occurrence is now recorded with its own evidence
+    # directory, and a build that goes red for a known infrastructure defect costs a
+    # re-run every time — which trains everybody to re-run reds, and that is how a real
+    # failure eventually gets re-run instead of read.
+    #
+    # A silent retry would be hiding it. This one prints, keeps the evidence, and is
+    # counted separately in the summary so a rising number is visible without reading
+    # any logs. If the retry dies too, the build is red — twice in a row is not the
+    # flake this exists for.
+    echo ""
+    echo "   Retrying once. This is counted, not hidden — see the summary."
+    if run_spec "$spec" "$@"; then
+      cat "$log"
+      PASSED=$((PASSED + 1))
+      RETRIED+=("$spec")
+    else
+      cat "$log"
+      FAILED+=("$spec")
+      DEAD+=("$spec")
+      echo ""
+      echo "🔴 ${spec} died a second time. That is not the flake — read the evidence."
+    fi
   else
     cat "$log"
     FAILED+=("$spec")
-    if grep -qE "$DEAD_SERVER" "$log"; then
-      DEAD+=("$spec")
-      echo ""
-      echo "🔴 ${spec} failed with a DEAD DEV SERVER, not a failing assertion (#107)."
-      echo "   A connection error is what a dead server looks like from inside a test, and"
-      echo "   reading it as a broken test is what makes these expensive to triage."
-      echo "   The probe lines are the evidence. Read them before re-running."
-    fi
   fi
   rm -f "$log"
 
@@ -221,14 +287,25 @@ for spec in "${SPECS[@]}"; do
   echo ""
 done
 
+# 🔴 Printed whether or not the build is red, and printed loudly. A retry that only
+# showed up in a red build would be a retry nobody sees, which is the same as hiding it.
+if [ ${#RETRIED[@]} -gt 0 ]; then
+  echo "🔴 ${#RETRIED[@]} spec file(s) died as a dev server and passed on one retry (#107):" >&2
+  printf '    %s\n' "${RETRIED[@]}" >&2
+  echo "   Evidence in ${EVIDENCE}/. This number rising is the signal — it is the" >&2
+  echo "   occurrence count the issue is waiting on, and it is free to collect now that" >&2
+  echo "   it does not cost a release." >&2
+  echo "" >&2
+fi
+
 if [ ${#FAILED[@]} -gt 0 ]; then
   echo "✗ ${#FAILED[@]} spec file(s) failed:" >&2
   printf '    %s\n' "${FAILED[@]}" >&2
   if [ ${#DEAD[@]} -gt 0 ]; then
     echo "" >&2
-    echo "🔴 ${#DEAD[@]} of those died as a dev server, not as a real failure (#107):" >&2
+    echo "🔴 ${#DEAD[@]} of those died as a dev server **twice in a row** (#107):" >&2
     printf '    %s\n' "${DEAD[@]}" >&2
-    echo "   Still a red build on purpose. Re-running hides it; the probe lines explain it." >&2
+    echo "   That is not the flake this retries for. Read ${EVIDENCE}/ before re-running." >&2
   fi
   exit 1
 fi

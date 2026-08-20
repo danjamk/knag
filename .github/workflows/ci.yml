@@ -135,11 +135,21 @@ jobs:
       # only runs `if: failure()` — the runner annotates the actions a job actually
       # used, so a passing run cannot see it. It would have started failing on the
       # first red build, which is the one run where losing the trace costs most.
+      # 🔴 `always()`, not `failure()` — changed with the retry in #107. The runner now
+      # retries a spec file once when it dies as a dev server, so the commonest occurrence
+      # of the thing being investigated is a run that **passes**. Keeping the old
+      # condition would have quietly stopped collecting evidence for the exact defect the
+      # retry exists to make affordable, in the environment where it happens most.
+      #
+      # The cost is an artifact on green runs. `scripts/browser-tests.sh` only writes
+      # `test-results/dead-server/` when a server actually died, and playwright keeps
+      # traces on failure only — so a clean run uploads almost nothing.
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: always()
         with:
           name: playwright-trace
           path: test-results/
+          if-no-files-found: ignore
           retention-days: 7
 
       # 🔴 Wrangler's own crash log (#107). When the dev server dies it prints an
@@ -147,8 +157,11 @@ jobs:
       # threw away — so two failures were triaged with no account from the process that
       # died. `if-no-files-found: ignore` because a run that fails on a real assertion
       # has no wrangler log and that is not itself a problem.
+      # Same reason as above: a retried run is green, and green is when the crash log
+      # from the server that died is most likely to exist and least likely to be looked
+      # for.
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: always()
         with:
           name: wrangler-crash-logs
           path: |
