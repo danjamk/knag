@@ -82,6 +82,91 @@ test.describe("the daily sweep", () => {
   });
 });
 
+test.describe("the lines travel", () => {
+  // 🔴 Asserting a duration and a class says the animation was *configured*. It does not
+  // say anything moved. `translate` is a token here so the direction can be a token too,
+  // and if that value ever stops interpolating the wipe degrades silently into a plain
+  // fade — configured correctly, timed correctly, and not the motion that was designed.
+
+  test("🔴 the daily sweep moves left, not just to transparent", async ({ knag }) => {
+    await knag.seed(MIXED);
+    await knag.page.locator("[data-clear]").click();
+
+    const row = knag.page.locator("[data-rows] li.wiping").first();
+    await expect(row).toBeVisible();
+    await expect.poll(async () => css(row, "translate"), { timeout: 2000 }).not.toBe("none");
+  });
+
+  test("🔴 and travels in the editing surface too, which is where it is watched", async ({
+    knag,
+  }) => {
+    await knag.seed(MIXED);
+    await knag.useEditor();
+    await knag.openLedge();
+    await knag.page.locator("[data-wipe-all]").click();
+    await knag.page.locator("[data-wipe-all]").click();
+
+    const line = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
+    await expect(line).toBeVisible();
+    await expect.poll(async () => css(line, "translate"), { timeout: 2000 }).not.toBe("none");
+  });
+
+  test("🔴 the page wipe moves down, not just to transparent", async ({ knag }) => {
+    await knag.seed(MIXED);
+    await knag.openLedge();
+    await knag.page.locator("[data-wipe-all]").click();
+    await knag.page.locator("[data-wipe-all]").click();
+
+    const row = knag.page.locator("[data-rows] li.wiping").first();
+    await expect(row).toBeVisible();
+    await expect.poll(async () => css(row, "translate"), { timeout: 2000 }).not.toBe("none");
+  });
+});
+
+test.describe("the editing surface runs the same two timings", () => {
+  // 🔴 This describe exists because it was missing and a real report found the gap. The
+  // row list and CodeMirror are two different code paths to the same animation — one sets
+  // `--i` and a class on an <li>, the other threads them through a line decoration — and
+  // the surface is the one people actually use. Asserting only the row list proves the
+  // tokens are right and says nothing about the surface the wipe is watched in.
+
+  test("🔴 falls on the page timing, bottom-up, in the editor", async ({ knag }) => {
+    await knag.seed(MIXED);
+    await knag.useEditor();
+    await knag.openLedge();
+    await knag.page.locator("[data-wipe-all]").click();
+    await knag.page.locator("[data-wipe-all]").click();
+
+    const lines = knag.page.locator("[data-surface] .cm-line.cm-wiping");
+    await expect(lines.first()).toBeVisible();
+
+    const page = ms(await css(knag.page.locator("body"), "--page-duration"));
+    expect(ms(await css(lines.first(), "animation-duration"))).toBe(page);
+    await expect(lines.first()).toHaveClass(/cm-page/);
+
+    const count = await lines.count();
+    const order = await Promise.all(
+      Array.from({ length: count }, (_, n) =>
+        css(lines.nth(n), "--i").then((v) => Number.parseInt(v, 10)),
+      ),
+    );
+    expect(order).toEqual(order.map((_, n) => count - 1 - n));
+  });
+
+  test("sweeps on the daily timing in the editor", async ({ knag }) => {
+    await knag.seed(MIXED);
+    await knag.useEditor();
+    await knag.page.locator("[data-clear]").click();
+
+    const line = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
+    await expect(line).toBeVisible();
+
+    const daily = ms(await css(knag.page.locator("body"), "--wipe-duration"));
+    expect(ms(await css(line, "animation-duration"))).toBe(daily);
+    await expect(line).not.toHaveClass(/cm-page/);
+  });
+});
+
 test.describe("wiping the page", () => {
   test("🔴 runs the page timing, which is a different length", async ({ knag }) => {
     await knag.seed(MIXED);
