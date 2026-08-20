@@ -11,7 +11,8 @@ between list and raw view in §8
 > a row holding a live input". A DOM selection cannot span two form controls, so one input
 > per row is what made selecting across lines impossible, and the *Revisit when* at the
 > bottom of this document named that exact outcome and has now fired. Decision 6
-> (autocorrect per row kind) survives only provisionally; ADR-007 says how.
+> (autocorrect per row kind) survives, re-argued on device in #114 — its conclusion holds
+> and its reasoning does not; see the amendment in §6 and ADR-007's Consequences.
 
 ## Context
 
@@ -121,6 +122,23 @@ holding the whole document there is no way to distinguish prose from a code
 fence, so the only safe setting was off everywhere. With one element per block,
 it is on for text and checkbox rows and off inside fences. The redesign is what
 makes this possible rather than a risk it introduces.
+
+> 🔴 **Amended 2026-08-20 (#114), after ADR-007 replaced the mechanism.** The
+> row model this section depends on is gone — one surface has one
+> `contenteditable`, so the distinction now rides on a per-line attribute rather
+> than on one element per block.
+>
+> Measured on a real iPhone: **autocapitalize does not fire at all in this
+> surface**, even in prose after an explicit sentence boundary, and **pasted text
+> is never autocorrected**. So the risk this section names — `const` becoming
+> `Const` inside a fence, and code being altered on the way in — does not occur.
+> Autocorrect does fire in prose, correctly and as in any other app.
+>
+> The section's conclusion survives; its *reasoning* does not. "Off everywhere
+> was over-cautious" is still right, and now for a plainer reason than the one
+> given here: the thing it was cautious about is not happening. Whether the
+> per-line override suppresses autocorrect inside a fence is **unverified** and
+> is recorded as such in [ADR-007](ADR-007-one-editing-surface.md)'s Consequences.
 
 ## Consequences
 
