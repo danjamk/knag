@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
@@ -24,6 +25,30 @@ const migrations = await readD1Migrations(
 // render; it silently lets iOS rewrite the user's document.
 const shell = readFileSync(fileURLToPath(new URL("./public/index.html", import.meta.url)), "utf8");
 
+// The landing page (#90), read the same way and for the same reason. It is served from
+// GitHub Pages rather than by the Worker, so nothing else in the suite would ever look at
+// it — and every constraint on it is the kind that fails silently. A CDN reference, a
+// second board, a word off the kill list: all of them render.
+const site = readFileSync(fileURLToPath(new URL("./site/index.html", import.meta.url)), "utf8");
+
+// 🔴 `site/fonts/` is a copy of `public/fonts/`, because Pages gets a folder and the
+// brief forbids a build step and a CDN. A copy can drift, and when it does the page
+// renders in a fallback stack — which looks merely *wrong* rather than broken, so nobody
+// files it. Hashed here so a test can say so out loud.
+const digests = (dir: string): Record<string, string> => {
+  const at = fileURLToPath(new URL(dir, import.meta.url));
+  const out: Record<string, string> = {};
+  for (const name of readdirSync(at)) {
+    if (!name.endsWith(".woff2")) continue;
+    out[name] = createHash("sha256").update(readFileSync(`${at}/${name}`)).digest("hex");
+  }
+  return out;
+};
+const fontDigests = JSON.stringify({
+  app: digests("./public/fonts"),
+  site: digests("./site/fonts"),
+});
+
 // vitest-pool-workers 0.18 (the Vitest 4 line) exposes this as a Vite plugin.
 // `defineWorkersConfig` from ".../config" is the Vitest 3 API and is gone.
 export default defineConfig({
@@ -48,6 +73,8 @@ export default defineConfig({
           // Consumed by the test suite, not by the Worker.
           TEST_MIGRATIONS: migrations,
           TEST_SHELL: shell,
+          TEST_SITE: site,
+          TEST_FONT_DIGESTS: fontDigests,
         },
       },
     }),

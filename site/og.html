@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>knag — OG card</title>
+    <style>
+      /* 🔴 The source of `og.png`, not a page anyone visits. It is committed alongside
+         the PNG it produces, because a card generated from a source nobody kept is a card
+         nobody can retune — and this is the thing that actually gets seen when the link
+         is pasted, which is more often than the site itself.
+
+         Regenerate with `bash scripts/og-card.sh`. */
+      @font-face {
+        font-family: "DM Mono";
+        src: url("fonts/dm-mono-latin-300.woff2") format("woff2");
+        font-weight: 300;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: "Familjen Grotesk";
+        src: url("fonts/familjen-grotesk-latin-var.woff2") format("woff2-variations");
+        font-weight: 400 700;
+        font-style: normal;
+      }
+
+      :root {
+        --board: #11150f;
+        --ink: #d8d6cd;
+        --dim: #6e7568;
+        --amber: #ffb000;
+        --font-body: "Familjen Grotesk", system-ui, sans-serif;
+        --font-mono: "DM Mono", ui-monospace, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--board);
+      }
+
+      /* Exactly 1200×630. The screenshot is taken of this element rather than of the
+         viewport, so a scrollbar or a device pixel ratio cannot change the crop. */
+      .card {
+        width: 1200px;
+        height: 630px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 26px;
+        padding: 64px 72px 60px;
+        background: var(--board);
+        color: var(--ink);
+        font-family: var(--font-body);
+        letter-spacing: 0.012em;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wordmark {
+        position: absolute;
+        top: 64px;
+        left: 72px;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 3px;
+        font-family: var(--font-mono);
+        font-weight: 300;
+        font-size: 20px;
+        letter-spacing: 0.01em;
+        color: var(--ink);
+      }
+      .wordmark .block {
+        display: inline-block;
+        width: 9px;
+        height: 13px;
+        background: var(--amber);
+      }
+
+      /* The after-state, which is the whole picture. An OG card of a full board would be
+         a picture of a to-do list, and knag is not a to-do list. */
+      .wiped {
+        margin: 0;
+        font-family: var(--font-mono);
+        font-size: 18px;
+        letter-spacing: 0.02em;
+        color: var(--amber);
+      }
+      .wiped .dot {
+        opacity: 0.6;
+      }
+      .wiped .back {
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 14ch;
+        font-weight: 600;
+        font-size: 92px;
+        line-height: 0.98;
+        letter-spacing: -0.025em;
+        color: var(--ink);
+      }
+
+      .foot {
+        display: flex;
+        align-items: baseline;
+        gap: 28px;
+        font-family: var(--font-mono);
+        font-size: 18px;
+        letter-spacing: 0.02em;
+        color: var(--dim);
+      }
+      .foot .sub {
+        font-family: var(--font-body);
+        font-size: 26px;
+        letter-spacing: 0.012em;
+        color: var(--ink);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" data-card>
+      <span class="wordmark">knag<span class="block" aria-hidden="true"></span></span>
+      <p class="wiped">
+        wiped 6 <span class="dot" aria-hidden="true">·</span> <span class="back">bring back</span>
+      </p>
+      <h1>Throwing it away is the feature.</h1>
+      <div class="foot">
+        <span class="sub">One page. Wiped every morning.</span>
+        <span>github.com/danjamk/knag</span>
+      </div>
+    </div>
+  </body>
+</html>
