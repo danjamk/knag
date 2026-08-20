@@ -13,6 +13,32 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-08-19
+
+Checkboxes keep their colour when the window loses focus.
+
+### Fixed
+
+- **The editing surface's checkboxes turned white-and-black whenever the window was not
+  focused**, losing the amber and the border. Reported from real use: a screen kept open
+  beside your work all day is unfocused most of the time, so this was the normal state
+  rather than an edge case.
+
+  🔴 **The two surfaces were not drawing the same control**, despite a comment saying they
+  were. The row list draws a fully custom box — `appearance: none`, its own border, and a
+  tick made of two rotated borders. The editing surface was drawing a **native** checkbox
+  tinted with `accent-color: var(--amber)`.
+
+  `accent-color` can only tint a control the platform still owns, and macOS desaturates
+  native form controls in an inactive window. The fix is to stop letting the platform own
+  one: the editor's box now mirrors the row list's rules exactly, so the claim in that
+  comment is true for the first time.
+
+  Two tests hold it — one that the control is not native, and one comparing computed
+  pixels across both surfaces so "the same control" cannot quietly stop being true again.
+  Neither reproduces window-blur rendering, which is not possible headlessly; they pin the
+  mechanism that makes it immune.
+
 ## [0.11.0] — 2026-08-19
 
 Bigger controls, and text you can size.
@@ -916,7 +942,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/danjamk/knag/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/danjamk/knag/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/danjamk/knag/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/danjamk/knag/compare/v0.9.0...v0.9.1

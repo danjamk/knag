@@ -560,16 +560,48 @@
       @media (min-width: 900px) {
         [data-surface] .cm-line { max-width: var(--measure-wide); }
       }
-      /* The same control the row list draws, at the same size, so switching surfaces
-         does not change what a checkbox looks like. */
+      /* 🔴 The same control the row list draws — and it now genuinely is the same
+         drawing rather than a claim. This used to be a *native* checkbox tinted with
+         `accent-color: var(--amber)`, which looks right until the window loses focus:
+         macOS desaturates native form controls in an inactive window, so the amber and
+         the border both vanished and the box rendered system white-and-black. On a
+         screen someone keeps open beside their work all day, that is most of the time.
+         `accent-color` can only tint a control the platform still owns, so the fix is
+         to stop letting it own one. Every declaration below mirrors `li.checkbox
+         input[type="checkbox"]`, deliberately. */
       input.cm-box {
-        accent-color: var(--amber);
+        appearance: none;
+        -webkit-appearance: none;
+        flex: none;
         width: var(--checkbox-size);
         height: var(--checkbox-size);
-        margin-right: var(--row-gap);
+        margin: 0 var(--row-gap) 0 0;
+        padding: 0;
+        border: var(--hairline-width) solid var(--checkbox-rest);
+        border-radius: var(--radius-sm);
+        background: transparent;
         vertical-align: -3px;
-        flex: none;
+        transition: background-color var(--state-duration), border-color var(--state-duration);
       }
+      input.cm-box:checked {
+        background: var(--amber);
+        border-color: var(--amber);
+      }
+      /* The tick is the board showing through the amber, not a mark drawn on top. Two
+         rotated borders rather than a data-URI SVG, because a data URI cannot read a
+         custom property — the tick would become the one hardcoded colour in this file
+         and it would be wrong on one of the two boards. */
+      input.cm-box:checked::after {
+        content: "";
+        display: block;
+        width: 4px;
+        height: 8px;
+        margin: 1px 0 0 5px;
+        border: solid var(--board);
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+      input.cm-box:disabled { opacity: 0.5; }
       a.cm-open {
         color: var(--dim);
         display: inline-flex;

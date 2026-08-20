@@ -160,6 +160,52 @@ test.describe("the checkbox", () => {
     ).toBeGreaterThan(0);
   });
 
+  test("🔴 the editing surface draws the same box, not a native one", async ({ knag }) => {
+    // It used to be a *native* checkbox tinted with `accent-color: var(--amber)`, which
+    // looks right until the window loses focus: macOS desaturates native form controls
+    // in an inactive window, so the amber and the border both vanished and the box
+    // rendered system white-and-black. On a screen kept open beside your work all day,
+    // that is most of the time.
+    //
+    // 🔴 This pins the *mechanism*, not the symptom — window-inactive rendering cannot
+    // be reproduced headlessly. `appearance: none` is what takes the control away from
+    // the platform, and a platform that does not own it cannot restyle it on blur.
+    await knag.seed(DAY);
+    await knag.useEditor();
+
+    const box = knag.boxes().first();
+    await expect(box).toBeVisible();
+
+    expect(await css(box, "appearance")).toBe("none");
+    expect(
+      Number.parseFloat(await css(box, "height", "::after")) || 0,
+      "the checked box in the editor has no tick",
+    ).toBeGreaterThan(0);
+  });
+
+  test("🔴 and draws it identically to the row list, which was only a claim before", async ({
+    knag,
+  }) => {
+    // The comment on the rule says "the same control the row list draws". That was not
+    // true — the two were drawn by completely different mechanisms and only looked
+    // alike while the window had focus. Asserted on computed pixels so the claim cannot
+    // quietly become false again.
+    await knag.seed(DAY);
+
+    const inRows = knag.page.locator('[data-rows] li.checked input[type="checkbox"]').first();
+    const rowsBackground = await css(inRows, "background-color");
+    const rowsBorder = await css(inRows, "border-top-color");
+    const rowsSize = await css(inRows, "width");
+
+    await knag.useEditor();
+    const inSurface = knag.boxes().first();
+    await expect(inSurface).toBeVisible();
+
+    expect(await css(inSurface, "background-color")).toBe(rowsBackground);
+    expect(await css(inSurface, "border-top-color")).toBe(rowsBorder);
+    expect(await css(inSurface, "width")).toBe(rowsSize);
+  });
+
   test("an unchecked box draws none", async ({ knag }) => {
     await knag.seed(DAY);
 
