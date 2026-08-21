@@ -1710,6 +1710,54 @@ turns `make backup` from a personal habit into an obligation, multiplies the
 polling budget of §14.4 by the tenant count, and gives the login rate-limit rule
 a different threat model.
 
+#### Decided 2026-08-21: it is friends and family, invite-only, and free
+
+The two sections below are the reasoning; this is the ruling that came out of them, and it
+**replaces "not being engineered for"** above. Multi-user is being built. What it is not is
+a product.
+
+| | |
+|---|---|
+| **Who** | A small group of friends and family, invited by the operator |
+| **Cost to them** | Free. There is no billing, no plan, no tier |
+| **Cost to the operator** | The free tier, or close to it — a hard constraint, not a preference |
+| **How you get in** | **Invite only.** There is no sign-up page, and that is a feature |
+| **What the operator gets** | A simple admin view: who is here, what is being used. For one person |
+
+🔴 **The scale model is why, and it is worth reading before this is re-opened.** Selling
+this was modelled and rejected on the numbers: infrastructure is not what kills it, price
+is, paid acquisition can never pay back, and the honest ceiling is beer money. So the thing
+that survives is the part that was always the point — a few people the operator knows,
+using it for free.
+
+🔴 **The binding constraint is §14.4, and it bites sooner than it looks.** Workers' free
+tier is 100k requests/day and this product's meter is polling, not storage:
+
+| | Requests/day | People inside 100k/day |
+|---|---|---|
+| Realistic, with the adaptive backoff | ~4k per user across their devices | **~25** |
+| One tab left open all day at the 4s interval | ~21.6k per device | **~4 devices** |
+
+So "a small group" has an actual number attached, and it is around **twenty-five people at
+realistic use** — not a hundred. Three desktops left open on the page all day exceed the
+ceiling on polling alone, which §14.4 already says in as many words.
+
+Two things follow, and they are the design work rather than the auth work:
+
+1. **The invite count wants to be a cap in the code**, the way the nine-page limit is — a
+   tripwire that makes the promise structural instead of something the operator has to
+   remember. A cap nobody enforces is a hope.
+2. 🔴 **The admin view and the free-tier constraint are the same requirement.** "Who is
+   here and what are they using" is not a nice-to-have next to "stay free" — it is the only
+   way to know the second is still true. That is the argument for building it, and it is a
+   better one than convenience.
+
+**The open question is which constraint is literal**, because the two answers give very
+different caps. Workers Paid is $5/month and includes 10M requests, which covers roughly
+eighty people on the same profile and makes D1 writes the next meter instead. If "very
+little" means five dollars rather than zero, the group can be three times the size. That is
+the operator's call and nothing else in this section depends on it.
+
 #### The economic half, modelled 2026-08-21
 
 The section above answers *what would tenancy break*. It never answered *what would
