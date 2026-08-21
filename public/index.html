@@ -839,13 +839,88 @@
          work: the login screen, the icon, the landing page and the README. */
       .page-name {
         flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        /* Pulled back into the bar's padding so a 44px-tall target does not widen the
+           row it sits in — the same trick the sheet's close control uses. */
+        margin: 0 0 0 -6px;
+        padding: 0 6px;
+        height: var(--target);
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
         font-family: var(--font-body);
         /* --size-control, not --size-row: chrome does not follow the reading
            preference (#92), and this is chrome that happens to name the document. */
         font-size: var(--size-control);
         line-height: 1;
         color: var(--ink);
+        cursor: pointer;
       }
+      .page-name:active { background: var(--press-tint); }
+      /* The caret turns over, like the ledge's chevron — a direction, not a second
+         glyph. Open is a state and is drawn like every other state. */
+      .page-name[aria-expanded="true"] { background: var(--press-tint); }
+      .page-name[aria-expanded="true"] .page-caret { transform: scaleY(-1); }
+      .page-caret { color: var(--dim); flex: none; }
+
+      /* ── The switcher ──────────────────────────────────────────────────────
+         🔴 It **never scrolls**, and that is not styling — the server caps pages at
+         nine so that the list always fits. The cap is a tripwire: the day nine is not
+         enough is a question about the product, not a number to raise (spec §12). */
+      .switcher {
+        border-top: var(--hairline-width) solid var(--hairline);
+        padding: var(--space-2) 0;
+        background: var(--board);
+      }
+      .switcher ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .switcher li button {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        width: 100%;
+        min-height: var(--target);
+        padding: 0 var(--space-4) 0 var(--row-pad-left);
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: var(--size-control);
+        text-align: left;
+        cursor: pointer;
+      }
+      .switcher li button:active { background: var(--press-tint); }
+      /* 🔴 The current page is amber and nothing else is. There is no tick, no dot and
+         no second colour — the amber *is* the marker, the same way it marks the checked
+         checkbox and the machine voice. */
+      .switcher li button[aria-current="true"] { color: var(--amber); }
+      .switcher-sep {
+        height: var(--hairline-width);
+        margin: var(--space-2) var(--row-pad-left);
+        background: var(--hairline);
+      }
+      .switcher-manage {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        min-height: var(--target);
+        padding: 0 var(--space-4) 0 var(--row-pad-left);
+        border: 0;
+        background: transparent;
+        color: var(--dim);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        cursor: pointer;
+      }
+      .switcher-manage:active { background: var(--press-tint); color: var(--ink); }
+      .switcher-manage .chev { color: var(--dim); }
 
       /* `knag▮` — DM Mono Light with the block cursor after it. It blinks, because a
          blinking cursor is by definition a thing that will not leave you alone. It is
@@ -1306,6 +1381,100 @@
       }
       .sessions button[disabled] { opacity: 0.4; cursor: default; }
 
+      /* ── Manage pages (#154) ───────────────────────────────────────────────
+         🔴 The name is an input rather than a rename *mode*, and that is the same
+         argument ADR-003 made about the document: a mode is a decision the paper never
+         asked for. The alternative was a `prompt()`, which is the loudest, least
+         knag-shaped thing available and was already rejected once for the wipe. */
+      .manage {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+      }
+      .manage li {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .manage input {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: var(--target);
+        padding: 0 var(--space-3);
+        border: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-body);
+        /* 🔴 16px floor. Below it iOS zooms the viewport on focus and never zooms back —
+           the same rule that governs the document and the login field. */
+        font-size: var(--size-control);
+      }
+      .manage input:focus { outline: none; border-color: var(--dim); }
+      .manage li[data-current] input { color: var(--amber); }
+      .manage button {
+        flex: none;
+        min-width: var(--target);
+        height: var(--target);
+        padding: 0 var(--space-3);
+        border: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--dim);
+        font-family: var(--font-mono);
+        font-size: var(--size-micro);
+        letter-spacing: var(--track-machine);
+        cursor: pointer;
+      }
+      .manage button:active { background: var(--press-tint); color: var(--ink); }
+      /* A page whose body is saved as its template. Amber because it is a state the
+         machine is reporting, and the only colour there is. */
+      .manage button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+      /* 🔴 Amber and dim, never red — same as `offline`, `not saved` and the device
+         revoke. There is one colour in this interface and a second one for danger would
+         be the third thing that went wrong. */
+      .manage button[data-delete-page] { color: var(--amber); }
+
+      .new-page {
+        display: flex;
+        gap: var(--space-2);
+      }
+      .new-page input {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: var(--target);
+        padding: 0 var(--space-3);
+        border: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: var(--size-control);
+      }
+      .new-page input:focus { outline: none; border-color: var(--dim); }
+      .new-page button {
+        flex: none;
+        /* 🔴 `width: auto` on purpose. `.pane-actions button` is `width: 100%` — devices'
+           single full-width action — and this form sits inside the same container with
+           two children, so inheriting it collapsed the field to nothing. */
+        width: auto;
+        min-height: var(--target);
+        padding: 0 var(--space-4);
+        border: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--amber);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        cursor: pointer;
+      }
+      .new-page button:active { background: var(--press-tint); }
+      .new-page button[disabled] { opacity: 0.4; cursor: default; }
+
       /* 🔴 A close control at the head, not a `Done` bar at the foot. The sheet is
          bottom-anchored now, so a full-width button under six rows put the largest target
          on the screen furthest from what it closes — and Escape and the backdrop already
@@ -1474,8 +1643,32 @@
            keyboard and the bar's whole rationale survives. Rare, list-shaped or
            unbounded things are still not here; they are screens. -->
       <footer>
+        <!-- 🔴 A drop-up, and it lives **inside the footer** on purpose: the ledge closes
+             on any focus outside the footer, and a switcher that closed the ledge under
+             the reader every time it opened would make the two controls fight (#139).
+
+             The list is the whole feature: current page in amber, the rest in chalk, one
+             last row for the rare operations. **No icons, no counts, no last-modified
+             times — anything else you add is a column, and a column is a file manager**
+             (design §7). It never scrolls, because the server caps pages at nine. -->
+        <div class="switcher" data-switcher hidden>
+          <ul data-switcher-list></ul>
+          <div class="switcher-sep" aria-hidden="true"></div>
+          <button type="button" class="switcher-manage" data-manage-open>
+            <span>manage pages</span>
+            <span class="chev" aria-hidden="true">&#8250;</span>
+          </button>
+        </div>
+
         <div class="bar">
-          <span class="page-name" data-page-name>today</span>
+          <!-- 🔴 A control now, and §7's "not until there is a second page" was scoping
+               the state *before* pages existed (#154). It is how the second page gets
+               made, so it cannot wait for one. The caret is the disclosure, and the
+               drop-up is the whole feature. -->
+          <button type="button" class="page-name" data-page-name aria-expanded="false" aria-haspopup="true">
+            <span data-page-label>today</span>
+            <svg class="page-caret" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M4 10 L8 6 L12 10"/></svg>
+          </button>
           <span class="env" data-env hidden></span>
           <span data-save-status data-rest>—</span>
           <span class="bar-right">
@@ -1664,6 +1857,42 @@
 
         <div class="pane-actions">
           <button type="button" data-revoke-others>sign out everywhere else</button>
+        </div>
+      </div>
+
+      <!-- 🔴 A pane, like devices, and for the same reason (#149 amending §3d): the list
+           is short but its length is not the design's to control, and a pane has the
+           scroll and the cap that argument actually needed. Reached from the switcher's
+           last row rather than from the settings list — these are the *rare* per-page
+           verbs, and the switcher is where pages are already on your mind. -->
+      <div data-manage-pane hidden>
+        <div class="sheet-head pane-head">
+          <button type="button" class="pane-back" data-manage-back title="back" aria-label="back">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M10 3 L5 8 L10 13"/></svg>
+          </button>
+          <span>manage pages</span>
+        </div>
+
+        <div class="pane-body">
+          <ul data-manage-list class="manage"></ul>
+          <p class="note" data-manage-note></p>
+        </div>
+
+        <div class="pane-actions">
+          <form class="new-page" data-new-page>
+            <input
+              type="text"
+              name="name"
+              maxlength="32"
+              placeholder="name"
+              spellcheck="false"
+              autocapitalize="off"
+              autocorrect="off"
+              autocomplete="off"
+              aria-label="new page name"
+            />
+            <button type="submit" data-new-page-submit>new page</button>
+          </form>
         </div>
       </div>
     </dialog>

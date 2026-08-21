@@ -122,10 +122,16 @@ test.describe("the toolbar", () => {
     // that only one control is permanent and that every other one ships hidden. Both
     // halves are needed: this one cannot see the markup, that one cannot see the screen.
     //
-    // Two is the maximum, reached here because there is something to sweep: the wipe and
-    // the chevron. It was three — arrange and settings left for the ledge (#139), which
-    // costs one control and gives back two.
-    await expect(knag.page.locator(".bar button:visible")).toHaveCount(2);
+    // Three is the maximum, reached here because there is something to sweep: the page's
+    // name, the wipe and the chevron. It was three before #139 too — arrange and settings
+    // left for the ledge, which cost one control and gave back two — and the third came
+    // back in #154 when the page's name became the switcher's control.
+    //
+    // 🔴 That third one **took no space**: the slot was already occupied by a `<span>`
+    // reading `today`, which is what the wordmark left the bar to pay for (#123). The
+    // budget this protects is chrome above the keyboard, so what matters is that the bar
+    // did not get taller or busier — not the count on its own.
+    await expect(knag.page.locator(".bar button:visible")).toHaveCount(3);
 
     // 🔴 Asserted on the ledge's own box, not on `footer button:visible`. A closed ledge
     // is `height: 0` with `overflow: hidden`, and a clipped child still reports a 48px

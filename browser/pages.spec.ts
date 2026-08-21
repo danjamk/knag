@@ -1,0 +1,223 @@
+import { expect, test } from "./fixtures.js";
+
+/**
+ * Pages, on screen (#154).
+ *
+ * 🔴 The rule this file defends is **knag has no index**. There is no screen that lists
+ * your pages, only a control that switches between them, and it is never what you land
+ * on — launch opens the last page you were on. Everything a switcher could grow that
+ * makes it a file manager is asserted absent here, because absence is what nothing else
+ * catches.
+ */
+
+const DAY = ["Thursday", "- [ ] call the accountant", "- [x] pay the invoice", ""].join("\n");
+const PHONE = { width: 393, height: 852 };
+
+// 🔴 One live database, no reset between tests. A page created here outlives the test
+// that made it, and the next request for the same name fails on a duplicate — with an
+// error about uniqueness rather than about the thing that actually went wrong.
+test.beforeEach(async ({ knag }) => {
+  await knag.resetPages();
+});
+
+/** Make a page through the real controls, the way a person does. */
+async function newPage(knag: import("./fixtures.js").Knag, name: string) {
+  await knag.page.locator("[data-page-name]").click();
+  await knag.page.locator("[data-manage-open]").click();
+  await expect(knag.page.locator("[data-manage-pane]")).toBeVisible();
+  await knag.page.locator('[data-new-page] input[name="name"]').fill(name);
+  await knag.page.locator("[data-new-page-submit]").click();
+  await expect(knag.page.locator("[data-page-label]")).toHaveText(name);
+}
+
+test.describe("the switcher", () => {
+  test("🔴 opens from the page's name, which is the slot the wordmark paid for", async ({
+    knag,
+  }) => {
+    await knag.seed(DAY);
+
+    await expect(knag.page.locator("[data-switcher]")).not.toBeVisible();
+    await knag.page.locator("[data-page-name]").click();
+
+    await expect(knag.page.locator("[data-switcher]")).toBeVisible();
+    await expect(knag.page.locator("[data-page-name]")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("🔴 marks the current page in amber and nothing else", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+
+    await knag.page.locator("[data-page-name]").click();
+    const rows = knag.page.locator("[data-switcher-list] button");
+    await expect(rows).toHaveCount(2);
+
+    // The amber *is* the marker — no tick, no dot, no second colour. Same rule the
+    // checked checkbox and the machine voice follow.
+    await expect(rows.filter({ hasText: "shopping" })).toHaveAttribute("aria-current", "true");
+    await expect(rows.filter({ hasText: "today" })).toHaveAttribute("aria-current", "false");
+  });
+
+  test("🔴 carries no counts, no timestamps, no icons — a column is a file manager", async ({
+    knag,
+  }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+    await knag.page.locator("[data-page-name]").click();
+
+    const row = knag.page.locator("[data-switcher-list] button").first();
+    // The row is its name. Anything else you add is a column, and a column is the first
+    // step to the file manager §12 exists to keep out.
+    await expect(row).toHaveText("today");
+    await expect(row.locator("svg, img")).toHaveCount(0);
+  });
+
+  test("closes when the document takes focus, like the ledge", async ({ knag }) => {
+    await knag.seed(DAY);
+    await knag.useEditor();
+    await knag.page.locator("[data-page-name]").click();
+    await expect(knag.page.locator("[data-switcher]")).toBeVisible();
+
+    await knag.editor(0).click();
+
+    // Going back to the page closes what is over it. One sentence, both tiers.
+    await expect(knag.page.locator("[data-switcher]")).not.toBeVisible();
+  });
+
+  test("closes on Escape, which a drop-up gets from nowhere else", async ({ knag }) => {
+    await knag.seed(DAY);
+    await knag.page.locator("[data-page-name]").click();
+    await expect(knag.page.locator("[data-switcher]")).toBeVisible();
+
+    await knag.page.keyboard.press("Escape");
+
+    await expect(knag.page.locator("[data-switcher]")).not.toBeVisible();
+  });
+});
+
+test.describe("switching", () => {
+  test("🔴 shows the other page's document, and the bar says which", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+
+    // The new page is empty and is now the open one.
+    await expect(knag.page.locator("[data-page-label]")).toHaveText("shopping");
+    await expect(knag.lines()).toHaveCount(1);
+
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-switcher-list] button", { hasText: "today" }).click();
+
+    await expect(knag.page.locator("[data-page-label]")).toHaveText("today");
+    await expect(knag.surface()).toContainText("call the accountant");
+  });
+
+  test("🔴 writes land on the page you are looking at", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+
+    await knag.surface().click();
+    await knag.page.keyboard.type("milk");
+    await knag.saved();
+
+    // 🔴 The whole point of the page dimension. The seeded document must be untouched —
+    // a whole-page write that landed on the wrong page would preserve every byte it was
+    // given and destroy the other document.
+    expect(await knag.document()).toBe(DAY);
+  });
+
+  test("🔴 launch opens the last page you were on, never a list", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+
+    await knag.page.reload();
+
+    // Spec §12. There is no index and nothing to pick from on the way in — the page you
+    // left is the page you get.
+    await expect(knag.page.locator("[data-page-label]")).toHaveText("shopping");
+    await expect(knag.page.locator("[data-switcher]")).not.toBeVisible();
+  });
+});
+
+test.describe("managing", () => {
+  test("renames a page, and the bar follows", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shoping");
+
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+
+    const field = knag.page.locator('[data-manage-list] input[data-rename-id]').last();
+    await field.fill("shopping");
+    // Commits on blur, like any field — never a write per keystroke against the name an
+    // agent resolves by (#153).
+    await field.blur();
+
+    await expect(knag.page.locator("[data-manage-list] input").last()).toHaveValue("shopping");
+  });
+
+  test("🔴 offers no delete on the default page", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+
+    const rows = knag.page.locator("[data-manage-list] li");
+    await expect(rows).toHaveCount(2);
+    // Absent, not disabled. It cannot be deleted — that is structural rather than a
+    // permission — and a control that is present and refuses has to explain itself.
+    await expect(rows.nth(0).locator("[data-delete-page]")).toHaveCount(0);
+    await expect(rows.nth(1).locator("[data-delete-page]")).toHaveCount(1);
+  });
+
+  test("🔴 deletes without asking, and lands you back on the default page", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+
+    await knag.page.locator("[data-manage-list] [data-delete-page]").click();
+
+    // No dialog, and the reason that is honest is in the schema: the page is retired,
+    // every revision it ever had stays where it is, and recovering it is clearing one
+    // column (principle 4).
+    await expect(knag.page.locator("[data-manage-list] li")).toHaveCount(1);
+    await expect(knag.page.locator("[data-page-label]")).toHaveText("today");
+    expect(await knag.document()).toBe(DAY);
+  });
+
+  test("the sheet still does not scroll with the pane in it", async ({ knag }) => {
+    await knag.page.setViewportSize(PHONE);
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+
+    const box = await knag.page
+      .locator("[data-settings]")
+      .evaluate((el: { scrollHeight: number; clientHeight: number }) => ({
+        scroll: el.scrollHeight,
+        client: el.clientHeight,
+      }));
+    expect(box.scroll).toBeLessThanOrEqual(box.client);
+  });
+});
+
+test.describe("the undo offer", () => {
+  test("🔴 belongs to the page it was taken on", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shopping");
+
+    await knag.surface().click();
+    await knag.page.keyboard.type("- [x] milk");
+    await knag.saved();
+    await knag.page.locator("[data-clear]").click();
+    await expect(knag.page.locator("[data-recovery]")).toBeVisible();
+
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-switcher-list] button", { hasText: "today" }).click();
+
+    // 🔴 One localStorage key was a bug the moment there were two pages: wipe the
+    // shopping list, switch to today, and today would offer to bring the shopping list
+    // back — into today.
+    await expect(knag.page.locator("[data-recovery]")).not.toBeVisible();
+  });
+});

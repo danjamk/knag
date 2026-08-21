@@ -393,3 +393,38 @@ export function writeSound(storage: KeyValueStore | undefined, on: boolean): voi
     // Ignored, deliberately. See readSound.
   }
 }
+
+/**
+ * Which page this device is looking at (#154).
+ *
+ * 🔴 **Device state, never document state, and that is the whole reason `launch opens the
+ * last page you were on` is implementable at all.** The server has no current page — it is
+ * one of the two things the MCP `page` parameter exists to avoid (#153) — so the answer
+ * lives here, per device, and the phone and the laptop can sit on different pages without
+ * either being wrong.
+ *
+ * Returns `null` for anything unparseable, and the caller falls back to the default page.
+ * A stored id is a *hint*: the page may have been deleted from another device since, so
+ * nothing downstream may treat this as proof the page exists.
+ */
+export const PAGE_KEY = "knag.page";
+
+export function readPageId(storage: KeyValueStore | undefined): number | null {
+  try {
+    const raw = storage?.getItem(PAGE_KEY);
+    if (!raw) return null;
+    const id = Number(raw);
+    return Number.isInteger(id) && id >= 1 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Best effort. A device that cannot remember its page opens the default one. */
+export function writePageId(storage: KeyValueStore | undefined, id: number): void {
+  try {
+    storage?.setItem(PAGE_KEY, String(id));
+  } catch {
+    // Ignored, deliberately. See readPageId.
+  }
+}
