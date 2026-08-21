@@ -206,10 +206,17 @@ export async function deletePage(
 /**
  * Save this page's current body as its template, or clear it.
  *
- * 🔴 **A template is a saved body.** No template language, no variables, no
- * placeholders — the motivating case is a list that always starts with the same two
- * headings, and every step past "the bytes you had" is a feature nobody asked for that
- * the page cannot render anyway (ADR-004).
+ * 🔴 **A template is a page's reset state** (#165). Edit the page to the baseline you
+ * want, save it, and wiping that page returns it there instead of emptying it. It shipped
+ * in 1.1.0 as a seed for *new* pages, which is a description of one consequence mistaken
+ * for the feature — and it made the wipe less useful on exactly the pages that need it
+ * most. A grocery list with twenty standing items is the case: you add to it, you shop,
+ * you wipe, and the twenty come back unchecked.
+ *
+ * 🔴 **It is still just a saved body.** No template language, no variables, no
+ * placeholders — every step past "the bytes you had" is a feature nobody asked for that
+ * the page cannot render anyway (ADR-004). The save half of this was always right; what
+ * was wrong is what read it.
  */
 export async function saveTemplate(env: Env, pageId: number, keep: boolean): Promise<boolean> {
   const result = await env.DB.prepare(

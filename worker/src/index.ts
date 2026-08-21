@@ -496,9 +496,23 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
   const blocks = parse(current.body);
   const completed = blocks.filter(isCompleted);
 
+  // 🔴 A whole-page wipe **resets to the template** when the page has one (#165). The
+  // grocery case is the whole point: twenty standing items, you add to them, you shop,
+  // you wipe, and the twenty come back unchecked.
+  //
+  // 🔴 The daily sweep never resets. `completed` means "clear what is done" and is run
+  // several times a day; making it also restore lines would mean a page you swept at noon
+  // grew back by itself, which is the opposite of what the control is for.
+  //
+  // Read only on the whole-page path, so the everyday sweep costs no extra query.
+  const resetTo = wipeScope === "all" ? ((await pageTemplate(env, current.id)) ?? "") : "";
+
   // An empty page has nothing to wipe under either scope. `parse("")` yields a single
   // blank block, so this is checked on the body rather than the block count — otherwise
   // wiping an already-empty page would report having removed one thing.
+  // What leaves. Unchanged by the reset: every line on the page goes, and the template is
+  // laid down after — so a page that already *is* its template still reports the lines it
+  // removed rather than reporting nothing happened.
   const wipedCount = wipeScope === "all" ? (current.body === "" ? 0 : blocks.length) : completed.length;
 
   // Nothing to do. Reported as success with a count of zero rather than as an error:
@@ -513,7 +527,7 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
   const result = await wipe(env, {
     pageId: current.id,
     baseVersion,
-    body: wipeScope === "all" ? "" : serialize(blocks.filter((block) => !isCompleted(block))),
+    body: wipeScope === "all" ? resetTo : serialize(blocks.filter((block) => !isCompleted(block))),
     // 🔴 The finished lines only, under both scopes. `cleared_items` answers "what did I
     // get done"; a wipe-all removes things that were never done, and recording those
     // here would corrupt the one record `/api/history` treats as authoritative. The
@@ -642,7 +656,7 @@ async function newPage(request: Request, env: Env): Promise<Response> {
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
-  const { name: rawName, from_template: fromTemplate } = (payload ?? {}) as Record<string, unknown>;
+  const { name: rawName } = (payload ?? {}) as Record<string, unknown>;
   const name = validName(rawName);
   if (!name) {
     return Response.json(
@@ -661,14 +675,10 @@ async function newPage(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  // 🔴 A template is a saved body, so creating from one is a copy and nothing else.
-  // Taken from the page named in `from_template`, defaulting to none — a new page that
-  // silently inherited some other page's body would be the least explicable thing in the
-  // product.
-  let body = "";
-  if (typeof fromTemplate === "number") {
-    body = (await pageTemplate(env, fromTemplate)) ?? "";
-  }
+  // 🔴 A new page starts empty, always (#165). It briefly started from a template in
+  // 1.1.0, which was a misreading of #123: a template is a page's *reset state*, not a
+  // seed for other pages. Removing it is part of the fix rather than tidying around it.
+  const body = "";
 
   try {
     const page = await createPage(env, { name, body, source: "pwa" });

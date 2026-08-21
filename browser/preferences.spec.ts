@@ -59,7 +59,7 @@ test.describe("the shape of the sheet", () => {
     await knag.openSettings();
 
     // 🔴 One label, not two (#149). The boundary is still in the same place and still
-    // the whole information architecture â but `the page` sat under a head that says
+    // the whole information architecture — but `the page` sat under a head that says
     // `settings`, above four rows that are visibly about the page, and named nothing the
     // reader could not already see. `you` earns its line because what follows it *is* a
     // change of subject, and it keeps the slot the account rows arrive above in 1.2.
@@ -71,8 +71,8 @@ test.describe("the shape of the sheet", () => {
     await knag.seed(DAY);
     await knag.openSettings();
 
-    // 🔴 `--ink`, not `--dim`, on both (#149). Dim on the board is about 3.9:1 â under
-    // AA at any size â which is correct for a value at rest beside a label and wrong for
+    // 🔴 `--ink`, not `--dim`, on both (#149). Dim on the board is about 3.9:1 — under
+    // AA at any size — which is correct for a value at rest beside a label and wrong for
     // the only two things on the row that say what the surface is and how to get out.
     // "I was looking for a close button and it took a while."
     const ink = await css(knag.page.locator("[data-editor]"), "color");
@@ -80,7 +80,7 @@ test.describe("the shape of the sheet", () => {
     expect(await css(head.locator("span"), "color")).toBe(ink);
     expect(await css(head.locator(".sheet-close"), "color")).toBe(ink);
 
-    // And it is a drawn glyph like every other control, rather than the text character Ã
+    // And it is a drawn glyph like every other control, rather than the text character ×
     // at whatever weight the mono face gives a multiplication sign.
     await expect(head.locator(".sheet-close svg")).toHaveCount(1);
   });
@@ -91,7 +91,7 @@ test.describe("the shape of the sheet", () => {
 
     // `--size-machine` is documented in the token block as "save status, recovery line,
     // build info". This was set to `--size-micro`, whose comment names the env badge and
-    // the ledge labels â 11px `--dim`, which put "is my change live" back to being a
+    // the ledge labels — 11px `--dim`, which put "is my change live" back to being a
     // round trip (#149).
     const machine = await css(knag.page.locator("[data-save-status]"), "font-size");
     expect(await css(knag.page.locator("[data-settings] .build"), "font-size")).toBe(machine);

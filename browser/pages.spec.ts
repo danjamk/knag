@@ -278,6 +278,21 @@ test.describe("managing", () => {
     await expect(knag.page.locator("[data-manage-list] li")).toHaveCount(2);
   });
 
+  test("🔴 back goes to the switcher, which is where you came from", async ({ knag }) => {
+    await knag.seed(DAY);
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+    await expect(knag.page.locator("[data-manage-pane]")).toBeVisible();
+
+    await knag.page.locator("[data-manage-back]").click();
+
+    // 🔴 It used to swap to the settings pane — a surface you were never on. The devices
+    // pane returns to Settings because that is where *it* came from; this inherited the
+    // behaviour without inheriting the reason (#165).
+    await expect(knag.page.locator("[data-settings]")).not.toBeVisible();
+    await expect(knag.page.locator("[data-switcher]")).toBeVisible();
+  });
+
   test("the sheet still does not scroll with the pane in it", async ({ knag }) => {
     await knag.page.setViewportSize(PHONE);
     await knag.seed(DAY);
@@ -292,6 +307,54 @@ test.describe("managing", () => {
         client: el.clientHeight,
       }));
     expect(box.scroll).toBeLessThanOrEqual(box.client);
+  });
+});
+
+test.describe("🔴 the template is a page's reset state", () => {
+  const STANDING = ["- [ ] milk", "- [ ] eggs", ""].join("\n");
+
+  test("wiping the page brings the standing items back, unchecked", async ({ knag }) => {
+    await knag.seed(STANDING);
+    await knag.useEditor();
+
+    // Save the baseline through the real control.
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+    const toggle = knag.page.locator("[data-manage-list] [data-template-id]").first();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await knag.page.keyboard.press("Escape");
+
+    // Shop: check things off and add one thing you only wanted this week.
+    await knag.surface().click();
+    await knag.page.keyboard.press("ControlOrMeta+a");
+    await knag.page.keyboard.type("- [x] milk\n- [x] eggs\n- [x] birthday candles\n");
+    await knag.saved();
+
+    await knag.openLedge();
+    await knag.page.locator("[data-wipe-all]").click();
+    await knag.page.locator("[data-wipe-all]").click();
+
+    // 🔴 The whole feature, in one assertion: back to the baseline, unchecked, with the
+    // one-off gone. Read from the server rather than the screen — a reset that normalised
+    // a byte would look identical rendered.
+    await expect.poll(() => knag.document(), { timeout: 8000 }).toBe(STANDING);
+  });
+
+  test("the control says `reset page` once a template is saved", async ({ knag }) => {
+    await knag.seed(STANDING);
+    await knag.openLedge();
+    // `wipe page 3` that leaves three lines behind is a lie about what the control does,
+    // and the count beside it makes the lie specific.
+    await expect(knag.page.locator("[data-wipe-all-label]")).toHaveText("wipe page");
+
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+    await knag.page.locator("[data-manage-list] [data-template-id]").first().click();
+    await knag.page.keyboard.press("Escape");
+
+    await knag.openLedge();
+    await expect(knag.page.locator("[data-wipe-all-label]")).toHaveText("reset page");
   });
 });
 

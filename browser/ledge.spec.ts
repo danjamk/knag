@@ -106,7 +106,7 @@ test.describe("the rule that makes it free", () => {
     await knag.useEditor();
     await knag.openLedge();
 
-    // Wipe the page, which is the only route to the offer â and it is on the ledge, so
+    // Wipe the page, which is the only route to the offer — and it is on the ledge, so
     // the ledge is always open at the moment the offer appears below it.
     await knag.page.locator("[data-wipe-all]").click();
     await knag.page.locator("[data-wipe-all]").click();
@@ -116,7 +116,7 @@ test.describe("the rule that makes it free", () => {
 
     // 🔴 The cause of the bug rather than the symptom (#149). Closing here took 56px
     // out of the layout **between the mousedown and the mouseup** on `bring back`, which
-    // moved the button out from under the pointer â so no `click` was ever dispatched and
+    // moved the button out from under the pointer — so no `click` was ever dispatched and
     // the first tap only closed the ledge. Desktop only, because iOS Safari does not
     // focus a `<button>` on tap, which is exactly the shape of report that arrived.
     //
@@ -130,7 +130,7 @@ test.describe("the rule that makes it free", () => {
   // 🔴 **The symptom itself is not testable here, and this is the record of why.**
   //
   // What was reported is that `bring back` needed two clicks. A test that opens the
-  // ledge, wipes the page and clicks the button once passes *with the bug present* â
+  // ledge, wipes the page and clicks the button once passes *with the bug present* —
   // Playwright re-checks the hit target around a click and retries when the element has
   // moved out from under the pointer, which is precisely the failure. It would be a test
   // that documents nothing, so it was written, negative-verified, and deleted.
