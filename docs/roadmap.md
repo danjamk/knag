@@ -413,6 +413,25 @@ as one.
 
 ### Phase 8 · Multi-user — #122 · **ships 1.2**
 
+✅ **What it is, decided 2026-08-21.** Not a product. A small group of friends and
+family, invited by the operator, using it free, hosted by the operator, **inside
+the free tier**. Invite only — there is no sign-up page and that is a feature. Plus
+a simple admin view for one person: who is here, what is being used. Full ruling
+and the arithmetic in [spec §17](spec.md).
+
+🔴 **That decision came from the scale model, not from taste.** Selling this was
+modelled and rejected on the numbers — see
+[planning/scale-model.html](planning/scale-model.html). What survived is the part
+that was always the point.
+
+🔴 **And it puts a number on "small".** §14.4's polling budget is the binding
+meter, not storage: ~4k requests/day per user at realistic use against a 100k/day
+free ceiling is **about twenty-five people**. Three desktops left open on the page
+all day exceed it on polling alone. So the invite count wants to be a cap in the
+code the way the nine-page limit is, and the admin view is how the free-tier
+promise stays checkable rather than hoped-for. Those two are the design work; the
+auth spike is the other half.
+
 Last, deliberately — and the reason is not difficulty. The spike is reading and
 measuring, and it can float earlier in any week that wants a break from
 building.
@@ -426,6 +445,10 @@ Note also that #122 is scoped as **spike and ADR, not build**. It is
 [ADR-001](adr/ADR-001-passphrase-auth.md)'s stated trigger firing — *a second
 human, not a feature count* — and §17 already decided the first move is an auth
 spike rather than a schema change.
+
+🔴 **The trigger has now fired on purpose rather than by drift.** A shared
+passphrase fails on the first invited person, which is the whole shape of what was
+just decided, so ADR-001 is due its successor rather than an amendment.
 
 **The design session recommends an email link** and argues it against the
 alternatives in [§7](design/holistic-response.md): the login surface stays one
