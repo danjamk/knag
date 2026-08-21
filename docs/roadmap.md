@@ -108,8 +108,12 @@ SQLite has no `ALTER TABLE ... DROP CONSTRAINT`. Removing that `CHECK` is a full
 table rebuild, which is destructive, and `make migrate` runs *before*
 `make deploy` — so the deployed Worker runs against the new schema in the gap
 ([ADR-002](adr/ADR-002-two-accounts-and-migrations.md) §3). #123 is therefore
-expand/contract across two releases, not one additive column. Recorded on the
-issue.
+expand/contract, not one additive column. Recorded on the issue.
+
+🔴 **And it is three releases, not the two written here** — found on 2026-08-21 while
+running the contract half. The expand release dual-writes `documents`, so it is still
+writing when the drop migration runs; the write has to stop in a release of its own,
+carrying no migration at all. ADR-002 §3 has the worked example.
 
 ---
 
@@ -328,7 +332,8 @@ so the boundary existed whether or not it was named.
 | #152 | the page dimension behind the API | ✅ |
 | #153 | MCP takes an optional page, by name | ✅ |
 | #154 | `/api/pages`, the switcher, manage-pages, templates | ✅ |
-| #155 | **contract** — drop `documents` | gated on #152 surviving a release |
+| #155a | **stop writing** `documents` — no migration | ✅ |
+| #155b | **contract** — drop `documents` | next release |
 
 Two things in #123's own task list turned out to be wrong and are corrected in the
 children: MCP cannot default to "the current page" (the Worker has no current page — it
@@ -365,16 +370,20 @@ a **design bundle**, not a branch. It is also the one phase whose likeliest shap
 with the Out list, which is a conversation to have deliberately rather than under release
 pressure.
 
-🔴 **Also reshaped by #149.** §7 wrote history as a full screen from the ledge. Devices
-became a pane of the settings dialog and §3d was amended to say list-shaped surfaces
-inherit the pane, so this is a pane too — worth carrying into the design brief rather than
-rediscovering.
+🔴 **Reshaped by #149, and this paragraph is the amendment.** §7 wrote history as a
+full **screen** reached from the ledge. Then devices became a *pane* of the settings
+dialog and §3d was amended to say list-shaped surfaces inherit the pane — so history is a
+**pane**, not a screen. Carry that into the design brief rather than rediscovering it.
 
-**And it is a screen, not a dialog** ([§7](design/holistic-response.md)) — a place
-you go and come back from, reached from the ledge, opening on *yesterday* rather
-than today. Its action says `add 3 to the page`, never "restore", because the page
-does not go back to how it was and that is the one thing it cannot be ambiguous
-about.
+🔴 **This page said both for a day**, keeping §7's "it is a screen, not a dialog"
+alongside the amendment that replaced it. Corrected 2026-08-21. A brief assembled from the
+stale half would have asked for the wrong surface, which is the failure mode the
+*Keeping this true* section at the bottom exists to catch.
+
+What survives from §7 unchanged, because #149 touched the container and not the content:
+it is **a place you go and come back from**, it opens on *yesterday* rather than today,
+and its action says `add 3 to the page`, never "restore" — because the page does not go
+back to how it was, and that is the one thing it cannot be ambiguous about.
 
 ### Phase 8 · Multi-user — #122 · **ships 1.2**
 

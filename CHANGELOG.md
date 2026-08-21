@@ -13,6 +13,32 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Changed
+
+- **The `documents` shadow write is gone** (#155). `pages` has been the authority since
+  1.1.0; `documents` was kept in step so the pre-pages Worker could still serve a current
+  document through a rollback. #154 shipped the switcher, so a rollback now loses pages
+  2..n whatever that table holds — the window it protected closed on its own. The table
+  still stands and is now inert. Nothing user-facing.
+
+- 🔴 **Expand/contract is three releases, not two, and every document that said two now
+  says three** (#155). Found while running the contract half, which is the first one this
+  project has actually done. `make migrate` runs *before* `make deploy`, so the Worker
+  live when a table is dropped is the **previous** one — and the previous one still writes
+  to it. Removing the write and dropping the table in a single release puts a live writer
+  and a missing table in the same window.
+
+  So the write stops in a release of its own, carrying **no migration at all**, which is
+  exactly what makes it look skippable. ADR-002 §3 now sets out the three-release schedule
+  and carries this as the worked example; README, CLAUDE.md, spec §17, the roadmap and both
+  deploy workflows are corrected to match.
+
+  The failure this avoids is not a clean one. `mirrorToDocuments` ran *after* the CAS on
+  `pages` had committed, so a save inside that window would have written the page, thrown
+  on the mirror, returned a 500, and left the client believing the save failed — whose
+  retry then 409s on a stale `base_version`. **The write lands and the app says it did
+  not.** No test covers it, because no test runs against a half-migrated schema.
+
 ## [1.1.1] — 2026-08-21
 
 Templates do what they say.

@@ -154,16 +154,61 @@ schema.** So the binding rule:
 > Every migration must be backward-compatible with the currently deployed Worker.
 
 Additive changes — a new table, a new nullable column, a new index — satisfy this
-for free. Anything destructive does not, and takes two releases:
-
-| Release | Does |
-|---|---|
-| N | Add the new column/table. Deploy code that writes both and reads the new one, falling back to the old. |
-| N+1 | Backfill, then drop the old column. |
+for free. Anything destructive does not.
 
 This is expand/contract, and it is not optional here. Getting it wrong does not
 produce a failed deploy — it produces a Worker writing to a column that no longer
 exists, against the only copy of the document.
+
+#### 🔴 It is three releases, not two — corrected 2026-08-21 by #155
+
+This section used to say two, and set them out as *N: add the new thing, write both;
+N+1: backfill and drop the old thing.* That is wrong, and it is wrong by its own rule.
+
+Release N deploys a Worker that **writes both**. When N+1 runs `make migrate` and drops
+the old thing, the Worker live at that moment is still N's — the one that writes both. The
+drop lands inside the exact window the paragraph above exists to describe. The rule was
+right; the schedule underneath it contradicted the rule.
+
+A Worker that writes the old thing is not backward-compatible with the old thing being
+gone. So **the write has to stop in its own release, and be deployed, before the migration
+that removes its target runs**:
+
+| Release | Migration | Worker | Live during the *next* migrate |
+|---|---|---|---|
+| N — **expand** | add the new thing | writes both, reads new | writes both |
+| N+1 — **stop writing** | *none* | writes new only | writes new only |
+| N+2 — **contract** | drop the old thing | unchanged | — |
+
+🔴 **N+1 carries no migration at all, which is exactly what makes it look skippable.**
+It is the release that does the work. Merging it into either neighbour reopens the window.
+
+#### The worked example: dropping `documents` (#152 → #155)
+
+The first expand/contract this project has actually run, and the reason the correction
+above exists rather than staying hypothetical.
+
+`documents` was `id INTEGER PRIMARY KEY CHECK (id = 1)`. SQLite has no
+`ALTER TABLE ... DROP CONSTRAINT`, so the table could be removed but never reshaped —
+which is what forced expand/contract rather than an additive column.
+
+| | | |
+|---|---|---|
+| **1.1.0** (#152) | migration 0004 | `pages` created and backfilled; `mirrorToDocuments` keeps `documents` in step |
+| **this one** (#155) | none | the mirror is deleted. `documents` still stands and goes stale |
+| **next** (#155) | drop `documents` | the deployed Worker has not touched it for a release |
+
+Had the mirror and the drop shipped together, the failure would not have been a clean
+one. `mirrorToDocuments` ran **after** the CAS on `pages` had already committed, so during
+the migrate→deploy gap a save would have: written the page successfully, thrown on the
+mirror, returned a 500, and left the client believing the save failed. The client's retry
+then carries the pre-write `base_version` and 409s. **The write landed and the app said it
+did not** — which is worse than either a clean failure or a clean success, and no test
+covers it because no test runs against a half-migrated schema.
+
+The wipe path would have failed more honestly: its shadow write was inside `env.DB.batch`,
+so the whole wipe rolls back atomically. Same window, two different failure modes, and
+only one of them tells the truth. That asymmetry is the argument for the extra release.
 
 ### 4. Production deploy is manual. Dev deploys itself.
 

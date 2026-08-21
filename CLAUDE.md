@@ -155,9 +155,14 @@ grant nobody agreed to.
 
 **Migrations are additive-only.** `make migrate` runs *before* `make deploy`, so
 between the two the **currently deployed Worker is running against the new
-schema**. A new table, a new nullable column, a new index — fine. Anything
-destructive takes two releases: expand (add, write both, read new), then contract
-(backfill, drop) in a later release.
+schema**. A new table, a new nullable column, a new index — fine.
+
+Anything destructive takes **three** releases, not two: expand (add, write both, read
+new), then **stop writing the old one**, then contract (drop). 🔴 The middle release
+carries no migration at all, which is exactly what makes it look skippable — and it is
+the one that does the work. Without it, the Worker live during the contract migration is
+still the one that writes both, so the drop lands underneath a live writer. #155 is the
+worked example.
 
 Violating this does not produce a failed deploy. It produces a live Worker
 writing to a column that no longer exists, against the only copy of the document.

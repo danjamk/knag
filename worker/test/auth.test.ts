@@ -169,7 +169,7 @@ describe("the session cookie as a credential", () => {
     });
 
     expect(res.status).toBe(200);
-    const row = await env.DB.prepare("SELECT source FROM documents WHERE id = 1").first<{
+    const row = await env.DB.prepare("SELECT source FROM pages WHERE id = 1").first<{
       source: string;
     }>();
     expect(row?.source).toBe("pwa");
@@ -232,7 +232,7 @@ describe("bearer is first-class on every /api/* route", () => {
     });
     expect(res.status).toBe(200);
 
-    const row = await env.DB.prepare("SELECT source FROM documents WHERE id = 1").first<{
+    const row = await env.DB.prepare("SELECT source FROM pages WHERE id = 1").first<{
       source: string;
     }>();
     expect(row?.source).toBe("agent");
