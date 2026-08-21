@@ -438,3 +438,47 @@ describe("the state the wipe left (#91)", () => {
     expect(result?.body).toBe(`${NOTE}\n- [ ] undone thing`);
   });
 });
+
+describe("a reset is its own event (#91)", () => {
+  // 🔴 A surface cannot tell a reset from an emptying by looking at the diff, and the
+  // grocery case is exactly where the inference fails: a template line that was already
+  // on the page is not something the wipe *added* — it never left — so the result row's
+  // `appeared` is empty on the one case the feature exists for. The server is the only
+  // thing that knows a template was laid back down.
+  const TEMPLATE = "- [ ] milk\n- [ ] eggs";
+
+  it("🔴 records `reset` when a template came back, not `wipe_all`", async () => {
+    await put({ body: TEMPLATE, base_version: SEEDED_VERSION });
+    await SELF.fetch("https://knag.test/api/pages/1", {
+      method: "PATCH",
+      headers: authed,
+      body: JSON.stringify({ template: "save" }),
+    });
+    await put({ body: `${TEMPLATE}\n- [ ] one off`, base_version: SEEDED_VERSION + 1 });
+
+    await clear({ base_version: SEEDED_VERSION + 2, scope: "all" });
+
+    const log = await revisions();
+    expect(log.some((r) => r.event_type === "reset")).toBe(true);
+    expect(log.some((r) => r.event_type === "wipe_all")).toBe(false);
+  });
+
+  it("records `wipe_all` when the page had no template to come back to", async () => {
+    await put({ body: "just lines\nno template", base_version: SEEDED_VERSION });
+
+    await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
+
+    const log = await revisions();
+    expect(log.some((r) => r.event_type === "wipe_all")).toBe(true);
+    expect(log.some((r) => r.event_type === "reset")).toBe(false);
+  });
+
+  it("leaves the sweep's event alone", async () => {
+    await put({ body: "- [x] done\n- [ ] not", base_version: SEEDED_VERSION });
+
+    await clear({ base_version: SEEDED_VERSION + 1 });
+
+    const log = await revisions();
+    expect(log.some((r) => r.event_type === "clear_completed")).toBe(true);
+  });
+});

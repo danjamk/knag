@@ -143,7 +143,16 @@ test.describe("the toolbar", () => {
     await expect(knag.ledge()).not.toBeVisible();
 
     await knag.openLedge();
-    await expect(knag.page.locator("[data-ledge] button:visible")).toHaveCount(4);
+    // 🔴 Five since #91 added history, and the number moving is the point of asserting
+    // it. **Tier 1 is unchanged at three** — that is the rule, and it is the assertion
+    // above this one. Tier 2's count is a *record of the composition*, not a budget: the
+    // ledge exists precisely so a control that deserves to be reachable but not permanent
+    // has somewhere to go, and history is the case it was built for.
+    //
+    // 🔴 If this number ever moves while the tier-1 assertion above does not stay at
+    // three, the ledge has stopped absorbing chrome and started leaking it upward — which
+    // is the failure the two tiers exist to prevent.
+    await expect(knag.page.locator("[data-ledge] button:visible")).toHaveCount(5);
   });
 
   test("shows no controls on a row until reorder mode", async ({ knag }) => {

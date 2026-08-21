@@ -13,6 +13,40 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **History — a list of wipes, seven days deep, this page only** (#91). Reached from the
+  ledge, and from the recovery line's count, which is a second door costing no new chrome
+  because the words were already there.
+
+  A row is a wipe: its time, what it was, and how many lines went. Opening one shows the
+  lines that wipe took, exactly as they left — checkbox and strike intact, nothing
+  paraphrased and nothing truncated. `add N to the page` puts them back.
+
+  🔴 **Rows are wipes, not lines, and that is the whole argument with the Out list rather
+  than a detail of the markup.** A list of lines is a document; a list of wipes is chrome
+  about an action — the same kind of thing as the recovery line, which has implied no
+  second document for a year. One wipe's lines at a time means no view here ever shows a
+  week of lines, so search never has anything to be *for*. The cap is structural, not a
+  policy someone has to keep defending.
+
+  What it must never grow: a row for anything that is not a wipe, and a field to narrow the
+  rows with. The moment it lists edits it is a revision log, and a revision log of a page
+  you rewrite all day is a corpus; the moment it has a field, the corpus has a search box.
+
+  Restoring from an older row uses `insertLines`, so those lines land at the end — they
+  carry no anchors, and content beats position. Today's wipe still restores in place
+  through the recovery line.
+
+### Changed
+
+- **A reset records `reset` rather than `wipe_all`** (#91). The pane cannot tell the two
+  apart from the diff, and the grocery case is exactly where inferring it fails: a template
+  line that was already on the page never *appears*, because it never left. The server is
+  the only thing that knows a template was laid back down, so it says so. No migration —
+  `event_type` is free text.
+
+
 ### Changed
 
 - 🔴 **The recovery line says which wipe it was, and counts what actually went** (#91).
