@@ -174,15 +174,15 @@ test.describe("wiping the page", () => {
     expect(order).toEqual([3, 2, 1, 0]);
   });
 
-  test("🔴 holds an *empty* board through the beat â the page does not come back first", async ({
+  test("🔴 holds an *empty* board through the beat — the page does not come back first", async ({
     knag,
   }) => {
     await knag.seed(MIXED);
     await knag.useEditor();
 
     // 🔴 The beat is stretched so this can assert a **state** rather than a duration.
-    // Everything in the note below still stands â measuring 200ms across a network round
-    // trip is what produced three flaky tests â but "is the board empty while it is
+    // Everything in the note below still stands — measuring 200ms across a network round
+    // trip is what produced three flaky tests — but "is the board empty while it is
     // held" is not a measurement, and it is the thing that was actually broken.
     await knag.page.addStyleTag({ content: ":root { --page-beat: 2500ms; }" });
 
@@ -196,9 +196,9 @@ test.describe("wiping the page", () => {
 
     // 🔴 And then it stays gone. `animateWipe` used to clear its decorations on its
     // own resolve, so every wiped line snapped back to full height and opacity for the
-    // whole of the beat before the repaint took it away again â "wipe page seems to wipe
+    // whole of the beat before the repaint took it away again — "wipe page seems to wipe
     // it, then it flashes back and then goes away again" (#149). The beat was holding a
-    // *full* board, which means Â§6b's empty-board moment had never once run.
+    // *full* board, which means §6b's empty-board moment had never once run.
     //
     // A fixed wait rather than a poll, deliberately: the assertion is that nothing
     // happens, and there is no event for that.

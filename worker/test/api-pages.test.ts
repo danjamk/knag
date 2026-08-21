@@ -80,17 +80,15 @@ describe("creating", () => {
     expect((await readPage(env, id))?.body).toBe("");
   });
 
-  it("copies a template when one is asked for", async () => {
+  it("🔴 starts empty even when another page has a template", async () => {
+    // A template is a page's *reset state*, not a seed for other pages (#165). 1.1.0
+    // shipped the second reading, which made the wipe less useful on exactly the pages
+    // that need it most — and made a new page inherit a body nobody asked it to.
     await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "## work\n\n## home\n", baseVersion: V1, source: "pwa" });
     await req(`${PAGES}/${DEFAULT_PAGE_ID}`, "PATCH", { template: "save" });
 
-    const { id } = (await (await create("tuesday", { from_template: DEFAULT_PAGE_ID })).json()) as {
-      id: number;
-    };
-
-    // A template is a saved body and nothing else — no language, no variables, no
-    // placeholders. So this is a byte-for-byte copy or it is wrong.
-    expect((await readPage(env, id))?.body).toBe("## work\n\n## home\n");
+    const { id } = (await (await create("tuesday")).json()) as { id: number };
+    expect((await readPage(env, id))?.body).toBe("");
   });
 
   it("🔴 refuses a duplicate name, case-insensitively", async () => {
@@ -174,6 +172,105 @@ describe("templates", () => {
 
   it("rejects anything but save or clear", async () => {
     expect((await req(`${PAGES}/${DEFAULT_PAGE_ID}`, "PATCH", { template: "yes" })).status).toBe(400);
+  });
+});
+
+describe("🔴 the template is what a wipe returns the page to", () => {
+  // The grocery case, which is the whole feature: twenty standing items, you add to
+  // them, you shop, you wipe, and the twenty come back unchecked.
+  const STANDING = ["- [ ] milk", "- [ ] eggs", ""].join("\n");
+  const SHOPPING = ["- [x] milk", "- [x] eggs", "- [x] birthday candles", ""].join("\n");
+
+  async function withTemplate() {
+    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: STANDING, baseVersion: V1, source: "pwa" });
+    await req(`${PAGES}/${DEFAULT_PAGE_ID}`, "PATCH", { template: "save" });
+    const page = await readPage(env, DEFAULT_PAGE_ID);
+    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: SHOPPING, baseVersion: page?.version ?? 0, source: "pwa" });
+    return (await readPage(env, DEFAULT_PAGE_ID))?.version ?? 0;
+  }
+
+  async function wipeAll(version: number) {
+    return await SELF.fetch("https://knag.test/api/doc/clear-completed", {
+      method: "POST",
+      headers: { ...authed, "Content-Type": "application/json" },
+      body: JSON.stringify({ base_version: version, scope: "all" }),
+    });
+  }
+
+  it("🔴 resets to the template, byte for byte", async () => {
+    const version = await withTemplate();
+
+    expect((await wipeAll(version)).status).toBe(200);
+
+    // Byte for byte, including the trailing newline. A template is a saved body and
+    // nothing else, so a reset that normalised anything would be the feature being
+    // subtly wrong in a way nothing on screen would show.
+    expect((await readPage(env, DEFAULT_PAGE_ID))?.body).toBe(STANDING);
+  });
+
+  it("brings the standing items back unchecked", async () => {
+    const version = await withTemplate();
+    await wipeAll(version);
+
+    const body = (await readPage(env, DEFAULT_PAGE_ID))?.body ?? "";
+    expect(body).toContain("- [ ] milk");
+    expect(body).not.toContain("- [x] milk");
+    // And the thing that was only on the list this once is gone.
+    expect(body).not.toContain("birthday candles");
+  });
+
+  it("still reports what left, not what remains", async () => {
+    const version = await withTemplate();
+
+    const res = await wipeAll(version);
+
+    // Everything on the page went and the template was laid down after. A count of what
+    // *remains* would report a reset as having done nothing at all.
+    //
+    // Four, not three: the body ends in a newline, so `parse` yields a trailing blank
+    // block and it is a line like any other. That is pre-existing and matches the count
+    // inside the control — `wipe page 4` is what you read before you tap it.
+    expect(await res.json()).toMatchObject({ wiped_count: 4, cleared_count: 3 });
+  });
+
+  it("🔴 the daily sweep never resets", async () => {
+    const version = await withTemplate();
+
+    const res = await SELF.fetch("https://knag.test/api/doc/clear-completed", {
+      method: "POST",
+      headers: { ...authed, "Content-Type": "application/json" },
+      body: JSON.stringify({ base_version: version, scope: "completed" }),
+    });
+    expect(res.status).toBe(200);
+
+    // `completed` means "clear what is done" and runs several times a day. Making it
+    // restore lines too would mean a page you swept at noon grew back by itself.
+    expect((await readPage(env, DEFAULT_PAGE_ID))?.body).toBe("");
+  });
+
+  it("empties a page that has no template, as before", async () => {
+    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: SHOPPING, baseVersion: V1, source: "pwa" });
+    const version = (await readPage(env, DEFAULT_PAGE_ID))?.version ?? 0;
+
+    await wipeAll(version);
+
+    expect((await readPage(env, DEFAULT_PAGE_ID))?.body).toBe("");
+  });
+
+  it("🔴 resets the page it was asked about, not the one with the template", async () => {
+    const version = await withTemplate();
+    const other = (await (await create("shopping")).json()) as { id: number };
+    await writePage(env, { pageId: other.id, body: "- [x] something\n", baseVersion: V1, source: "pwa" });
+
+    await SELF.fetch("https://knag.test/api/doc/clear-completed", {
+      method: "POST",
+      headers: { ...authed, "Content-Type": "application/json" },
+      body: JSON.stringify({ base_version: V1 + 1, scope: "all", page: other.id }),
+    });
+
+    // The other page has no template, so it empties — and today, which does, is untouched.
+    expect((await readPage(env, other.id))?.body).toBe("");
+    expect((await readPage(env, DEFAULT_PAGE_ID))?.version).toBe(version);
   });
 });
 

@@ -1422,7 +1422,13 @@ function paintWipeAll(): void {
   const label = document.querySelector<HTMLElement>("[data-wipe-all-label]");
   const count = document.querySelector<HTMLElement>("[data-wipe-all-count]");
 
-  if (label) label.textContent = armed ? "again to confirm" : "wipe page";
+  // 🔴 `reset page` when this page has a template (#165). `wipe page 25` that leaves
+  // twenty standing items behind is a lie about what the control does, and the count
+  // beside it makes the lie specific. The word is the only thing that changes; the
+  // arming, the count and the motion are identical.
+  const resets = pages.find((page) => page.id === pageId)?.has_template === true;
+
+  if (label) label.textContent = armed ? "again to confirm" : resets ? "reset page" : "wipe page";
   if (count) {
     count.textContent = String(parse(body).length);
     count.toggleAttribute("hidden", armed);
@@ -1974,6 +1980,9 @@ async function loadPages(): Promise<void> {
   }
   paintSwitcher();
   paintManage();
+  // The wipe control reads `reset page` on a page with a template, so it follows the
+  // list rather than the document.
+  paintWipeAll();
 }
 
 /**
@@ -2090,7 +2099,16 @@ manageOpen?.addEventListener("click", () => {
   settingsDialog?.showModal();
 });
 
-manageBack?.addEventListener("click", () => showManage(false));
+// 🔴 Back goes to the **switcher**, not to Settings (#165). Manage pages is reached from
+// the switcher's last row, and swapping to the settings pane put the reader on a surface
+// they were never on — the devices pane returns to Settings because that is where *it*
+// came from, and this inherited that without inheriting the reason.
+manageBack?.addEventListener("click", () => {
+  showManage(false);
+  settingsDialog?.close();
+  void loadPages();
+  setSwitcher(true);
+});
 
 /** One row per page: the name as a field, the template state, and delete. */
 function paintManage(): void {
@@ -2135,8 +2153,8 @@ function paintManage(): void {
       template.type = "button";
       template.textContent = "template";
       template.title = page.has_template
-        ? "this page's body is saved as its template"
-        : "save this page's body as its template";
+        ? "wiping this page returns it to its saved template — tap to clear"
+        : "save this page's current body as what a wipe returns it to";
       template.setAttribute("aria-pressed", String(page.has_template));
       template.dataset.templateId = String(page.id);
       li.append(template);
@@ -2157,10 +2175,10 @@ function paintManage(): void {
   );
 
   if (manageNote) {
-    const template = pages.find((page) => page.id === pageId)?.has_template === true;
-    manageNote.textContent = template
-      ? `A new page starts from "${pageName}", because that page has a template saved. Deleting a page keeps its history — nothing is removed.`
-      : "A template is a saved body: turn one on and a new page starts from it. Deleting a page keeps its history — nothing is removed.";
+    // 🔴 Says what a template *does*, which is the thing that was wrong (#165). It is a
+    // page's reset state: wipe the page and it comes back to this, rather than empty.
+    manageNote.textContent =
+      "A template is what a page comes back to when you wipe it. Edit the page to the state you want, then save it here. Deleting a page keeps its history — nothing is removed.";
   }
 
   const submit = document.querySelector<HTMLButtonElement>("[data-new-page-submit]");
@@ -2271,16 +2289,9 @@ newPageForm?.addEventListener("submit", (event) => {
   const name = input?.value.trim() ?? "";
   if (name === "") return;
 
-  // 🔴 From the current page's template when it has one — the motivating case is a list
-  // that always starts from the same standing items, and the page you are on is the one
-  // you are thinking about. A template is a saved body and nothing else, so this is a
-  // copy (§7).
-  const from = pages.find((page) => page.id === pageId)?.has_template === true ? pageId : undefined;
-
-  void mutatePages("/api/pages", "POST", {
-    name,
-    ...(from === undefined ? {} : { from_template: from }),
-  }).then(async (ok) => {
+  // 🔴 A new page is empty (#165). It briefly started from a template, which was a
+  // misreading of #123 — a template is a page's *reset state*, not a seed for other pages.
+  void mutatePages("/api/pages", "POST", { name }).then(async (ok) => {
     if (!ok) return;
     if (input) input.value = "";
 

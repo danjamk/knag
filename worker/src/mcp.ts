@@ -10,6 +10,7 @@ import {
   type WipeScope,
   findPageByName,
   listPages,
+  pageTemplate,
   readDefaultPage,
   wipe,
   writePage,
@@ -467,7 +468,7 @@ function registerWipe(server: McpServer, env: Env): void {
         "Two scopes:",
         "",
         "- `completed` (the default) removes every checked item (`- [x] …`), at any indentation. Unchecked lines are never touched.",
-        "- `all` empties the page entirely. For a list you are simply done with — a grocery list, where you do not tick the last three things.",
+        "- `all` empties the page entirely — **unless the page has a template**, in which case it resets to that instead. A template is a page's saved baseline: a grocery list with twenty standing items comes back to those twenty, unchecked. Say `reset` rather than `wiped` when that happens, and check the returned body if you need to know which.",
         "",
         "🔴 `all` removes work that was never finished. Prefer `completed` unless the user has clearly asked for the whole page to go, and say which one you used.",
         "",
@@ -511,6 +512,7 @@ function registerWipe(server: McpServer, env: Env): void {
 
       const blocks = parse(current.body);
       const completed = blocks.filter(isCompleted);
+      const resetTo = wipeScope === "all" ? ((await pageTemplate(env, current.id)) ?? "") : "";
 
       // `parse("")` yields a single blank block, so an empty page is detected on the
       // body rather than the block count — otherwise wiping nothing would report one.
@@ -531,7 +533,11 @@ function registerWipe(server: McpServer, env: Env): void {
       const result = await wipe(env, {
         pageId: current.id,
         baseVersion: base_version,
-        body: wipeScope === "all" ? "" : serialize(blocks.filter((block) => !isCompleted(block))),
+        // 🔴 A whole-page wipe **resets to the template** when the page has one (#165),
+        // and the agent has to know: reporting "wiped the page" when twenty standing
+        // items are still on it is reporting wrong. Read through `store.ts` so this and
+        // `/api/doc/clear-completed` cannot answer the same question differently.
+        body: wipeScope === "all" ? resetTo : serialize(blocks.filter((block) => !isCompleted(block))),
         // The finished lines only, under both scopes — see the note in store.ts. The
         // full source line, not the task text, so the record reads the way the page read.
         clearedLines: completed.map((block) => block.raw),
@@ -549,7 +555,9 @@ function registerWipe(server: McpServer, env: Env): void {
       // reporting the larger number as an achievement would be lying to the user.
       const summary =
         wipeScope === "all"
-          ? `wiped "${current.name}" — ${result.wiped_count} lines, ${result.cleared_count} of them done`
+          ? resetTo !== ""
+            ? `reset "${current.name}" to its template — ${result.wiped_count} lines went, ${result.cleared_count} of them done`
+            : `wiped "${current.name}" — ${result.wiped_count} lines, ${result.cleared_count} of them done`
           : `wiped ${result.wiped_count} on "${current.name}"`;
 
       return ok(

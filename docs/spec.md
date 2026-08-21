@@ -271,10 +271,39 @@ Order of operations matters:
 2. Insert a revision holding the pre-wipe body, with `event_type = 'clear_completed'`
    or `'wipe_all'`.
 3. Write the **finished** lines into `cleared_items` — see below.
-4. Remove the blocks the scope names and update `documents`. `completed` removes
-   `kind === 'checkbox' && checked === true`; `all` empties the page.
+4. Remove the blocks the scope names and update the page. `completed` removes
+   `kind === 'checkbox' && checked === true`; `all` empties the page — **or resets it to
+   its template, when the page has one**.
 
 Returns `{ version, cleared_count, wiped_count }`.
+
+#### 🔴 A template is a page's reset state (#165)
+
+`pages.template` holds a saved body. Edit a page to the baseline you want, save it, and a
+whole-page wipe returns the page there instead of emptying it:
+
+> Groceries. Twenty things I always buy — then I add to that list as I do meal planning.
+> Then I go shopping. When done, I wipe the page and it resets back to my standard twenty
+> items with no items checked off.
+
+**This is what makes the wipe worth doing on a page you use repeatedly**, and it is the
+whole feature. It shipped in 1.1.0 as a seed for *new* pages — a description of one
+consequence mistaken for the thing itself — which made the wipe *less* useful on exactly
+the pages that need it most. A new page starts empty, always.
+
+Three rules that follow:
+
+- **The daily sweep never resets.** `completed` means "clear what is done" and runs several
+  times a day; making it restore lines would mean a page you swept at noon grew back by
+  itself. Only `all` resets.
+- **`wiped_count` counts what left, not what remains.** A page that resets to a template
+  still reports every line that went — a count of the remainder would report a reset as
+  having done nothing.
+- **A template is still just a saved body.** No template language, no variables, no
+  placeholders; the reset is a byte-for-byte write of what was saved (ADR-004).
+
+Nothing in the schema changed for this. `pages.template` was already the right shape; what
+was wrong was what read it.
 
 Steps 1–4 run in a single D1 batch. A partial wipe that seals a revision but
 loses the `cleared_items` write is worse than no wipe.
@@ -952,7 +981,7 @@ the login form is worth more to a phisher than a plain one.
 |---|---|---|
 | `knag_read` | `(page?) → { body, version, updated_at, page }` | |
 | `knag_write` | `(body, base_version, page?) → { version, updated_at, changed, page }` | Full replacement. Conflict on mismatch. |
-| `knag_wipe` | `(base_version, scope?, page?) → { version, wiped_count, cleared_count, page }` | Same path as the wipe control. `scope` is `completed` (default) or `all`. |
+| `knag_wipe` | `(base_version, scope?, page?) → { version, wiped_count, cleared_count, page }` | Same path as the wipe control. `scope` is `completed` (default) or `all`; `all` resets to the page's template when it has one (§5). |
 | `knag_history` | `(since?, until?, page?) → History & { page }` | `History` is the identical shape to `GET /api/history`. |
 
 ### `page` is optional, by name, and never falls back (#153)

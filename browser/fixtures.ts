@@ -152,7 +152,7 @@ export class Knag {
    * Retire every page but the default one.
    *
    * 🔴 The browser suite runs against one live database and nothing resets it between
-   * tests â `seed` replaces the *document*, which was the whole state until pages existed
+   * tests — `seed` replaces the *document*, which was the whole state until pages existed
    * (#154). Without this, a page created in one test is still there in the next, and the
    * second test to ask for a page called `shopping` fails on a duplicate name with an
    * error that says nothing about the real cause.

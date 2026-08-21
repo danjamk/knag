@@ -13,6 +13,32 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- 🔴 **Templates are a page's reset state, not a seed for new pages** (#165). 1.1.0 shipped
+  the wrong reading of #123: *"a page's current body can be saved as its template, and
+  creating a page starts from it"* described one consequence, and that got built as the
+  whole feature — which made the wipe *less* useful on exactly the pages that need it most.
+
+  What it does now: edit a page to the baseline you want, save it as the template, and
+  **wiping that page returns it there**. Twenty standing grocery items come back unchecked;
+  `today`'s section headers come back. A new page starts empty, always.
+
+  The daily sweep never resets — `completed` means "clear what is done" and runs several
+  times a day. The wipe control reads **`reset page`** when the page has a template, because
+  `wipe page 25` that leaves twenty lines behind is a lie about what it does.
+
+  🔴 **No schema change.** `pages.template` was already the right shape and `saveTemplate`
+  was already correct; what was wrong was what read it.
+
+- **Manage pages' back arrow goes back to the switcher**, which is where you came from. It
+  swapped to the settings pane — a surface you were never on. The devices pane returns to
+  Settings because that is where *it* came from; this inherited the behaviour without the
+  reason.
+
+- Repaired mojibake in four test files' comments, from an editing script of mine that
+  round-tripped UTF-8 through latin-1. Comments only, no behaviour.
+
 ## [1.1.0] — 2026-08-20
 
 A handful of pages.
