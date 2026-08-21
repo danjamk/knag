@@ -25,7 +25,7 @@ import {
   toggle,
 } from "../../worker/src/blocks.js";
 import { safeNext } from "./nav.js";
-import { goneCount, offerExpiresAt, restoredBody } from "./restore.js";
+import { goneCount, insertLines, offerExpiresAt, restoredBody } from "./restore.js";
 import {
   type Connectivity,
   RECONNECT_PROBE_MS,
@@ -98,12 +98,19 @@ const wipeAllButton = document.querySelector<HTMLButtonElement>("[data-wipe-all]
 const restoreButton = document.querySelector<HTMLButtonElement>("[data-restore]");
 const reorderButton = document.querySelector<HTMLButtonElement>("[data-reorder]");
 const recoveryLine = document.querySelector<HTMLElement>("[data-recovery]");
-const recoveryCountEl = document.querySelector<HTMLElement>("[data-recovery-count]");
+const recoveryCountEl = document.querySelector<HTMLButtonElement>("[data-recovery-count]");
 const envBadge = document.querySelector<HTMLElement>("[data-env]");
 const pageNameButton = document.querySelector<HTMLButtonElement>("[data-page-name]");
 const pageLabel = document.querySelector<HTMLElement>("[data-page-label]");
 const switcherEl = document.querySelector<HTMLElement>("[data-switcher]");
 const switcherList = document.querySelector<HTMLUListElement>("[data-switcher-list]");
+const historyPane = document.querySelector<HTMLElement>("[data-history-pane]");
+const historyOpen = document.querySelector<HTMLButtonElement>("[data-history-open]");
+const historyBack = document.querySelector<HTMLButtonElement>("[data-history-back]");
+const historyList = document.querySelector<HTMLElement>("[data-history-list]");
+const historyPageName = document.querySelector<HTMLElement>("[data-history-page]");
+const historyError = document.querySelector<HTMLElement>("[data-history-error]");
+const historyNote = document.querySelector<HTMLElement>("[data-history-note]");
 const managePane = document.querySelector<HTMLElement>("[data-manage-pane]");
 const manageOpen = document.querySelector<HTMLButtonElement>("[data-manage-open]");
 const manageBack = document.querySelector<HTMLButtonElement>("[data-manage-back]");
@@ -2347,6 +2354,353 @@ newPageForm?.addEventListener("submit", (event) => {
     await openPage(created.id, created.name);
     surface?.focus();
   });
+});
+
+// ── History — a list of wipes (#91) ─────────────────────────────────────────
+
+/**
+ * One row of the pane. A **wipe**, never a line.
+ *
+ * 🔴 That is the whole argument with §12's Out list rather than a data shape: a list of
+ * lines is a document, a list of wipes is chrome about an action — the same kind of thing
+ * as the recovery line, which has implied no second document for a year. One wipe's lines
+ * at a time means no view here ever shows a week of lines, which means search never has
+ * anything to be for.
+ */
+type Wipe = {
+  id: number;
+  time: string;
+  /** What the machine says happened: `wiped 6`, `wiped page · 9 gone`, `reset · 5 gone`. */
+  label: string;
+  /** The lines this wipe took, exactly as they left. */
+  lines: string[];
+};
+
+type HistoryDay = { date: string; label: string; wipes: Wipe[] };
+
+type HistoryRevision = {
+  id: number;
+  local_time: string;
+  event_type: string | null;
+  appeared: string[];
+  disappeared: string[];
+};
+
+type HistoryResponse = {
+  timezone: string;
+  days: Array<{
+    date: string;
+    revisions: HistoryRevision[];
+    cleared: Array<{ revision_id: number; line_text: string }>;
+  }>;
+};
+
+/** `YYYY-MM-DD` in the reporting zone, so day labels compare against the same clock. */
+function localDate(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+    .format(now);
+}
+
+/**
+ * `today`, `yesterday`, or `sun 16` — the machine's voice, and never a year.
+ *
+ * A record seven days deep never needs one, and a date that carries a year reads as an
+ * archive rather than as the last few days.
+ */
+function dayLabel(date: string, timezone: string, now: Date): string {
+  if (date === localDate(now, timezone)) return "today";
+  if (date === localDate(new Date(now.getTime() - 86_400_000), timezone)) return "yesterday";
+
+  // Parsed as UTC noon so the zone shift cannot move it onto the day before.
+  const at = new Date(`${date}T12:00:00Z`);
+  return new Intl.DateTimeFormat("en-GB", { timeZone: timezone, weekday: "short", day: "numeric" })
+    .format(at)
+    .toLowerCase();
+}
+
+/**
+ * Turn the API's revisions into rows.
+ *
+ * 🔴 **A wipe entry's own diff is empty by construction**, and the row after it carries
+ * what it took (#91). The entry snapshots the *pre*-wipe body, which is identical to the
+ * revision before it; the wipe then records the state it left as a second sealed revision
+ * sharing its timestamp. So the lines are on `i + 1`, and pairing on "the row immediately
+ * following" is reading the log the way it is written rather than a guess.
+ *
+ * 🔴 And the two scopes read from different places, which is the design's own *two wipes,
+ * and only one of them is a loss*:
+ *
+ *   - a sweep takes only what you ticked, and `cleared` is exact and authoritative for it;
+ *   - a whole-page wipe takes notes and undone tasks too, and those are deliberately never
+ *     written to `cleared` — that table answers "what did I get done". Its lines come from
+ *     the diff, which is blind to a duplicate line being removed. Accepted: the alternative
+ *     is polluting the done-record to make the pane easier.
+ */
+function toDays(history: HistoryResponse, now: Date): HistoryDay[] {
+  const days: HistoryDay[] = [];
+
+  for (const day of history.days) {
+    const wipes: Wipe[] = [];
+
+    day.revisions.forEach((revision, i) => {
+      if (revision.event_type === null) return;
+
+      const sweep = revision.event_type === "clear_completed";
+      const result = day.revisions[i + 1];
+
+      const lines = sweep
+        ? day.cleared.filter((item) => item.revision_id === revision.id).map((item) => item.line_text)
+        : (result?.disappeared ?? []);
+
+      // 🔴 Read, never inferred. The first version of this looked at the result row's
+      // `appeared` and was wrong on the exact case the feature exists for: a template line
+      // that was already on the page never *appears*, because it never left. The server
+      // records `reset` as its own event because it is the only thing that knows.
+      const reset = revision.event_type === "reset";
+
+      const label = sweep
+        ? `wiped ${lines.length}`
+        : `${reset ? "reset" : "wiped page"} · ${lines.length} gone`;
+
+      wipes.push({ id: revision.id, time: revision.local_time, label, lines });
+    });
+
+    // Newest first inside the day, matching the days themselves. The API returns
+    // revisions ascending, which is what the pairing above needs — so it is reversed
+    // here, after the pairing, and never before it.
+    wipes.reverse();
+    if (wipes.length > 0) {
+      days.push({ date: day.date, label: dayLabel(day.date, history.timezone, now), wipes });
+    }
+  }
+
+  return days;
+}
+
+/** A line the wipe took, drawn as it left — checkbox, strike and bytes intact (ADR-004). */
+function historyLine(raw: string): HTMLLIElement {
+  const li = document.createElement("li");
+  const done = /^\s*[-*+]\s+\[[xX]\]\s/.test(raw);
+  if (done) li.setAttribute("data-done", "");
+
+  const text = document.createElement("span");
+  text.className = "text";
+  // 🔴 `textContent`, and never truncated. A line wraps here as it wraps on the page;
+  // an ellipsis is the app editing the user's words to fit its own frame.
+  text.textContent = raw;
+  li.appendChild(text);
+
+  return li;
+}
+
+function paintHistory(days: HistoryDay[]): void {
+  if (!historyList) return;
+  historyList.textContent = "";
+
+  for (const day of days) {
+    const heading = document.createElement("li");
+    heading.className = "day";
+    heading.textContent = day.label;
+    historyList.appendChild(heading);
+
+    for (const wipe of day.wipes) {
+      const row = document.createElement("li");
+      row.className = "wipe";
+      row.setAttribute("data-wipe", String(wipe.id));
+
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "head";
+      head.setAttribute("data-wipe-head", "");
+
+      const time = document.createElement("span");
+      time.className = "time";
+      time.textContent = wipe.time;
+
+      const what = document.createElement("span");
+      what.className = "what";
+      what.textContent = `· ${wipe.label}`;
+
+      const mark = document.createElement("span");
+      mark.className = "mark";
+      mark.setAttribute("aria-hidden", "true");
+      mark.textContent = "\u203a";
+
+      head.append(time, what, mark);
+      row.appendChild(head);
+      historyList.appendChild(row);
+    }
+  }
+}
+
+/** The rows currently painted, by revision id. Rebuilt on every load, never appended. */
+const openWipes = new Map<number, Wipe>();
+
+historyList?.addEventListener("click", (event) => {
+  const head = (event.target as Element | null)?.closest("[data-wipe-head]");
+  const row = head?.closest<HTMLElement>(".wipe");
+  if (row) toggleWipe(row, openWipes);
+});
+
+function showHistoryError(message: string | null): void {
+  if (!historyError) return;
+  historyError.textContent = message ?? "";
+  historyError.toggleAttribute("hidden", message === null);
+}
+
+/**
+ * Open a row onto the lines that one wipe took.
+ *
+ * Built on demand rather than up front, which is what keeps the promise structural: the
+ * markup for a week of lines never exists at once, so there is nothing for a search field
+ * to be pointed at even if somebody added one.
+ */
+function toggleWipe(row: HTMLElement, wipes: Map<number, Wipe>): void {
+  const open = row.hasAttribute("data-open");
+  row.querySelector(".lines")?.remove();
+  row.querySelector(".put-back")?.remove();
+
+  if (open) {
+    row.removeAttribute("data-open");
+    return;
+  }
+
+  const wipe = wipes.get(Number(row.getAttribute("data-wipe")));
+  if (!wipe) return;
+
+  row.setAttribute("data-open", "");
+
+  const list = document.createElement("ul");
+  list.className = "lines";
+  for (const raw of wipe.lines) list.appendChild(historyLine(raw));
+  row.appendChild(list);
+
+  if (wipe.lines.length === 0) return;
+
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "put-back";
+  back.textContent = `add ${wipe.lines.length} to the page`;
+  back.addEventListener("click", () => {
+    void putLinesBack(wipe, back);
+  });
+  row.appendChild(back);
+}
+
+/**
+ * Put one wipe's lines back on the page.
+ *
+ * 🔴 `insertLines`, not `restoredBody`. A row from history carries lines and no anchors —
+ * the snapshot that makes today's offer positional lives in `localStorage` and is about
+ * the most recent wipe only — so these land at the end. **Content over position**, which
+ * is the ruling `restoredBody` already makes when an anchor has vanished.
+ *
+ * An ordinary versioned write, like the recovery line's. Undo does not get to skip the
+ * concurrency rules that protect the document.
+ */
+async function putLinesBack(wipe: Wipe, control: HTMLButtonElement): Promise<void> {
+  await saveNow();
+  showHistoryError(null);
+
+  const next = insertLines(body, wipe.lines);
+  if (next === body) {
+    // Already there. Say so rather than reporting a write that did nothing.
+    control.disabled = true;
+    control.textContent = "already on the page";
+    return;
+  }
+
+  try {
+    const res = await fetch(docUrl(), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: next, base_version: baseVersion, page: pageId }),
+    });
+
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+
+    if (!res.ok) {
+      // 409 included: the page moved under us. Re-reading here would fight the poll, and
+      // the offer is idempotent, so saying so and leaving it standing is the honest answer.
+      showHistoryError("it changed elsewhere · try again");
+      return;
+    }
+
+    const doc = await load();
+    if (doc) render(doc);
+
+    control.disabled = true;
+    control.textContent = `added ${wipe.lines.length}`;
+  } catch {
+    showHistoryError("not added");
+  }
+}
+
+async function loadHistory(): Promise<void> {
+  if (!historyList) return;
+
+  if (historyPageName) historyPageName.textContent = pageName;
+  showHistoryError(null);
+  historyList.textContent = "";
+
+  try {
+    const res = await fetch(`/api/history?page=${pageId}`, { credentials: "same-origin" });
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+    if (!res.ok) {
+      showHistoryError("could not read the record");
+      return;
+    }
+
+    const history = (await res.json()) as HistoryResponse;
+    const days = toDays(history, new Date());
+    paintHistory(days);
+
+    // 🔴 Rebuilt, never appended to. The listener below is bound once at module level,
+    // so re-opening the pane must not stack a second one — which is the bug this map
+    // being module-scoped exists to avoid.
+    openWipes.clear();
+    for (const day of days) for (const wipe of day.wipes) openWipes.set(wipe.id, wipe);
+
+    // A page never wiped shows the seam note and nothing else. There is nothing to say
+    // about an empty record, and "no history yet" is the app narrating its own emptiness.
+    if (historyNote) historyNote.hidden = false;
+  } catch {
+    showHistoryError("offline · the record is on the server");
+  }
+}
+
+function showHistory(on: boolean): void {
+  settingsPane?.toggleAttribute("hidden", on);
+  historyPane?.toggleAttribute("hidden", !on);
+  if (on) void loadHistory();
+}
+
+function openHistory(): void {
+  setSwitcher(false);
+  setLedge(false);
+  devicesPane?.setAttribute("hidden", "");
+  managePane?.setAttribute("hidden", "");
+  showHistory(true);
+  settingsDialog?.showModal();
+}
+
+historyOpen?.addEventListener("click", openHistory);
+
+// 🔴 The second door, and it costs no new chrome because the words are already there.
+// The count in the recovery line is the same fact the pane is a list of, so tapping it
+// goes to the pane — while `bring back` beside it stays the one-tap undo it has always
+// been. Only the count is the door; the button is not.
+recoveryCountEl?.addEventListener("click", openHistory);
+
+historyBack?.addEventListener("click", () => {
+  showHistory(false);
+  settingsDialog?.close();
 });
 
 /**

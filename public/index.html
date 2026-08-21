@@ -787,6 +787,19 @@
         color: var(--amber);
       }
       [data-recovery] .dot { opacity: 0.6; }
+      /* The count reads as text and behaves as a control. No underline: `bring back` is
+         the offer and owns that, and two underlined words on one line would read as two
+         offers. */
+      button[data-recovery-count] {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        letter-spacing: inherit;
+        cursor: pointer;
+      }
+      button[data-recovery-count]:active { opacity: 0.6; }
       button[data-restore] {
         padding: 0;
         border: 0;
@@ -1439,6 +1452,106 @@
          be the third thing that went wrong. */
       .manage button[data-delete-page] { color: var(--amber); }
 
+      /* A ledge item carrying only a word, because its glyph has not been designed yet.
+         Centred the same way, so it sits on the row rather than beside it. */
+      .ledge-item.ledge-wordy { gap: 0; }
+
+      /* History — the record, and the quietest thing in the product.
+
+         🔴 Two voices, stacked, and no element is ever both. The machine gets the frame:
+         day labels, times, counts, verbs, in mono at --size-machine and --dim. The lines
+         get chalk: the body face at --size-row, with the checkbox and the strike exactly
+         as they left, because ADR-004 says the display never diverges from the bytes and
+         a line that left checked left checked.
+
+         🔴 Nothing is truncated. A line wraps here as it wraps on the page — an ellipsis
+         is the app editing the user's words to fit its own frame, which is the exact
+         failure the two-voice rule exists to prevent. */
+      .history { list-style: none; margin: 0; padding: 0; }
+
+      /* The day, in the machine's voice. `sun 16` or `today`. */
+      .history .day {
+        margin: var(--space-4) 0 var(--space-2);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        color: var(--dim);
+      }
+      .history .day:first-child { margin-top: 0; }
+
+      /* A row is a wipe. The whole head is the control — you open a wipe by tapping what
+         it says, not by finding a chevron. */
+      .history .wipe { border-bottom: var(--hairline-width) solid var(--hairline); }
+      .history .wipe:last-child { border-bottom: 0; }
+
+      .history .head {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        width: 100%;
+        min-height: var(--target);
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--dim);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        text-align: left;
+        cursor: pointer;
+      }
+      /* A state change, on --state-duration. The wipe is still the only animation. */
+      .history .head { transition: color var(--state-duration) ease; }
+      .history .head:active { background: var(--press-tint); }
+      .history .wipe[data-open] .head { color: var(--ink); }
+      .history .head .time { flex: none; }
+      .history .head .what { flex: 1 1 auto; min-width: 0; }
+      /* The chevron turns rather than swapping, so nothing new is drawn. */
+      .history .head .mark {
+        flex: none;
+        transition: transform var(--state-duration) ease;
+      }
+      .history .wipe[data-open] .head .mark { transform: rotate(90deg); }
+
+      .history .lines { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
+
+      /* 🔴 Chalk, in row geometry, and never on the same line as a timestamp: the frame
+         is above, the words are below. */
+      .history .lines li {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        padding: var(--space-1) 0;
+        font-family: var(--font-body);
+        font-size: var(--size-row);
+        letter-spacing: var(--track-chalk);
+        color: var(--ink);
+        overflow-wrap: anywhere;
+      }
+      /* A line that left checked left checked. Dim and struck, which is also what does
+         the filtering: the bright lines are the ones you came for, and that is contrast
+         doing the work a search field would otherwise be asked to do. */
+      .history .lines li[data-done] { color: var(--dim); text-decoration: line-through; }
+      .history .lines .text { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; }
+
+      /* 🔴 Amber marks the offer, not the record. Rows are dim, the open row's head goes
+         to --ink, and only this is amber — a pane of amber rows would make the record look
+         like the machine shouting, and the record is the quietest thing here. */
+      .history .put-back {
+        margin: var(--space-2) 0 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--amber);
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      .history .put-back:active { opacity: 0.6; }
+      .history .put-back[disabled] { color: var(--dim); text-decoration: none; cursor: default; }
+
       /* Amber and dim, like `offline` and `not saved` — never red. There is one colour
          in this interface, and a refusal is the machine talking, so it speaks in the
          machine's voice and the machine's face. */
@@ -1641,7 +1754,12 @@
            action and stays until the next wipe, and the footer's control budget is
            about what sits permanently above the keyboard. -->
       <div data-recovery hidden>
-        <span data-recovery-count></span>
+        <!-- 🔴 A button, not a span, because it is a door now (#91): the count is the
+             same fact the history pane is a list of, so tapping it opens the pane. Styled
+             as plain text and *not* underlined — `bring back` beside it is the offer and
+             owns the underline; this is the quieter of the two and must not compete with
+             it. -->
+        <button type="button" data-recovery-count></button>
         <span class="dot" aria-hidden="true">·</span>
         <button type="button" data-restore>bring back</button>
       </div>
@@ -1716,6 +1834,15 @@
           <button type="button" class="ledge-item" data-settings-open title="settings">
             <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M2.5 4.5 H13.5"/><path d="M2.5 8 H13.5"/><path d="M2.5 11.5 H13.5"/><rect x="9" y="3" width="3" height="3" fill="currentColor" stroke="none"/><rect x="4" y="6.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="7.5" y="10" width="3" height="3" fill="currentColor" stroke="none"/></svg>
             <span>settings</span>
+          </button>
+          <!-- 🔴 Text-only, and that is a gap rather than a decision. The design bundle
+               specifies the pane and says it is reached from the ledge, but ships no icon
+               for it — and icons are not ours to invent (they come from the design
+               session). The whole-page wipe below is already text-only, so this is not
+               without precedent in the same bar. Ask for the glyph and give this the same
+               `.ledge-item` treatment as copy, arrange and settings. -->
+          <button type="button" class="ledge-item ledge-wordy" data-history-open title="history">
+            <span>history</span>
           </button>
           <span class="ledge-sep" aria-hidden="true"></span>
           <button type="button" data-wipe-all>
@@ -1870,6 +1997,36 @@
 
         <div class="pane-actions">
           <button type="button" data-revoke-others>sign out everywhere else</button>
+        </div>
+      </div>
+
+      <!-- 🔴 History — a list of **wipes**, not of lines (#91).
+           That distinction is the whole argument with §12's Out list, and it is load
+           bearing rather than clever: a list of lines is a document, a list of wipes is
+           chrome about an action — the same kind of thing as the recovery line, which has
+           implied no second document for a year. One wipe's lines at a time means no view
+           here ever shows a week of lines, which means search never has anything to be
+           for. The cap is structural, not a policy someone has to keep defending.
+
+           🔴 What this must never grow: a row for anything that is not a wipe, and a
+           field to narrow the rows with. The moment it lists edits it is a revision log,
+           and a revision log of a page you rewrite all day is a corpus; the moment it has
+           a field, the corpus has a search box. Wipes only, and no filter. -->
+      <div data-history-pane hidden>
+        <div class="sheet-head pane-head">
+          <button type="button" class="pane-back" data-history-back title="back" aria-label="back">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M10 3 L5 8 L10 13"/></svg>
+          </button>
+          <span>history &#183; <span data-history-page></span></span>
+        </div>
+
+        <div class="pane-body">
+          <ul data-history-list class="history"></ul>
+          <p class="pane-error" data-history-error hidden></p>
+          <!-- The seam, stated rather than implied: this is where navigating stops and
+               asking begins. A page never wiped shows this and nothing else, because
+               there is nothing to say about an empty record. -->
+          <p class="note" data-history-note>seven days here &#183; ask your agent for older</p>
         </div>
       </div>
 

@@ -505,6 +505,18 @@ export async function wipe(
   const version = current.version;
   const pageId = input.pageId;
 
+  // 🔴 A reset is its own event, not a `wipe_all` the reader has to infer (#91).
+  //
+  // The obvious inference does not work: a surface cannot tell a reset from an emptying by
+  // looking at the diff, because a template line that was **already on the page** is not
+  // something the wipe *added* — it never left — so `appeared` is empty on exactly the
+  // grocery case the feature exists for. The server is the only thing that knows a
+  // template was laid back down, so it says so here.
+  //
+  // `event_type` is free text with no CHECK, so a third value needs no migration.
+  const eventType =
+    input.scope === "all" && input.body !== "" ? "reset" : EVENT_TYPE[input.scope];
+
   // Repeated on every statement below, and it reads *this* page's version rather than
   // the single row `documents` used to guarantee.
   const guard = "(SELECT version FROM pages WHERE id = ?) = ?";
@@ -551,7 +563,7 @@ export async function wipe(
       version,
       timestamp,
       input.source,
-      EVENT_TYPE[input.scope],
+      eventType,
       pageId,
       version,
     ),
