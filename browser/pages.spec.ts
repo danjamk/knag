@@ -28,6 +28,22 @@ async function newPage(knag: import("./fixtures.js").Knag, name: string) {
   await knag.page.locator('[data-new-page] input[name="name"]').fill(name);
   await knag.page.locator("[data-new-page-submit]").click();
   await expect(knag.page.locator("[data-page-label]")).toHaveText(name);
+
+  // 🔴 **The label is not the end of the operation, and this wait is why (#177).** The
+  // submit handler closes the dialog, awaits `openPage` — which is what sets the label —
+  // and only *then* calls `surface.focus()`. Returning on the label leaves that focus in
+  // flight, and when it lands it hits the `focusin` rule in `app.ts` whose target is the
+  // editor, outside the footer: `setSwitcher(false)`.
+  //
+  // So a caller that opens the switcher immediately after this gets it opened and then
+  // silently closed a beat later, and `[data-manage-open]` stays in the DOM and never
+  // becomes visible again. That is a 30s timeout pointing at the click rather than at the
+  // race. Six tests in this file do exactly that sequence; the one that failed in CI was
+  // whichever one the machine was slowest on.
+  //
+  // Waiting for focus makes the helper's contract "the page is made **and the app has
+  // settled**" rather than "the label changed".
+  await expect(knag.surface()).toBeFocused();
 }
 
 test.describe("the switcher", () => {
@@ -254,6 +270,10 @@ test.describe("managing", () => {
     // by toggling the pane directly — `manage pages` only exists in the switcher.
     await knag.page.locator("[data-manage-back]").click();
     await knag.page.keyboard.press("Escape");
+    // Same assumption as `newPage`'s, by a different route (#177): the dialog has to be
+    // *gone* before the switcher opens, or the focus the close returns lands afterwards
+    // and shuts it again. Not observed failing — hardened because it is the same shape.
+    await expect(knag.page.locator("[data-settings]")).not.toBeVisible();
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
 
