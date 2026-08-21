@@ -28,6 +28,20 @@ summarises the phase rather than pretending it was written as it happened.
 
   Self-contained, opens in a browser, no build step. Docs only — nothing shipped changes.
 
+### Added
+
+- **`docs/design/history-response.md`** — the design bundle for #91 came back and is
+  recorded as the ruling. Retrieval belongs in the app and its unit is days; the
+  retrospective stays with the agent, and so does search. The surface is a `history` pane
+  whose **rows are wipes, not lines** — which is how it argues with the Out list rather than
+  around it: *a list of lines is a document; a list of wipes is chrome about actions.* One
+  wipe's lines at a time means no view ever shows a week of lines, so search never has
+  anything to be for, and the cap is structural rather than a policy.
+
+  🔴 It also answered the `wiped 25` question the brief raised: keep `wiped_count` in the
+  log, display **`gone`** — the multiset difference — so a reset reads `reset · 5 gone`
+  rather than `wiped 25`.
+
 ### Changed
 
 - **`carbon` is retired. The word is `history`** (#91). The settings sheet's build line
