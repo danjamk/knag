@@ -192,11 +192,19 @@ above exists rather than staying hypothetical.
 `ALTER TABLE ... DROP CONSTRAINT`, so the table could be removed but never reshaped —
 which is what forced expand/contract rather than an additive column.
 
-| | | |
-|---|---|---|
-| **1.1.0** (#152) | migration 0004 | `pages` created and backfilled; `mirrorToDocuments` keeps `documents` in step |
-| **this one** (#155) | none | the mirror is deleted. `documents` still stands and goes stale |
-| **next** (#155) | drop `documents` | the deployed Worker has not touched it for a release |
+✅ **Completed 2026-08-21.** All three deploys ran, in order, against production.
+
+| | Release | Migration | What shipped |
+|---|---|---|---|
+| **expand** | 1.1.0 (#152) | 0004 | `pages` created and backfilled; `mirrorToDocuments` keeps `documents` in step |
+| **stop writing** | 1.1.2 (#168) | *none* | the mirror deleted; `documents` still standing and going stale |
+| **contract** | 1.1.3 (#155) | 0006 | `DROP TABLE documents` |
+
+🔴 **The middle row is the one that would have been skipped**, and it is the only one
+with nothing in its migration column. It shipped as a `refactor:` — which the release
+doctrine reads as "no release" — so the release had to be cut deliberately against that
+rule, because skipping it means skipping the prod deploy, which is the thing the row
+exists to do.
 
 Had the mirror and the drop shipped together, the failure would not have been a clean
 one. `mirrorToDocuments` ran **after** the CAS on `pages` had already committed, so during

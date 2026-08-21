@@ -13,6 +13,31 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Removed
+
+- **`documents` is dropped** (#155, migration 0006). It has not been read since 1.1.0 and
+  not written since 1.1.2. `pages` has been the authority throughout.
+
+  🔴 **This completes the first expand/contract this project has run**, and the schedule
+  it actually took is the thing worth keeping: expand (1.1.0, migration 0004) → **stop
+  writing** (1.1.2, no migration at all) → contract (this one). The middle release is the
+  one that looks skippable and is not — `make migrate` runs *before* `make deploy`, so the
+  Worker live at drop time is the previous one, and until 1.1.2 that Worker still mirrored
+  to this table on every save.
+
+  `revisions` and `cleared_items` are untouched. Nothing ever referenced `documents`, so
+  the drop cascades nowhere — asserted against the foreign key rather than assumed, because
+  this runs against the only copy of the document.
+
+### Changed
+
+- The migration suite's backfill assertion **changed anchor rather than being deleted**.
+  It compared page 1 against the `documents` row it was copied from; that row is gone, and
+  the lazy contraction would have removed the only check that the backfill copied rather
+  than invented. Migration 0002 seeded revision 1 from the same row, and revisions are
+  append-only and sealed — so the baseline revision is a surviving witness, and page 1
+  still has to match it byte for byte.
+
 ## [1.1.2] — 2026-08-21
 
 The release whose only job is to be deployed.

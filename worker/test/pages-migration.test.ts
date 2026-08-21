@@ -34,19 +34,29 @@ async function page(id: number): Promise<PageRow | null> {
 
 describe("the pages table", () => {
   it("🔴 carries today's document over as page 1, byte for byte", async () => {
-    // The seed in 0001 is an empty body at version 1, and 0002 logs it as a baseline.
-    // What matters is not the value but that `pages` holds the *same* one — a backfill
-    // that inserted a fresh empty row would look identical on a fresh database and lose
-    // the document on a real one.
-    const before = await env.DB.prepare("SELECT body, version, updated_at, source FROM documents WHERE id = 1")
-      .first<{ body: string; version: number; updated_at: string; source: string }>();
+    // 🔴 **The anchor moved when #155 dropped `documents`, and the assertion survived.**
+    // This used to compare page 1 against the row it was backfilled *from*. That row is
+    // gone, and the lazy contraction would have been to delete this test with it — losing
+    // the only check that the backfill copied rather than invented.
+    //
+    // Migration 0002 seeded revision 1 from the same `documents` row that 0004 later
+    // copied into `pages`, and revisions are append-only and sealed. So the baseline
+    // revision is a surviving witness to what the document held at migration time, and
+    // page 1 still has to match it — body, version, timestamp and source.
+    //
+    // What this has always been about: a backfill that inserted a fresh empty row looks
+    // identical on a fresh database and loses the document on a real one.
+    const baseline = await env.DB.prepare(
+      "SELECT body, version, created_at, source FROM revisions WHERE id = 1",
+    ).first<{ body: string; version: number; created_at: string; source: string }>();
     const after = await page(PAGE_1);
 
+    expect(baseline).not.toBeNull();
     expect(after).not.toBeNull();
-    expect(after?.body).toBe(before?.body);
-    expect(after?.version).toBe(before?.version);
-    expect(after?.updated_at).toBe(before?.updated_at);
-    expect(after?.source).toBe(before?.source);
+    expect(after?.body).toBe(baseline?.body);
+    expect(after?.version).toBe(baseline?.version);
+    expect(after?.updated_at).toBe(baseline?.created_at);
+    expect(after?.source).toBe(baseline?.source);
   });
 
   it("names it `today`, which is what tier 1 has always displayed", async () => {
@@ -125,16 +135,45 @@ describe("cleared_items", () => {
   });
 });
 
-describe("the contract half has not run", () => {
-  it("🔴 leaves `documents` standing, one release after the dual write stopped", async () => {
-    // 🔴 **Expand/contract is three deploys, not two.** The table can only be dropped by
-    // a migration, and `make migrate` runs before `make deploy` — so the Worker live at
-    // drop time is the *previous* one. Removing the dual write and dropping the table in
-    // one release puts a writer and a missing table in the same window (ADR-002 §3).
+describe("the contract half has run (#155)", () => {
+  it("🔴 `documents` is gone", async () => {
+    // Three deploys, and this is the third: expand (0004, in 1.1.0) → stop writing
+    // (1.1.2, carrying no migration at all) → drop (0006, here). The middle release is
+    // what made this one uneventful. `make migrate` runs before `make deploy`, so the
+    // Worker live at this moment is the *previous* one — and in 1.1.1 that Worker still
+    // mirrored to this table on every save (ADR-002 §3).
     //
-    // So this release stops writing and leaves the table; the next one drops it. When
-    // that lands, this test inverts.
-    const row = await env.DB.prepare("SELECT id FROM documents WHERE id = 1").first<{ id: number }>();
-    expect(row?.id).toBe(1);
+    // Asked of `sqlite_master` rather than by SELECTing and catching: a thrown query
+    // proves the read failed, not that the table is absent.
+    const row = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'documents'",
+    ).first<{ name: string }>();
+
+    expect(row).toBeNull();
+  });
+
+  it("🔴 takes nothing with it — `revisions` and `cleared_items` are intact", async () => {
+    // The task on #155 that is easiest to skip because it sounds obvious. Nothing ever
+    // referenced `documents` — `cleared_items.revision_id` points at `revisions(id)` — so
+    // the drop should cascade nowhere. "Should" is the word that precedes a lost history,
+    // and this runs against the only copy of the document.
+    const baseline = await env.DB.prepare("SELECT body FROM revisions WHERE id = 1").first<{
+      body: string;
+    }>();
+    expect(baseline).not.toBeNull();
+
+    // Stronger than counting rows: the foreign key still resolves, which a `revisions`
+    // that had been dropped and recreated by the migration would not do.
+    await env.DB.prepare(
+      "INSERT INTO cleared_items (revision_id, line_text, cleared_at) VALUES (1, ?, ?)",
+    )
+      .bind("survived the drop", "2026-08-21T00:00:00Z")
+      .run();
+
+    const cleared = await env.DB.prepare(
+      "SELECT line_text FROM cleared_items WHERE revision_id = 1",
+    ).first<{ line_text: string }>();
+
+    expect(cleared?.line_text).toBe("survived the drop");
   });
 });
