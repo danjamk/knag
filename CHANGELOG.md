@@ -13,6 +13,22 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-08-20
+
+A handful of pages.
+
+**1.1 is pages, and only pages.** The roadmap paired it with the history UX (#91); that
+issue's own body still opens with *"Design TBD. Logged so it is not forgotten; nothing
+here is decided."* Two of its three tasks are decisions rather than work, and one of them
+argues with spec §12 directly. Holding a finished, dogfooded feature for an undesigned one
+is the failure §12 exists to name, so #91 moves to 1.2 — it keeps the thing it was put in
+1.1 for, which was being designed **once, after pages exist**.
+
+🔴 **This is the expand half only.** `documents` is still there and still dual-written, so
+a Worker rollback still finds a current document. Dropping it is #155, one release from
+now — contracting in the same release that first gives prod pages would take the rollback
+path away at exactly the moment it is most likely to be needed.
+
 ### Added
 
 - 🔴 **A list refresh no longer throws away a page name you are typing.** `paintManage`
@@ -1384,7 +1400,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/danjamk/knag/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/danjamk/knag/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/danjamk/knag/compare/v0.16.0...v1.0.0
 [0.16.0]: https://github.com/danjamk/knag/compare/v0.15.0...v0.16.0

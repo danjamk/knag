@@ -120,8 +120,18 @@ Set 2026-08-19. The version numbers are meant to say something:
 | | What it is | Phases |
 |---|---|---|
 | **1.0** | **One page, finished.** Everything the single-document product should be | 0–5 |
-| **1.1** | A handful of pages | 6–7 |
-| **1.2** | Multi-user | 8 |
+| **1.1** | A handful of pages | 6 |
+| **1.2** | Multi-user, and the history UX | 7–8 |
+
+🔴 **Amended 2026-08-20: 1.1 is pages, and only pages.** #91 was in 1.1 for one reason —
+so history would be designed *once, after pages exist* — and it keeps that entirely by
+being designed next rather than shipped now. What it does not have is a design: its own
+body opens with *"Design TBD. Logged so it is not forgotten; nothing here is decided,"*
+two of its three tasks are decisions, and one of them argues with §12's "no history
+browser" head-on.
+
+Holding a finished, verified, dogfooded feature for an undesigned one is the failure §12
+exists to name. Pages shipped; history gets a design bundle.
 
 **1.0 is "as far as we can go on one document"**, not "feature complete" and not a
 promise about quality — it is the point at which adding anything more means adding a
@@ -318,7 +328,7 @@ so the boundary existed whether or not it was named.
 | #152 | the page dimension behind the API | ✅ |
 | #153 | MCP takes an optional page, by name | ✅ |
 | #154 | `/api/pages`, the switcher, manage-pages, templates | ✅ |
-| #155 | **contract** — drop `documents` | gated on #4 and on #152 surviving a release |
+| #155 | **contract** — drop `documents` | gated on #152 surviving a release |
 
 Two things in #123's own task list turned out to be wrong and are corrected in the
 children: MCP cannot default to "the current page" (the Worker has no current page — it
@@ -342,12 +352,23 @@ implies a namespace, then a home screen because a namespace needs a root; all
 three are on [§12](spec.md)'s Out list, and the cap is the one decision that keeps
 them unnecessary rather than merely forbidden.
 
-### Phase 7 · Recovery and history — #91 · **ships 1.1**
+### Phase 7 · Recovery and history — #91 · **ships 1.2**
 
 Designed per-page, **once** — which is why it sits here rather than in 1.0. See
 the release shape above: the bring-back and the agent-readable history already
 work, so what this revisits is the screen, and a screen designed for one page and
 then redesigned for several is the waste finding 1 exists to avoid.
+
+🔴 **Moved out of 1.1 on 2026-08-20, and the reason it was here is untouched by that.**
+The condition was "after pages exist", and pages now do — so the next thing this needs is
+a **design bundle**, not a branch. It is also the one phase whose likeliest shape argues
+with the Out list, which is a conversation to have deliberately rather than under release
+pressure.
+
+🔴 **Also reshaped by #149.** §7 wrote history as a full screen from the ledge. Devices
+became a pane of the settings dialog and §3d was amended to say list-shaped surfaces
+inherit the pane, so this is a pane too — worth carrying into the design brief rather than
+rediscovering.
 
 **And it is a screen, not a dialog** ([§7](design/holistic-response.md)) — a place
 you go and come back from, reached from the ledge, opening on *yesterday* rather
