@@ -15,6 +15,21 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- **An optional `page` on all four MCP tools** (#153, phase 6b of #123), resolved **by
+  name**, case-insensitively. Omit it for the default page, which is what every call meant
+  before pages existed — optional because a required parameter would break every deployed
+  Claude Code config the moment it shipped.
+
+  🔴 **An unrecognised name is an error listing the pages that exist, never a fall back to
+  the default.** Whole-document write is the only write there is, so an agent told to write
+  to a page that was since renamed would otherwise byte-preserve its lines straight into
+  the wrong document. The error is also the only way to learn the names: knag has no index
+  and no tool that lists pages, on purpose.
+
+  `knag_read` now echoes back the page name it answered with, so a write can name the page
+  it read and the agent contract's "report the diff" stays answerable once there are
+  several.
+
 - **A page dimension behind the API** — the expand half of pages (#152, phase 6a of
   #123). Nothing on screen changes: one page becomes "page 1 of n" and every request
   that names no page behaves exactly as it did.

@@ -5,7 +5,15 @@ import { type Principal, unauthorized } from "./auth.js";
 import type { Env } from "./env.js";
 import { isCompleted, parse, serialize } from "./blocks.js";
 import { loadHistory, reportingZone, resolveRange } from "./history.js";
-import { DEFAULT_PAGE_ID, type WipeScope, readDefaultPage, wipe, writePage } from "./store.js";
+import {
+  type PageRow,
+  type WipeScope,
+  findPageByName,
+  listPages,
+  readDefaultPage,
+  wipe,
+  writePage,
+} from "./store.js";
 
 /**
  * The MCP server — the agent half of the product (spec §10, §14.6).
@@ -37,9 +45,11 @@ import { DEFAULT_PAGE_ID, type WipeScope, readDefaultPage, wipe, writePage } fro
  * trimming a description (mcp.md §5).
  */
 const INSTRUCTIONS = [
-  "knag is one plain-text page. You can read all of it and write all of it.",
+  "knag is a small handful of plain-text pages. You can read all of one and write all of",
+  "one. Every tool takes an optional `page` name; omit it and you get the default page,",
+  "which is what every call meant before there were several.",
   "",
-  "Four rules cut across every tool:",
+  "Five rules cut across every tool:",
   "",
   "1. WHOLE-PAGE WRITE IS THE ONLY WRITE. Byte-preserve every line you are not",
   "   explicitly changing. Indentation, blank lines, trailing whitespace and line",
@@ -54,8 +64,17 @@ const INSTRUCTIONS = [
   "   the current version and the current body when they conflict. Use them. Retrying",
   "   with the stale body is the one action here that destroys work.",
   "",
-  "4. REPORT THE DIFF after every write — what you added, removed and changed. The",
-  "   point is that the user never has to open knag to find out what you did.",
+  "4. REPORT THE DIFF after every write — what you added, removed and changed, AND WHICH",
+  "   PAGE. The point is that the user never has to open knag to find out what you did,",
+  "   and once there are several pages `the page` stops being an answer.",
+  "",
+  "5. NAME THE PAGE YOU READ, AND WRITE TO THAT ONE. knag_read returns the page name it",
+  "   answered with; pass it back on the write. An unrecognised name is an error listing",
+  "   what exists — it never falls back to the default, because a whole-page write to the",
+  "   wrong page destroys a document while preserving every byte of it.",
+  "",
+  "There is no index and no way to list pages here — knag has none on purpose. If you do",
+  "not know a page's name, get it wrong once: the error names every page that exists.",
   "",
   "The page is plain text and renders as plain text. There is no markdown rendering:",
   "`**bold**` stays four asterisks on screen. A line matching `- [ ] text` is a",
@@ -267,21 +286,60 @@ const BASE_VERSION = z
   );
 
 /**
- * The page every MCP tool reads and writes, until #153 gives them a parameter.
+ * The `page` every tool takes, and it is **optional** (#153).
  *
- * 🔴 **The default page, and deliberately not "the current page."** #123's task list
- * said the latter and it is not implementable: the Worker has no current page. "Current"
- * is a per-device idea living in the browser's localStorage, and a bearer token carries
- * no device — so an agent's write would land on whatever page a phone happened to be
- * showing. Whole-document write is the only write here, which makes that a
+ * 🔴 Optional is not a nicety. §17 is explicit that a parameter added later is
+ * backward-compatible only while it is optional — a required one breaks every existing
+ * Claude Code config the moment this deploys, and those configs are on machines nobody
+ * is going to edit.
+ */
+const PAGE = z
+  .string()
+  .min(1)
+  .describe(
+    "Which page, by name — case-insensitive. Omit it for the default page, which is what every call meant before pages existed. An unrecognised name is an error listing the pages that do exist; it never falls back to the default.",
+  );
+
+/**
+ * Resolve the page a tool call is about, or explain why it could not be.
+ *
+ * 🔴 **Absent means the default page, and deliberately not "the current page."**
+ * #123's task list said the latter and it is not implementable: the Worker has no current
+ * page. "Current" is a per-device idea living in the browser's localStorage, and a bearer
+ * token carries no device — so an agent's write would land on whatever page a phone
+ * happened to be showing. Whole-document write is the only write here, which makes that a
  * non-deterministic overwrite of a page nobody named.
  *
- * Non-null by construction: `readPage` answers for the default page even when the row is
- * missing, which is spec §14.5's "empty is a valid state" and the reason a fresh database
- * is readable before anything has been written to it.
+ * 🔴 **An unrecognised name is an error, never the default.** The failure it prevents
+ * is the same one, arriving by another route: an agent told to write to `shopping` after
+ * someone renamed that page would silently replace today's page instead. The error lists
+ * what exists, because a name that is wrong is usually a name that is nearly right.
+ *
+ * The default page is non-null by construction: `readPage` answers for it even when the
+ * row is missing, which is spec §14.5's "empty is a valid state" and the reason a fresh
+ * database is readable before anything has been written to it.
  */
-async function agentPage(env: Env) {
-  return await readDefaultPage(env);
+type PageResult = { ok: true; page: PageRow } | { ok: false; result: ReturnType<typeof failed> };
+
+async function agentPage(env: Env, name?: string): Promise<PageResult> {
+  if (name === undefined) return { ok: true, page: await readDefaultPage(env) };
+
+  const page = await findPageByName(env, name);
+  if (page) return { ok: true, page };
+
+  const names = (await listPages(env)).map((p) => p.name);
+  return {
+    ok: false,
+    result: failed(
+      [
+        `no page named "${name}".`,
+        "",
+        `The pages that exist are: ${names.map((n) => `"${n}"`).join(", ")}.`,
+        "",
+        "Nothing was read or written. Call again with one of those, or omit `page` for the default one.",
+      ].join("\n"),
+    ),
+  };
 }
 
 function registerRead(server: McpServer, env: Env): void {
@@ -296,11 +354,15 @@ function registerRead(server: McpServer, env: Env): void {
         "",
         "Checkbox lines look like `- [ ] task` (open) and `- [x] task` (done), at any indentation. Fenced code blocks use ``` and are ordinary lines in the page.",
       ].join("\n"),
-      inputSchema: {},
+      inputSchema: { page: PAGE.optional() },
       outputSchema: {
         body: z.string().describe("The whole page, verbatim."),
         version: z.number().describe("Pass this as base_version on your next write."),
         updated_at: z.string().describe("ISO 8601 UTC of the last change."),
+        // 🔴 Echoed back so a write can name the page it read (#153). Without it an
+        // agent that omitted `page` has no way to say which page its diff describes, and
+        // the contract's "report the diff" stops being answerable once there are several.
+        page: z.string().describe("The name of the page this is."),
       },
       annotations: {
         readOnlyHint: true,
@@ -309,16 +371,14 @@ function registerRead(server: McpServer, env: Env): void {
         openWorldHint: false,
       },
     },
-    async () => {
-      // 🔴 The default page, explicitly, and #153 is where a `page` parameter arrives.
-      // Not "the current page": the Worker has no current page — that is a per-device
-      // idea living in the browser's localStorage, and a bearer token carries no device.
-      // Defaulting to whatever a phone happened to be showing would land a whole-document
-      // write somewhere the agent never named.
-      const doc = await agentPage(env);
+    async ({ page }) => {
+      const found = await agentPage(env, page);
+      if (!found.ok) return found.result;
+      const doc = found.page;
+
       return ok(
-        { body: doc.body, version: doc.version, updated_at: doc.updated_at },
-        `Page at version ${doc.version}, updated ${doc.updated_at}.\n\n${doc.body}`,
+        { body: doc.body, version: doc.version, updated_at: doc.updated_at, page: doc.name },
+        `Page "${doc.name}" at version ${doc.version}, updated ${doc.updated_at}.\n\n${doc.body}`,
       );
     },
   );
@@ -343,11 +403,13 @@ function registerWrite(server: McpServer, env: Env): void {
           .string()
           .describe("The complete new page. An empty string is valid and wipes it entirely."),
         base_version: BASE_VERSION,
+        page: PAGE.optional(),
       },
       outputSchema: {
         version: z.number().describe("The version after the write."),
         updated_at: z.string(),
         changed: z.boolean().describe("False when the body was already identical."),
+        page: z.string().describe("The name of the page that was written."),
       },
       annotations: {
         readOnlyHint: false,
@@ -363,24 +425,32 @@ function registerWrite(server: McpServer, env: Env): void {
         openWorldHint: false,
       },
     },
-    async ({ body, base_version }) => {
+    async ({ body, base_version, page }) => {
+      // 🔴 Resolved before anything is written, and a miss writes nothing at all. The
+      // agent contract's "byte-preserve every line not explicitly targeted" is a promise
+      // about a *named* page; a write that lands on the wrong one keeps every byte and
+      // destroys the document anyway.
+      const found = await agentPage(env, page);
+      if (!found.ok) return found.result;
+      const target = found.page;
+
       const result = await writePage(env, {
-        pageId: DEFAULT_PAGE_ID,
+        pageId: target.id,
         body,
         baseVersion: base_version,
         source: "agent",
       });
 
       if (result.status === "conflict") {
-        return failed(conflictText("this write", base_version, result.current));
+        return failed(conflictText(`this write to "${target.name}"`, base_version, result.current));
       }
 
       const changed = result.status === "applied";
       return ok(
-        { version: result.version, updated_at: result.updated_at, changed },
+        { version: result.version, updated_at: result.updated_at, changed, page: target.name },
         changed
-          ? `wrote the page at version ${result.version}`
-          : `no change — the page was already identical, still at version ${result.version}`,
+          ? `wrote "${target.name}" at version ${result.version}`
+          : `no change — "${target.name}" was already identical, still at version ${result.version}`,
       );
     },
   );
@@ -415,6 +485,7 @@ function registerWipe(server: McpServer, env: Env): void {
           .describe(
             "`completed` (default) removes checked items only. `all` empties the page, including unfinished lines.",
           ),
+        page: PAGE.optional(),
       },
       outputSchema: {
         version: z.number(),
@@ -422,6 +493,7 @@ function registerWipe(server: McpServer, env: Env): void {
         cleared_count: z
           .number()
           .describe("How many of them were checked, and so recorded as finished."),
+        page: z.string().describe("The name of the page that was wiped."),
       },
       annotations: {
         readOnlyHint: false,
@@ -431,9 +503,12 @@ function registerWipe(server: McpServer, env: Env): void {
         openWorldHint: false,
       },
     },
-    async ({ base_version, scope }) => {
+    async ({ base_version, scope, page }) => {
       const wipeScope: WipeScope = scope === "all" ? "all" : "completed";
-      const current = await agentPage(env);
+      const found = await agentPage(env, page);
+      if (!found.ok) return found.result;
+      const current = found.page;
+
       const blocks = parse(current.body);
       const completed = blocks.filter(isCompleted);
 
@@ -446,15 +521,15 @@ function registerWipe(server: McpServer, env: Env): void {
       // asked for those lines to be gone, and they are.
       if (wipedCount === 0) {
         return ok(
-          { version: current.version, wiped_count: 0, cleared_count: 0 },
+          { version: current.version, wiped_count: 0, cleared_count: 0, page: current.name },
           wipeScope === "all"
-            ? `nothing to wipe — the page is already empty, still at version ${current.version}`
-            : `nothing to wipe — no checked items on the page, still at version ${current.version}`,
+            ? `nothing to wipe — "${current.name}" is already empty, still at version ${current.version}`
+            : `nothing to wipe — no checked items on "${current.name}", still at version ${current.version}`,
         );
       }
 
       const result = await wipe(env, {
-        pageId: DEFAULT_PAGE_ID,
+        pageId: current.id,
         baseVersion: base_version,
         body: wipeScope === "all" ? "" : serialize(blocks.filter((block) => !isCompleted(block))),
         // The finished lines only, under both scopes — see the note in store.ts. The
@@ -466,7 +541,7 @@ function registerWipe(server: McpServer, env: Env): void {
       });
 
       if (result.status === "conflict") {
-        return failed(conflictText("this wipe", base_version, result.current));
+        return failed(conflictText(`this wipe of "${current.name}"`, base_version, result.current));
       }
 
       // Deadpan, and honest about the two numbers when they differ: on a wipe-all the
@@ -474,14 +549,15 @@ function registerWipe(server: McpServer, env: Env): void {
       // reporting the larger number as an achievement would be lying to the user.
       const summary =
         wipeScope === "all"
-          ? `wiped the page — ${result.wiped_count} lines, ${result.cleared_count} of them done`
-          : `wiped ${result.wiped_count}`;
+          ? `wiped "${current.name}" — ${result.wiped_count} lines, ${result.cleared_count} of them done`
+          : `wiped ${result.wiped_count} on "${current.name}"`;
 
       return ok(
         {
           version: result.version,
           wiped_count: result.wiped_count,
           cleared_count: result.cleared_count,
+          page: current.name,
         },
         `${summary} · page now at version ${result.version}`,
       );
@@ -514,11 +590,13 @@ function registerHistory(server: McpServer, env: Env): void {
           .string()
           .optional()
           .describe(`End of the range, inclusive of a whole bare date. ${HISTORY_BOUNDARY}`),
+        page: PAGE.optional(),
       },
       outputSchema: {
         timezone: z.string(),
         since: z.string(),
         until: z.string(),
+        page: z.string().describe("The name of the page this history is for."),
         truncated: z.boolean().describe("True when older entries in range were dropped."),
         days: z.array(
           z.object({
@@ -555,7 +633,10 @@ function registerHistory(server: McpServer, env: Env): void {
         openWorldHint: false,
       },
     },
-    async ({ since, until }) => {
+    async ({ since, until, page }) => {
+      const found = await agentPage(env, page);
+      if (!found.ok) return found.result;
+
       const timeZone = reportingZone(env.KNAG_TZ);
       const range = resolveRange(
         { since: since ?? null, until: until ?? null },
@@ -569,12 +650,15 @@ function registerHistory(server: McpServer, env: Env): void {
         return failed(`invalid ${range.field}: ${range.message}`);
       }
 
-      const history = await loadHistory(env, { ...range, pageId: DEFAULT_PAGE_ID }, timeZone);
+      const history = await loadHistory(env, { ...range, pageId: found.page.id }, timeZone);
 
       // 🔴 The empty path returns structured content too. A day with nothing in it is a
       // real answer, and omitting `structuredContent` here would turn "quiet week" into
       // a protocol error.
-      return ok(history as unknown as Record<string, unknown>, summarize(history));
+      return ok(
+        { ...(history as unknown as Record<string, unknown>), page: found.page.name },
+        `"${found.page.name}" · ${summarize(history)}`,
+      );
     },
   );
 }

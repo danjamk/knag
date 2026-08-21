@@ -318,6 +318,10 @@ describe("knag_read", () => {
       body: "  indented\n\nlast",
       version: 2,
       updated_at: expect.any(String),
+      // 🔴 Echoed back so a write can name the page it read (#153). The agent contract
+      // asks for a diff after every write, and "the page" stops being an answer once
+      // there are several.
+      page: "today",
     });
   });
 
@@ -508,7 +512,12 @@ describe("knag_history", () => {
       { headers: { Authorization: `Bearer ${BEARER}` } },
     );
 
-    expect(viaTool.structuredContent).toEqual(await viaHttp.json());
+    // `page` is the tool's own addition — an agent needs to know which page it is
+    // looking at, and the browser already knows. Everything `loadHistory` produced has
+    // to match, which is what this test is actually for.
+    const { page, ...shared } = viaTool.structuredContent as Record<string, unknown>;
+    expect(shared).toEqual(await viaHttp.json());
+    expect(page).toBe("today");
   });
 
   it("🔴 returns structured content for an empty range", async () => {
