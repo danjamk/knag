@@ -21,7 +21,13 @@ import {
   deleteSessionByToken,
   listLiveSessions,
   DEFAULT_PAGE_ID,
+  createPage,
+  deletePage,
+  listPages,
   oldestRevisionAt,
+  pageTemplate,
+  renamePage,
+  saveTemplate,
   type PageRow,
   readPage,
   wipe,
@@ -143,6 +149,40 @@ const router = {
       return Response.json(
         { error: "Method not allowed" },
         { status: 405, headers: { Allow: "GET, PUT" } },
+      );
+    }
+
+    // The second path-parameter route, and it follows `/api/sessions` exactly: an exact
+    // match for the collection, a prefix for the member. `/api/*` is already in
+    // `run_worker_first`, so no wrangler change is needed — a route outside that wildcard
+    // would 404 in a way that looks like a bug in this file.
+    if (url.pathname === "/api/pages" || url.pathname.startsWith("/api/pages/")) {
+      const principal = await authenticate(request, env);
+      if (!principal) return unauthorized();
+
+      const tail = url.pathname.slice("/api/pages".length);
+
+      if (tail === "" || tail === "/") {
+        if (request.method === "GET") return Response.json({ pages: await listPages(env) });
+        if (request.method === "POST") return newPage(request, env);
+
+        return Response.json(
+          { error: "Method not allowed" },
+          { status: 405, headers: { Allow: "GET, POST" } },
+        );
+      }
+
+      const id = Number(tail.slice(1));
+      if (!Number.isInteger(id) || id < 1) {
+        return Response.json({ error: "page must be a positive integer" }, { status: 400 });
+      }
+
+      if (request.method === "PATCH") return editPage(request, env, id);
+      if (request.method === "DELETE") return retirePage(env, id);
+
+      return Response.json(
+        { error: "Method not allowed" },
+        { status: 405, headers: { Allow: "PATCH, DELETE" } },
       );
     }
 
@@ -556,6 +596,140 @@ function ifNoneMatchSatisfied(header: string | null, version: number): boolean {
     const tag = raw.trim().replace(/^W\//, "");
     return tag === "*" || tag === etagFor(version);
   });
+}
+
+/**
+ * The ceiling, and it is a **tripwire rather than a limit** (spec §12, design §7).
+ *
+ * 🔴 Enforced here rather than in the schema, because it is a claim about what the
+ * switcher can show without becoming a list you scroll — not an integrity rule. An import
+ * or a future agent has no business hitting it.
+ *
+ * The day nine is not enough is a question about the product, not a number to raise.
+ * Search arrives the moment the list stops fitting; folders arrive because search implies
+ * a namespace; a home screen arrives because a namespace needs a root. All three are on
+ * the Out list, and this is what keeps them unnecessary rather than merely forbidden.
+ */
+const MAX_PAGES = 9;
+
+/** A page name: something a person types and an agent can be told (#153). */
+function validName(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const name = raw.trim();
+  // 🔴 One line, and short enough to sit in tier 1 beside the machine slot. Newlines
+  // are refused rather than stripped: the name reaches an MCP error message and the
+  // switcher, and normalising input silently is the habit principle 3 exists to break.
+  if (name === "" || name.length > 32 || /[\r\n]/.test(name)) return null;
+  return name;
+}
+
+async function newPage(request: Request, env: Env): Promise<Response> {
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "Body must be JSON" }, { status: 400 });
+  }
+
+  const { name: rawName, from_template: fromTemplate } = (payload ?? {}) as Record<string, unknown>;
+  const name = validName(rawName);
+  if (!name) {
+    return Response.json(
+      { error: "name must be 1–32 characters on a single line" },
+      { status: 400 },
+    );
+  }
+
+  const existing = await listPages(env);
+  if (existing.length >= MAX_PAGES) {
+    return Response.json(
+      {
+        error: `knag holds ${MAX_PAGES} pages. Delete one before adding another.`,
+      },
+      { status: 409 },
+    );
+  }
+
+  // 🔴 A template is a saved body, so creating from one is a copy and nothing else.
+  // Taken from the page named in `from_template`, defaulting to none — a new page that
+  // silently inherited some other page's body would be the least explicable thing in the
+  // product.
+  let body = "";
+  if (typeof fromTemplate === "number") {
+    body = (await pageTemplate(env, fromTemplate)) ?? "";
+  }
+
+  try {
+    const page = await createPage(env, { name, body, source: "pwa" });
+    return Response.json(page, { status: 201 });
+  } catch {
+    // The partial unique index. Only live pages hold a name, so a retired page's name is
+    // free — which is the whole reason that index is partial.
+    return Response.json({ error: `There is already a page called "${name}".` }, { status: 409 });
+  }
+}
+
+async function editPage(request: Request, env: Env, id: number): Promise<Response> {
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "Body must be JSON" }, { status: 400 });
+  }
+
+  const { name: rawName, template } = (payload ?? {}) as Record<string, unknown>;
+
+  if (template !== undefined) {
+    if (template !== "save" && template !== "clear") {
+      return Response.json({ error: 'template must be "save" or "clear"' }, { status: 400 });
+    }
+    if (!(await saveTemplate(env, id, template === "save"))) {
+      return Response.json({ error: "No such page" }, { status: 404 });
+    }
+  }
+
+  if (rawName !== undefined) {
+    const name = validName(rawName);
+    if (!name) {
+      return Response.json(
+        { error: "name must be 1–32 characters on a single line" },
+        { status: 400 },
+      );
+    }
+    if (!(await renamePage(env, id, name))) {
+      // Either the page is gone or the name is taken. Both are 409-shaped from the
+      // caller's side — it asked for a state the server will not enter — and the message
+      // says which, because a rename that fails silently reads as a broken control.
+      return Response.json(
+        { error: `Could not rename: there may already be a page called "${name}".` },
+        { status: 409 },
+      );
+    }
+  }
+
+  const pages = await listPages(env);
+  return Response.json({ pages });
+}
+
+async function retirePage(env: Env, id: number): Promise<Response> {
+  const result = await deletePage(env, id);
+
+  if (result === "refused_default") {
+    // 🔴 Structural, not a policy. The default page is what a request naming no page
+    // resolves to, what every MCP tool writes to, and what §14.5's defensive read answers
+    // for. "There is always a page" is a cheaper invariant to keep than three fallbacks.
+    return Response.json(
+      { error: "The default page cannot be deleted. Rename it instead." },
+      { status: 409 },
+    );
+  }
+  if (result === "not_found") {
+    return Response.json({ error: "No such page" }, { status: 404 });
+  }
+
+  // 🔴 Retired, never removed — its revisions and cleared items are untouched, which is
+  // what makes skipping a confirmation dialog honest (principle 4).
+  return Response.json({ pages: await listPages(env) });
 }
 
 /**
