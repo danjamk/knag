@@ -129,10 +129,10 @@ test.describe("the shape of the sheet", () => {
     await knag.seed(DAY);
     await knag.openSettings();
 
-    // 🔴 The one fact in here that is not markup, and it comes from `/api/carbon` rather
+    // 🔴 The one fact in here that is not markup, and it comes from `/api/history/depth`
     // than `/health` — the age of your document is a fact about your document, and
     // `/health` is the one route that answers to anybody.
-    await expect(knag.page.locator("[data-carbon]")).toHaveText(/carbon · \d+ days?/);
+    await expect(knag.page.locator("[data-history-depth]")).toHaveText(/history · \d+ days?/);
   });
 
   test("🔴 keeps the operations out, now that they have somewhere else to be", async ({ knag }) => {

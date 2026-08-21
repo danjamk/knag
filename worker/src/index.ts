@@ -120,7 +120,7 @@ const router = {
     //
     // Its own route rather than a field on `/api/doc`, which is polled every few
     // seconds: this is read once, when the sheet opens.
-    if (url.pathname === "/api/carbon") {
+    if (url.pathname === "/api/history/depth") {
       const principal = await authenticate(request, env);
       if (!principal) return unauthorized();
 

@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { oldestRevisionAt } from "../src/store.js";
 
 /**
- * `GET /api/carbon` — when the record starts (#132).
+ * `GET /api/history/depth` — when the record starts (#132).
  *
  * One fact, and the only part of the redesigned Settings sheet that is not markup. The
- * build line gains `carbon · N days` because how far back the record goes is something a
+ * build line gains `history · N days` because how far back the record goes is something a
  * person occasionally needs and could not previously find anywhere.
  *
  * 🔴 **The reason this is a route at all is that it must not be on `/health`.** That is
@@ -19,16 +19,16 @@ import { oldestRevisionAt } from "../src/store.js";
 const BEARER = "test-bearer-do-not-use-in-production";
 const authed = { Authorization: `Bearer ${BEARER}` };
 
-describe("GET /api/carbon", () => {
+describe("GET /api/history/depth", () => {
   it("🔴 refuses an unauthenticated caller", async () => {
     // The whole reason it is not a field on `/health`. If this ever answers without a
     // principal, the route has become the thing it was created to avoid being.
-    const res = await SELF.fetch("https://knag.test/api/carbon");
+    const res = await SELF.fetch("https://knag.test/api/history/depth");
     expect(res.status).toBe(401);
   });
 
   it("answers a bearer with the oldest revision's timestamp", async () => {
-    const res = await SELF.fetch("https://knag.test/api/carbon", { headers: authed });
+    const res = await SELF.fetch("https://knag.test/api/history/depth", { headers: authed });
     expect(res.status).toBe(200);
 
     const { since } = (await res.json()) as { since: string | null };
@@ -39,7 +39,7 @@ describe("GET /api/carbon", () => {
   });
 
   it("matches what the store reports, so the route adds no arithmetic of its own", async () => {
-    const res = await SELF.fetch("https://knag.test/api/carbon", { headers: authed });
+    const res = await SELF.fetch("https://knag.test/api/history/depth", { headers: authed });
     const { since } = (await res.json()) as { since: string | null };
 
     expect(since).toBe(await oldestRevisionAt(env));
@@ -67,7 +67,7 @@ describe("GET /api/carbon", () => {
   });
 
   it("refuses a method that is not GET", async () => {
-    const res = await SELF.fetch("https://knag.test/api/carbon", {
+    const res = await SELF.fetch("https://knag.test/api/history/depth", {
       method: "POST",
       headers: authed,
     });

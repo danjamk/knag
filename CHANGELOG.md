@@ -28,6 +28,27 @@ summarises the phase rather than pretending it was written as it happened.
 
   Self-contained, opens in a browser, no build step. Docs only — nothing shipped changes.
 
+### Changed
+
+- **`carbon` is retired. The word is `history`** (#91). The settings sheet's build line
+  reads `history · 41 days`, and the route behind it moved from `GET /api/carbon` to
+  `GET /api/history/depth` — same response, same auth, same reason for being behind auth.
+
+  🔴 **It had already been declared dead once.** `docs/design/landing-page-brief.md`
+  ruled it out when the landing page was designed, named `history` as the replacement, and
+  noted the word was already the MCP tool name. The landing copy was fixed then — the
+  README has said *"Wipe it. It's in the history"* ever since — and the app quietly kept
+  the word for another five releases. The recovery-and-history design bundle found it
+  still there and asked for the same retirement a second time.
+
+  Three files still say `carbon` and are meant to: the CHANGELOG entry that shipped it,
+  the design response that specified it, and the brief that first killed it. Those are
+  records of what was true when they were written.
+
+  A client cached from before this reads `carbon · —` for one load, because `/api/carbon`
+  now 404s and the old code already treated a bad response as "say nothing rather than
+  lie". It corrects itself on the next load.
+
 ## [1.1.4] — 2026-08-21
 
 The safety net was corrupting the page.
