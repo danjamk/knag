@@ -1,0 +1,35 @@
+-- Contract: drop `documents` (#155, phase 6d of #123).
+--
+-- 🔴 **The first contract half this project has completed**, and the release schedule
+-- above it is the finding rather than this file. `documents` was
+-- `id INTEGER PRIMARY KEY CHECK (id = 1)` — SQLite has no
+-- `ALTER TABLE ... DROP CONSTRAINT`, so it could be removed but never reshaped. That is
+-- what forced expand/contract instead of an additive column.
+--
+-- 🔴 Why this is safe *now* and would not have been one release ago. `make migrate` runs
+-- before `make deploy`, so the Worker live at this moment is the **previously deployed**
+-- one. In 1.1.1 that Worker still ran `mirrorToDocuments` on every save, and this DROP
+-- would have landed underneath a live writer:
+--
+--   * the write path mirrored *after* the CAS on `pages` had committed, so a save in the
+--     gap writes the page, throws on the mirror, returns 500, and the client's retry then
+--     409s on a stale base_version — the write lands and the app says it did not;
+--   * the wipe path mirrored inside `env.DB.batch`, so it fails atomically and honestly.
+--
+-- 1.1.2 removed both and shipped to prod carrying no migration at all. That release
+-- exists solely so this one is uneventful, which is why the middle step is the one that
+-- looks skippable and is not (ADR-002 §3).
+--
+-- 🔴 Nothing references this table. `revisions` and `cleared_items` are untouched:
+-- `cleared_items.revision_id` points at `revisions(id)` and no foreign key, view or
+-- trigger anywhere names `documents`. Pinned by the tests in `pages-migration.test.ts`
+-- rather than asserted here.
+--
+-- Migrations 0002 and 0004 both SELECT from `documents`. That is fine and must stay: a
+-- fresh database replays them in order, so 0001 creates and seeds it, 0002 logs the
+-- baseline revision from it, 0004 backfills `pages` from it, and only then does this run.
+-- Editing those files to remove the reads would break the replay.
+--
+-- `make backup` runs as the first step of both deploy workflows, before this executes.
+
+DROP TABLE documents;

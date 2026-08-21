@@ -220,26 +220,6 @@ describe("history stays on its page", () => {
   });
 });
 
-describe("the rollback shadow, now inert (#155)", () => {
-  it("🔴 is left alone by a write to the *default* page, not just by a write to another", async () => {
-    const before = await env.DB.prepare("SELECT body FROM documents WHERE id = 1").first<{ body: string }>();
-
-    // This is the assertion that flipped. The shadow used to track the default page and
-    // only the default page, because `documents` carries CHECK (id = 1) and there was
-    // nowhere to put a second. Now nothing moves it at all, including the one page it
-    // was built to follow.
-    await writePage(
-      env,
-      { pageId: DEFAULT_PAGE_ID, body: "the default page moved\n", baseVersion: V1, source: "pwa" },
-      at(0),
-    );
-
-    const after = await env.DB.prepare("SELECT body FROM documents WHERE id = 1").first<{ body: string }>();
-    expect(after?.body).toBe(before?.body);
-    expect((await readDefaultPage(env)).body).toBe("the default page moved\n");
-  });
-});
-
 describe("a page that does not exist", () => {
   it("reads as null rather than as the default page", async () => {
     expect(await readPage(env, 999)).toBeNull();

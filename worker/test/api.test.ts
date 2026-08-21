@@ -122,30 +122,6 @@ describe("PUT /api/doc", () => {
       .first<{ source: string }>();
     expect(row?.source).toBe("agent");
   });
-
-  it("🔴 no longer mirrors into `documents`, which is now inert (#155)", async () => {
-    const before = await env.DB.prepare("SELECT body, version FROM documents WHERE id = 1")
-      .first<{ body: string; version: number }>();
-
-    await put({ body: "written after the dual write went", base_version: SEEDED_VERSION });
-
-    // 🔴 **This assertion inverted on purpose, and it is the precondition for the drop.**
-    // The shadow let the pre-0004 Worker keep serving a current document through a
-    // rollback. #154 shipped the switcher, so a rollback now loses pages 2..n whatever
-    // this table says — the window it protected closed on its own.
-    //
-    // What matters is the *next* release: `make migrate` runs before `make deploy`, so
-    // the Worker still running when `documents` is dropped is this one. It must already
-    // be ignoring the table, or that gap has a live Worker writing somewhere that no
-    // longer exists (ADR-002 §3). This is what pins that.
-    const after = await env.DB.prepare("SELECT body, version FROM documents WHERE id = 1")
-      .first<{ body: string; version: number }>();
-    const page = await readDefaultPage(env);
-
-    expect(after?.body).toBe(before?.body);
-    expect(after?.version).toBe(before?.version);
-    expect(page.body).toBe("written after the dual write went");
-  });
 });
 
 describe("conflict", () => {
@@ -261,9 +237,10 @@ describe("first boot (spec §14.5)", () => {
   it("reads a missing row as empty at version 0, and initialises it", async () => {
     // The defensive path: the migration seeds the row, so this is only reachable if
     // the migration was skipped. Empty must never be confused with a failed read.
-    // 🔴 `pages`, because that is what `readPage` reads now. Deleting from `documents`
-    // would leave the defensive path untested and this test quietly passing against a
-    // row that was never missing.
+    // 🔴 `pages`, because that is what `readPage` reads. While the shadow still existed
+    // this could have been written against `documents` and would have passed without ever
+    // making the row missing — the defensive path untested, the test green. `documents`
+    // is gone as of #155, so the trap is closed, but the reason is worth keeping.
     await env.DB.prepare("DELETE FROM pages WHERE id = ?").bind(DEFAULT_PAGE_ID).run();
 
     expect(await readDefaultPage(env)).toMatchObject({ body: "", version: 0 });

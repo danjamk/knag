@@ -1625,7 +1625,11 @@ found out at migration time.
 
 ✅ **Run, 2026-08-20 (#152).** Migration 0004 is the expand half and it went exactly as
 described above: `pages` created and backfilled, `page_id INTEGER NOT NULL DEFAULT 1`
-added to `revisions`, `documents` left standing. The contract half is #155.
+added to `revisions`, `documents` left standing.
+
+✅ **Contracted 2026-08-21 (#155).** Migration 0006 dropped `documents`. It took two
+further releases rather than one — see finding 4 — and `revisions` and `cleared_items`
+were untouched by the drop, which is asserted rather than assumed.
 
 Three things the plan did not have, all found by writing it:
 

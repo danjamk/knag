@@ -320,7 +320,14 @@ to the top of [philosophy.md](philosophy.md).
 use and becomes a thing you show people, and it is the last item that belongs to
 the single-document product.
 
-### Phase 6 · A handful of pages — #123 · **ships 1.1**
+### Phase 6 · A handful of pages — ~~#123~~ · ✅ **done, 1.1.0 → 1.1.3**
+
+✅ **Closed 2026-08-21.** It took four releases rather than the one the phase assumed:
+1.1.0 (schema, MCP, switcher), 1.1.1 (templates corrected — they are a page's *reset*
+state, not a seed for new pages, which was a misreading of #123 found by using it),
+1.1.2 (stop writing the shadow) and 1.1.3 (drop it). The two extra were both discovered
+in flight rather than planned, and both are recorded where they will be read again —
+templates in the CHANGELOG, the release schedule in ADR-002 §3.
 
 🔴 **Split into four on 2026-08-20, and the split is the finding.** #123 was ten tasks
 across schema, store, three routes, MCP, the switcher, manage-pages, templates and two
@@ -332,8 +339,8 @@ so the boundary existed whether or not it was named.
 | #152 | the page dimension behind the API | ✅ |
 | #153 | MCP takes an optional page, by name | ✅ |
 | #154 | `/api/pages`, the switcher, manage-pages, templates | ✅ |
-| #155a | **stop writing** `documents` — no migration | ✅ |
-| #155b | **contract** — drop `documents` | next release |
+| #155a | **stop writing** `documents` — no migration | ✅ 1.1.2 |
+| #155b | **contract** — drop `documents` | ✅ 1.1.3 |
 
 Two things in #123's own task list turned out to be wrong and are corrected in the
 children: MCP cannot default to "the current page" (the Worker has no current page — it
