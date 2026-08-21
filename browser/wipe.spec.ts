@@ -273,3 +273,57 @@ test.describe("bringing it back (#59)", () => {
     await expect(knag.recovery()).toHaveText(/wiped 2\s*·\s*bring back/);
   });
 });
+
+test.describe("undoing a template reset (#173)", () => {
+  // 🔴 End to end, because the unit tests in `client/test/restore.test.ts` pin
+  // `restoredBody` and this pins that the app actually calls it with the right three
+  // bodies. The bug needed both halves to be wrong together: 1.1.1 changed what a
+  // whole-page wipe *does* and nothing changed what the undo assumed it did.
+  const TEMPLATE = "- [ ] milk\n- [ ] eggs\n- [ ] bread";
+  const SHOPPED = "- [x] milk\n- [x] eggs\n- [ ] bread\n- [x] birthday candles\n- [ ] foil";
+
+  // 🔴 A template left on page 1 changes what every later whole-page wipe in this run
+  // does — including `brings the whole page back` above, which expects an empty page.
+  // One live database, no reset between tests.
+  test.afterEach(async ({ knag }) => {
+    await knag.resetPages();
+  });
+
+  test("🔴 brings the shopping list back without duplicating a line", async ({ knag }) => {
+    await knag.resetPages();
+    await knag.seed(TEMPLATE);
+    await knag.saveTemplate();
+    await knag.seed(SHOPPED);
+
+    await wipeThePage(knag);
+    await expect.poll(() => knag.document()).toBe(TEMPLATE);
+
+    await knag.page.locator("[data-restore]").click();
+
+    // Byte-exact. `toContain` would pass with every standing item listed twice, which is
+    // precisely the bug — the duplicated page contains all the right lines.
+    await expect.poll(() => knag.document()).toBe(SHOPPED);
+  });
+
+  test("🔴 keeps a line typed after the reset", async ({ knag }) => {
+    await knag.resetPages();
+    await knag.seed(TEMPLATE);
+    await knag.saveTemplate();
+    await knag.seed(SHOPPED);
+
+    await wipeThePage(knag);
+    await expect.poll(() => knag.document()).toBe(TEMPLATE);
+
+    await knag.useEditor();
+    // Settle before typing — a keystroke landing mid-repaint goes into a line the wipe's
+    // re-render is about to replace, which reads as lost typing and is not.
+    await expect(knag.lines()).toHaveCount(3);
+    await knag.caretAtEndOfLine(3);
+    await knag.page.keyboard.type("\nbatteries");
+    await expect.poll(() => knag.document()).toContain("batteries");
+
+    await knag.page.locator("[data-restore]").click();
+
+    await expect.poll(() => knag.document()).toBe(`${SHOPPED}\n- [ ] batteries`);
+  });
+});

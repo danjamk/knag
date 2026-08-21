@@ -42,15 +42,27 @@ export function offerExpiresAt(now: Date): number {
 type Removed = { raw: string; anchor: string | null };
 
 /**
- * Which blocks the wipe took, in order, each with the surviving block it followed.
+ * Which blocks the wipe took, in order, each with the surviving block it followed — and
+ * whether the wipe **deleted** or **replaced**.
  *
- * A wipe only ever deletes whole blocks and leaves the rest byte-identical, so the
- * post-wipe page is a subsequence of the pre-wipe one and a single greedy walk
- * identifies the gaps. Matching on `raw` rather than on parsed structure keeps this
- * honest about indentation, trailing whitespace and CRLF, all of which survive a wipe
- * and all of which have to survive a restore.
+ * A deletion leaves the rest byte-identical, so the post-wipe page is a subsequence of
+ * the pre-wipe one and a single greedy walk identifies the gaps. Matching on `raw` rather
+ * than on parsed structure keeps this honest about indentation, trailing whitespace and
+ * CRLF, all of which survive a wipe and all of which have to survive a restore.
+ *
+ * 🔴 **That subsequence property stopped being universal in 1.1.1** (#165, #173). A
+ * whole-page wipe on a page that has a template lays the template *down* rather than
+ * emptying, and a template is an arbitrary body — `- [x] milk` and `- [ ] milk` are
+ * different bytes, so the walk matches nothing and reports the whole page as removed.
+ * Re-inserting that on top of the template duplicated every standing item that had been
+ * checked off, on the first tap, with no editing involved.
+ *
+ * `replaced` is how the caller tells the two apart, and it is a fact about the walk
+ * rather than a guess about intent: it is true when the walk finished without consuming
+ * all of `post`, which can only happen if the wipe put something on the page that was not
+ * on it before.
  */
-function removedBlocks(pre: string[], post: string[]): Removed[] {
+function removedBlocks(pre: string[], post: string[]): { removed: Removed[]; replaced: boolean } {
   const removed: Removed[] = [];
   let anchor: string | null = null;
   let p = 0;
@@ -65,7 +77,63 @@ function removedBlocks(pre: string[], post: string[]): Removed[] {
     }
   }
 
-  return removed;
+  return { removed, replaced: p < post.length };
+}
+
+/**
+ * Every block of a replaced page, anchored to the block that preceded it *in the pre-wipe
+ * page*.
+ *
+ * The walk anchors to the last **survivor**, which is right for a deletion and useless
+ * for a replacement — there are no survivors, so every anchor would be `null` and the
+ * whole page would go back in a heap at the top. On a replacement the pre-wipe order is
+ * exactly the thing being restored, so each block is anchored to its own predecessor.
+ */
+function replacedBlocks(pre: string[]): Removed[] {
+  // `?? null` for `noUncheckedIndexedAccess`; `i > 0` already guarantees the element.
+  return pre.map((raw, i) => ({ raw, anchor: i === 0 ? null : (pre[i - 1] ?? null) }));
+}
+
+/**
+ * What the wipe *added* — the blocks a replacement put on the page that were not on it
+ * before, as a multiset difference so a template line that genuinely was already there
+ * is not counted as new.
+ *
+ * These are the lines the undo has to take back off. 🔴 Nothing typed *after* the wipe
+ * can appear here, because this is computed from the post-wipe snapshot rather than from
+ * the page as it is now — which is precisely what lets the undo remove the template
+ * without touching an edit, and is why merge-on-edit survives this change intact.
+ */
+function addedBlocks(pre: string[], post: string[]): string[] {
+  const budget = new Map<string, number>();
+  for (const block of pre) budget.set(block, (budget.get(block) ?? 0) + 1);
+
+  const added: string[] = [];
+  for (const block of post) {
+    const left = budget.get(block) ?? 0;
+    if (left > 0) budget.set(block, left - 1);
+    else added.push(block);
+  }
+
+  return added;
+}
+
+/**
+ * Remove each of `blocks` from `list` once, where it is still there.
+ *
+ * "Once" matters: a page may legitimately hold the same line twice and only the copy the
+ * wipe put there should go. A line typed after the reset that happens to be
+ * byte-identical to a template line is indistinguishable from the template's own copy —
+ * one of the two goes and the bytes cannot say which. That is a real cost, and it is
+ * smaller than leaving a visible duplicate on every single reset, which is the bug.
+ */
+function stripOnce(list: string[], blocks: string[]): string[] {
+  const out = [...list];
+  for (const block of blocks) {
+    const at = out.indexOf(block);
+    if (at !== -1) out.splice(at, 1);
+  }
+  return out;
 }
 
 /**
@@ -103,11 +171,22 @@ function countOf(list: string[], value: string): number {
 export function restoredBody(input: { preWipe: string; postWipe: string; current: string }): string {
   const pre = blocksOf(input.preWipe);
   const post = blocksOf(input.postWipe);
-  const removed = removedBlocks(pre, post);
+  const walk = removedBlocks(pre, post);
 
-  if (removed.length === 0) return input.current;
+  // 🔴 A replacement (a template reset) and a deletion (a sweep, or a wipe to empty)
+  // need different undos, and **only the replacement branch is new** — for a deletion
+  // `walk.replaced` is false, `added` is empty, `stripOnce` is a copy, and everything
+  // below runs exactly as it did. That containment is deliberate: the sweep path is the
+  // one with a release of real use behind it.
+  const removed = walk.replaced ? replacedBlocks(pre) : walk.removed;
+  const added = walk.replaced ? addedBlocks(pre, post) : [];
 
-  const result = blocksOf(input.current);
+  // Both empty means the wipe did nothing this can reverse. Note it is *both*: resetting
+  // an already-empty page to a template removes nothing and adds the template, and the
+  // undo of that is taking the template back off.
+  if (removed.length === 0 && added.length === 0) return input.current;
+
+  const result = stripOnce(blocksOf(input.current), added);
 
   // Where the next block goes when its anchor has already been used, so a run of
   // blocks removed together goes back in the order it left.
