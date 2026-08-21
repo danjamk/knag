@@ -13,6 +13,10 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.1.4] — 2026-08-21
+
+The safety net was corrupting the page.
+
 ### Fixed
 
 - 🔴 **`bring back` duplicated every checked line after a template reset** (#173). Wipe a
@@ -1531,7 +1535,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/danjamk/knag/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/danjamk/knag/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/danjamk/knag/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/danjamk/knag/compare/v1.1.0...v1.1.1
