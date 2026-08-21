@@ -190,34 +190,43 @@ Quoted, because it is the only blocking question in the bundle:
 > completed blocks under both scopes, and if that is what ships to `cleared_items`, then
 > notes are not in the record at all and no surface and no agent can find them.
 
-### Confirmed, and the answer is: half right, which changes the build
+### Confirmed — and the design session was right. The data problem is **not** solved.
 
-**The mechanism is exactly as described.** `worker/src/index.ts` passes
-`clearedLines: completed.map((block) => block.raw)` under **both** scopes, so a note taken
-by a whole-page wipe never reaches `cleared_items`. That is deliberate and the code says
-why:
+Checked against a real wipe rather than by reading, and the first answer written here was
+wrong and had to be replaced. **This is the one item that blocks the build.**
 
-> `cleared_items` answers "what did I get done"; a wipe-all removes things that were never
-> done, and recording those here would corrupt the one record `/api/history` treats as
-> authoritative. The sealed snapshot is what makes the rest recoverable (#59).
+The mechanism is as the design session described, and the deliberate part is deliberate:
+`worker/src/index.ts` passes `clearedLines: completed.map(...)` under **both** scopes, so a
+note taken by a whole-page wipe never reaches `cleared_items`. The code says why, and the
+reason is good — that table answers *"what did I get done"*, and recording never-done lines
+would corrupt the one record `/api/history` treats as authoritative.
 
-**But the notes are not lost, and the conclusion does not follow.** The wipe seals a
-revision holding the entire pre-wipe body before it writes. `worker/src/history.ts` diffs
-consecutive revisions into `appeared` / `disappeared`, so a note taken by a whole-page wipe
-**does** surface — as `disappeared`, not as `cleared`.
+The tempting rebuttal is that the wipe seals a revision holding the whole pre-wipe body, so
+the lines must surface as `disappeared`. **They do not.** A wipe snapshots the *pre*-wipe
+body, which is identical to the revision before it, so its diff is empty by construction —
+and the post-wipe state does not enter the log at all until the next ordinary save, where
+those lines finally show up as `disappeared` **on an unrelated later revision**.
 
-So nothing needs to change in what gets recorded. What it changes is **the pane's read
-path, per row type**:
+A page wipe of a page holding a note, a done task and an undone task returns exactly this:
 
-| Row | Lines come from | Exact? |
-|---|---|---|
-| sweep (`completed`) | `cleared` | exact and authoritative |
-| whole-page wipe / reset | the revision diff (`disappeared`) | blind to a duplicate line being removed |
+```json
+{ "event_type": "wipe_all", "appeared": [], "disappeared": [], "cleared_count": 1 }
+```
 
-That split is the design's own *"two wipes, and only one of them is a loss"* — the data
-model already agrees with the ruling. The caveat worth carrying: on a page-wipe row, a line
-that appeared twice and was removed once will not show. Accepted; the alternative is
-polluting the done-record.
+with `cleared` holding only `- [x] done thing`. The note and the undone task appear
+nowhere in the response. They exist only inside that revision's **body**, and
+`/api/history` does not return bodies.
+
+🔴 **So the response's own costing — *"`/api/history?days=7`, per page. Exists. The data
+problem was solved before the brief was written"* — is false for exactly the rows the
+surface exists for.** The sweep row is fine and reads from `cleared`. The whole-page row,
+which the response itself calls *"the loss-shaped event in this product"*, has no data
+behind it.
+
+**This has to be decided before the pane is built**, and it is a log-shape question rather
+than a UI one. The options are recorded in the issue; none of them is free, and the cheapest
+correct one is probably that a wipe should also record the state it left, so the diff falls
+out of the log the way every other diff does.
 
 ## The typographic problem, which is a real one
 
@@ -297,8 +306,10 @@ line cheap: one tap, one line, dims with the same tick that confirms a copy.
 
 ## What it costs to build
 
-- **`/api/history?days=7`, per page. Exists.** The data problem was solved before the brief
-  was written.
+- ~~**`/api/history?days=7`, per page. Exists.** The data problem was solved before the
+  brief was written.~~ 🔴 **Not true for whole-page rows** — see the blocking question
+  above. The sweep row reads from `cleared` and is fine; the page-wipe row has no data
+  behind it and the log has to change first.
 - **The pane:** markup beside the two existing panes, one render function, and roughly 130
   lines of CSS that **names no value the two `:root` blocks do not already have**.
   ✅ Verified: `--size-machine`, `--size-row`, `--dim`, `--ink`, `--amber`,
