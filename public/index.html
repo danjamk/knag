@@ -1438,6 +1438,18 @@
          be the third thing that went wrong. */
       .manage button[data-delete-page] { color: var(--amber); }
 
+      /* Amber and dim, like `offline` and `not saved` — never red. There is one colour
+         in this interface, and a refusal is the machine talking, so it speaks in the
+         machine's voice and the machine's face. */
+      .pane-error {
+        margin: var(--space-4) 0 0;
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        line-height: 1.45;
+        color: var(--amber);
+      }
+
       .new-page {
         display: flex;
         gap: var(--space-2);
@@ -1875,6 +1887,12 @@
 
         <div class="pane-body">
           <ul data-manage-list class="manage"></ul>
+          <!-- 🔴 The pane says why, because the bar cannot (#154). Every refusal here —
+               a duplicate name, a rename collision, the nine-page cap — used to go to
+               the save-status slot in the bar, which sits *behind the dialog backdrop*.
+               The refusal was correct and completely invisible, so the control read as
+               broken rather than as having said no. -->
+          <p class="pane-error" data-manage-error hidden></p>
           <p class="note" data-manage-note></p>
         </div>
 

@@ -15,6 +15,18 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- 🔴 **Manage-pages says why it refused.** Every no in that pane — a duplicate name, a
+  rename collision, the nine-page cap — went to the save-status slot in the bar, which
+  sits *behind the dialog backdrop*. The refusal was correct and completely invisible, so
+  the control read as broken rather than as having said no. It has its own line now,
+  amber and in the machine voice, cleared on the way in and out.
+
+- **Page names collapse internal whitespace.** `my  list` and `my list` rendered
+  identically in the switcher and were two different pages — a trap for a person and
+  ambiguous for an agent resolving by name. Not a principle-3 violation: "nothing is
+  normalized" is about the *document*, and a page name is an identifier. Newlines are
+  still refused rather than collapsed, because a multi-line name is a paste accident.
+
 - **A page switcher, manage-pages, and templates** (#154) — the part a person can see.
   The page's name in tier 1 is a drop-up now: current page in amber, the rest in chalk,
   one last row for the rare verbs. **No icons, no counts, no last-modified times** — the

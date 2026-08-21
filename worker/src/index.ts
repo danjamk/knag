@@ -612,14 +612,25 @@ function ifNoneMatchSatisfied(header: string | null, version: number): boolean {
  */
 const MAX_PAGES = 9;
 
-/** A page name: something a person types and an agent can be told (#153). */
+/**
+ * A page name: something a person types and an agent can be told (#153).
+ *
+ * 🔴 **Whitespace is collapsed, and that is not a violation of principle 3.** "Nothing
+ * is normalized" applies to the *document* — bytes in, bytes out — and a page name is an
+ * identifier rather than content. `my  list` and `my list` render identically in the
+ * switcher and are two different pages, which is a trap for a person and worse for an
+ * agent resolving by name against the only copy of a document.
+ *
+ * Newlines are still refused rather than collapsed: a multi-line name is a paste accident,
+ * and silently accepting half of one is worse than saying no.
+ */
 function validName(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  const name = raw.trim();
-  // 🔴 One line, and short enough to sit in tier 1 beside the machine slot. Newlines
-  // are refused rather than stripped: the name reaches an MCP error message and the
-  // switcher, and normalising input silently is the habit principle 3 exists to break.
-  if (name === "" || name.length > 32 || /[\r\n]/.test(name)) return null;
+  if (/[\r\n]/.test(raw)) return null;
+
+  // One line, and short enough to sit in tier 1 beside the machine slot.
+  const name = raw.trim().replace(/\s+/g, " ");
+  if (name === "" || name.length > 32) return null;
   return name;
 }
 

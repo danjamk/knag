@@ -109,6 +109,25 @@ describe("creating", () => {
     }
   });
 
+  it("🔴 collapses whitespace, so two names cannot look identical", async () => {
+    // 🔴 Not a principle-3 violation. "Nothing is normalized" is about the *document*
+    // — bytes in, bytes out — and a page name is an identifier. `my  list` and `my list`
+    // render identically in the switcher and would be two different pages, which is a
+    // trap for a person and worse for an agent resolving by name (#153).
+    const res = await create("  my   list  ");
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ name: "my list" });
+
+    // And the collapsed form is what the uniqueness index then sees.
+    expect((await create("my list")).status).toBe(409);
+  });
+
+  it("counts length after collapsing, not before", async () => {
+    // 32 characters of name plus padding is a name, not an over-long one.
+    const res = await create(`  ${"x".repeat(32)}  `);
+    expect(res.status).toBe(201);
+  });
+
   it("🔴 stops at nine, which is the tripwire", async () => {
     for (let n = 2; n <= 9; n++) {
       expect((await create(`page ${n}`)).status).toBe(201);

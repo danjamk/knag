@@ -109,6 +109,7 @@ const manageOpen = document.querySelector<HTMLButtonElement>("[data-manage-open]
 const manageBack = document.querySelector<HTMLButtonElement>("[data-manage-back]");
 const manageList = document.querySelector<HTMLUListElement>("[data-manage-list]");
 const manageNote = document.querySelector<HTMLElement>("[data-manage-note]");
+const manageError = document.querySelector<HTMLElement>("[data-manage-error]");
 const newPageForm = document.querySelector<HTMLFormElement>("[data-new-page]");
 
 /** Which rows a wipe takes. Mirrors `WipeScope` in the Worker's store. */
@@ -2078,6 +2079,7 @@ switcherList?.addEventListener("click", (event) => {
 function showManage(on: boolean): void {
   settingsPane?.toggleAttribute("hidden", on);
   managePane?.toggleAttribute("hidden", !on);
+  showManageError(null);
   if (on) void loadPages();
 }
 
@@ -2149,8 +2151,23 @@ function paintManage(): void {
   }
 }
 
+/**
+ * Say why, in the pane the reader is looking at.
+ *
+ * \U0001f534 **Not `setStatus`.** Every refusal in here used to go to the save-status slot in
+ * the bar, which sits *behind the dialog backdrop* — so a duplicate name was correctly
+ * rejected and completely invisible, and the control read as broken rather than as having
+ * said no. Every path that can refuse goes through here (#154).
+ */
+function showManageError(message: string | null): void {
+  if (!manageError) return;
+  manageError.textContent = message ?? "";
+  manageError.toggleAttribute("hidden", message === null);
+}
+
 /** Every page mutation goes through here, so the list is re-read exactly once each time. */
 async function mutatePages(url: string, method: string, payload?: unknown): Promise<boolean> {
+  showManageError(null);
   try {
     const res = await fetch(url, {
       method,
@@ -2160,14 +2177,17 @@ async function mutatePages(url: string, method: string, payload?: unknown): Prom
     });
     if (!res.ok) {
       const detail = (await res.json().catch(() => null)) as { error?: string } | null;
-      setStatus(detail?.error ?? "not saved");
+      showManageError(detail?.error ?? "could not save that");
+      // Re-read anyway: a refusal is often a stale list — the name was taken by another
+      // device, or a page was deleted there — and repainting is what makes the second
+      // attempt informed rather than a repeat of the first.
       await loadPages();
       return false;
     }
     await loadPages();
     return true;
   } catch {
-    setStatus("not saved");
+    showManageError("offline — that did not save");
     return false;
   }
 }
@@ -2206,6 +2226,9 @@ manageList?.addEventListener("focusout", (event) => {
   const name = target.value.trim();
   const before = pages.find((page) => page.id === id)?.name;
   if (!Number.isInteger(id) || name === "" || name === before) return;
+  // 🔴 `loadPages` repaints the list from the server on both outcomes, so a refused
+  // rename puts the old name back in the field rather than leaving one that was never
+  // accepted sitting there looking saved.
   void mutatePages(`/api/pages/${id}`, "PATCH", { name });
 });
 
