@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DOC_ID, readDocument, writeDocument } from "../src/store.js";
+import { DEFAULT_PAGE_ID, readDefaultPage, writePage } from "../src/store.js";
 
 // Matches vitest.config.ts. The suite authenticates as the agent because the
 // session-cookie half of auth arrives with issue #3 — bearer is first-class on every
@@ -48,7 +48,7 @@ describe("auth", () => {
     });
 
     expect(res.status).toBe(401);
-    expect((await readDocument(env)).body).toBe("");
+    expect((await readDefaultPage(env)).body).toBe("");
   });
 });
 
@@ -107,7 +107,7 @@ describe("PUT /api/doc", () => {
     expect(await res.json()).toMatchObject({ version: SEEDED_VERSION + 1 });
     expect(res.headers.get("ETag")).toBe(`"${SEEDED_VERSION + 1}"`);
 
-    const doc = await readDocument(env);
+    const doc = await readDefaultPage(env);
     expect(doc.body).toBe("hello");
     expect(doc.version).toBe(SEEDED_VERSION + 1);
   });
@@ -117,10 +117,25 @@ describe("PUT /api/doc", () => {
     // it is derived from the credential instead, so this must be ignored.
     await put({ body: "written by an agent", base_version: SEEDED_VERSION, source: "system" });
 
-    const row = await env.DB.prepare("SELECT source FROM documents WHERE id = ?")
-      .bind(DOC_ID)
+    const row = await env.DB.prepare("SELECT source FROM pages WHERE id = ?")
+      .bind(DEFAULT_PAGE_ID)
       .first<{ source: string }>();
     expect(row?.source).toBe("agent");
+  });
+
+  it("🔴 mirrors the default page into `documents`, which is the rollback (#152)", async () => {
+    await put({ body: "written after pages", base_version: SEEDED_VERSION });
+
+    // `pages` is the authority from migration 0004 on. `documents` is a shadow kept in
+    // step so the *previous* Worker can still serve a current document if this one has
+    // to be rolled back — which is the entire reason expand and contract are two
+    // releases rather than one. #155 drops the table and this assertion with it.
+    const shadow = await env.DB.prepare("SELECT body, version FROM documents WHERE id = 1")
+      .first<{ body: string; version: number }>();
+    const page = await readDefaultPage(env);
+
+    expect(shadow?.body).toBe(page.body);
+    expect(shadow?.version).toBe(page.version);
   });
 });
 
@@ -145,7 +160,7 @@ describe("conflict", () => {
     await put({ body: "the real content", base_version: SEEDED_VERSION });
     await put({ body: "a week-old iPad", base_version: SEEDED_VERSION });
 
-    const doc = await readDocument(env);
+    const doc = await readDefaultPage(env);
     expect(doc.body).toBe("the real content");
     expect(doc.version).toBe(SEEDED_VERSION + 1);
   });
@@ -160,7 +175,7 @@ describe("conflict", () => {
     expect(statuses).toEqual([200, 409]);
 
     // One bump, not two — the loser must not have applied on top.
-    expect((await readDocument(env)).version).toBe(SEEDED_VERSION + 1);
+    expect((await readDefaultPage(env)).version).toBe(SEEDED_VERSION + 1);
   });
 
   it("lets exactly one of two writes that both read the same version win", async () => {
@@ -174,12 +189,12 @@ describe("conflict", () => {
     // standing between here and a silent overwrite. Weaken that clause and this test
     // returns two `applied` — verified, not assumed.
     const [a, b] = await Promise.all([
-      writeDocument(env, { body: "from the phone", baseVersion: SEEDED_VERSION, source: "pwa" }),
-      writeDocument(env, { body: "from the mac", baseVersion: SEEDED_VERSION, source: "agent" }),
+      writePage(env, { pageId: DEFAULT_PAGE_ID, body: "from the phone", baseVersion: SEEDED_VERSION, source: "pwa" }),
+      writePage(env, { pageId: DEFAULT_PAGE_ID, body: "from the mac", baseVersion: SEEDED_VERSION, source: "agent" }),
     ]);
 
     expect([a.status, b.status].sort()).toEqual(["applied", "conflict"]);
-    expect((await readDocument(env)).version).toBe(SEEDED_VERSION + 1);
+    expect((await readDefaultPage(env)).version).toBe(SEEDED_VERSION + 1);
   });
 });
 
@@ -189,14 +204,14 @@ describe("no-op writes", () => {
   });
 
   it("bumps nothing and leaves updated_at alone", async () => {
-    const before = await readDocument(env);
+    const before = await readDefaultPage(env);
 
     const res = await put({ body: "unchanged", base_version: before.version });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ version: before.version });
 
-    const after = await readDocument(env);
+    const after = await readDefaultPage(env);
     expect(after.version).toBe(before.version);
     expect(after.updated_at).toBe(before.updated_at);
   });
@@ -222,7 +237,7 @@ describe("first boot (spec §14.5)", () => {
     const res = await put({ body: "first ever line", base_version: 0 });
 
     expect(res.status).toBe(200);
-    expect((await readDocument(env)).body).toBe("first ever line");
+    expect((await readDefaultPage(env)).body).toBe("first ever line");
   });
 
   it("rejects base_version 0 once there is something to lose", async () => {
@@ -231,20 +246,23 @@ describe("first boot (spec §14.5)", () => {
     const res = await put({ body: "clobber", base_version: 0 });
 
     expect(res.status).toBe(409);
-    expect((await readDocument(env)).body).toBe("real content");
+    expect((await readDefaultPage(env)).body).toBe("real content");
   });
 
   it("reads a missing row as empty at version 0, and initialises it", async () => {
     // The defensive path: the migration seeds the row, so this is only reachable if
     // the migration was skipped. Empty must never be confused with a failed read.
-    await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(DOC_ID).run();
+    // 🔴 `pages`, because that is what `readPage` reads now. Deleting from `documents`
+    // would leave the defensive path untested and this test quietly passing against a
+    // row that was never missing.
+    await env.DB.prepare("DELETE FROM pages WHERE id = ?").bind(DEFAULT_PAGE_ID).run();
 
-    expect(await readDocument(env)).toMatchObject({ body: "", version: 0 });
+    expect(await readDefaultPage(env)).toMatchObject({ body: "", version: 0 });
 
     const res = await put({ body: "recovered", base_version: 0 });
 
     expect(res.status).toBe(200);
-    expect(await readDocument(env)).toMatchObject({ body: "recovered", version: 1 });
+    expect(await readDefaultPage(env)).toMatchObject({ body: "recovered", version: 1 });
   });
 });
 
@@ -283,7 +301,7 @@ describe("request validation", () => {
     const res = await put({ body: "", base_version: SEEDED_VERSION + 1 });
 
     expect(res.status).toBe(200);
-    expect((await readDocument(env)).body).toBe("");
+    expect((await readDefaultPage(env)).body).toBe("");
   });
 
   it("400s a base_version that is not a non-negative integer", async () => {
@@ -297,20 +315,20 @@ describe("request validation", () => {
     const res = await put({ body: "x".repeat(1_048_577), base_version: SEEDED_VERSION });
 
     expect(res.status).toBe(413);
-    expect((await readDocument(env)).body).toBe("");
+    expect((await readDefaultPage(env)).body).toBe("");
   });
 });
 
-describe("writeDocument (store)", () => {
+describe("writePage (store)", () => {
   it("reports a no-op distinctly from an applied write", async () => {
-    const applied = await writeDocument(env, {
+    const applied = await writePage(env, { pageId: DEFAULT_PAGE_ID,
       body: "x",
       baseVersion: SEEDED_VERSION,
       source: "pwa",
     });
     expect(applied.status).toBe("applied");
 
-    const noop = await writeDocument(env, {
+    const noop = await writePage(env, { pageId: DEFAULT_PAGE_ID,
       body: "x",
       baseVersion: SEEDED_VERSION + 1,
       source: "pwa",

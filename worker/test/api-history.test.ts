@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { revisionsInRange, wipe, writeDocument } from "../src/store.js";
+import { DEFAULT_PAGE_ID, revisionsInRange, wipe, writePage } from "../src/store.js";
 
 /**
  * `GET /api/history` end to end (spec §5, §14.3).
@@ -60,24 +60,24 @@ const SEEDED_VERSION = 1;
  * so each lands as its own revision rather than folding into the last.
  */
 async function seedRevisions(): Promise<void> {
-  await writeDocument(
+  await writePage(
     env,
-    { body: "alpha", baseVersion: SEEDED_VERSION, source: "pwa" },
+    { pageId: DEFAULT_PAGE_ID, body: "alpha", baseVersion: SEEDED_VERSION, source: "pwa" },
     new Date("2026-03-07T18:00:00.000Z"), // 12:00 Sat, CST
   );
-  await writeDocument(
+  await writePage(
     env,
-    { body: "alpha\nbravo", baseVersion: 2, source: "pwa" },
+    { pageId: DEFAULT_PAGE_ID, body: "alpha\nbravo", baseVersion: 2, source: "pwa" },
     new Date("2026-03-08T13:00:00.000Z"), // 08:00 Sun, CDT — after the jump
   );
-  await writeDocument(
+  await writePage(
     env,
-    { body: "alpha\nbravo\ncharlie", baseVersion: 3, source: "agent" },
+    { pageId: DEFAULT_PAGE_ID, body: "alpha\nbravo\ncharlie", baseVersion: 3, source: "agent" },
     new Date("2026-03-09T04:00:00.000Z"), // 23:00 Sun local — the 8th, not the 9th
   );
-  await writeDocument(
+  await writePage(
     env,
-    { body: "alpha\ncharlie", baseVersion: 4, source: "pwa" },
+    { pageId: DEFAULT_PAGE_ID, body: "alpha\ncharlie", baseVersion: 4, source: "pwa" },
     new Date("2026-03-09T18:00:00.000Z"), // 13:00 Mon
   );
 }
@@ -243,14 +243,14 @@ describe("a multi-day range", () => {
 
 describe("cleared items", () => {
   beforeEach(async () => {
-    await writeDocument(
+    await writePage(
       env,
-      { body: "- [x] laundry\n- [ ] taxes", baseVersion: SEEDED_VERSION, source: "pwa" },
+      { pageId: DEFAULT_PAGE_ID, body: "- [x] laundry\n- [ ] taxes", baseVersion: SEEDED_VERSION, source: "pwa" },
       new Date("2026-03-08T13:00:00.000Z"),
     );
     await wipe(
       env,
-      {
+      { pageId: DEFAULT_PAGE_ID,
         baseVersion: 2,
         body: "- [ ] taxes",
         clearedLines: ["- [x] laundry"],
@@ -300,7 +300,7 @@ describe("the revision cap", () => {
   it("keeps the newest revisions, not the oldest", async () => {
     // 🔴 The reason the query runs DESC. An ascending LIMIT drops the recent end,
     // which is the end anyone asking about their history is asking about.
-    const page = await revisionsInRange(env, { ...RANGE, limit: 2 });
+    const page = await revisionsInRange(env, { pageId: DEFAULT_PAGE_ID, ...RANGE, limit: 2 });
 
     expect(page.truncated).toBe(true);
     expect(page.revisions.map((r) => r.body)).toEqual(["alpha\nbravo\ncharlie", "alpha\ncharlie"]);
@@ -308,13 +308,13 @@ describe("the revision cap", () => {
 
   it("hands back the dropped revision immediately before the page, as the diff floor", async () => {
     // Without it a truncated page opens by reporting its whole document as new.
-    const page = await revisionsInRange(env, { ...RANGE, limit: 2 });
+    const page = await revisionsInRange(env, { pageId: DEFAULT_PAGE_ID, ...RANGE, limit: 2 });
 
     expect(page.precedingDropped?.body).toBe("alpha\nbravo");
   });
 
   it("reports no truncation and no floor when everything fits", async () => {
-    const page = await revisionsInRange(env, { ...RANGE, limit: 50 });
+    const page = await revisionsInRange(env, { pageId: DEFAULT_PAGE_ID, ...RANGE, limit: 50 });
 
     expect(page.truncated).toBe(false);
     expect(page.precedingDropped).toBeNull();
@@ -327,7 +327,7 @@ describe("the revision cap", () => {
   });
 
   it("returns rows oldest-first, which is the order the diff chain needs", async () => {
-    const page = await revisionsInRange(env, RANGE);
+    const page = await revisionsInRange(env, { pageId: DEFAULT_PAGE_ID, ...RANGE });
 
     const times = page.revisions.map((r) => r.created_at);
     expect([...times].sort()).toEqual(times);

@@ -69,8 +69,26 @@ checkboxes and linkified URLs pass, rendered markdown does not. Read it before
 answering a formatting request; it has been asked three times.
 
 **All SQL lives in `worker/src/store.ts`.** No exceptions, not even one query in
-a handler. That chokepoint is what keeps a future schema change to one file.
-The single-row id is the `DOC_ID` constant there, never a literal `1`.
+a handler. That chokepoint is what keeps a future schema change to one file — and it
+held the first time it was tested (#152, spec §17).
+
+**Every read and write takes a page.** `DEFAULT_PAGE_ID` is the page a request that
+names none is about, never a literal `1` and — since #152 — **never an identity**. It
+replaced `DOC_ID`, which meant "the only row there can be" because `documents` carried
+`CHECK (id = 1)`; `pages` has no such CHECK.
+
+🔴 **It is never the answer to "that page does not exist."** Whole-document write is the
+only write this product has, so falling back to the default would let a caller overwrite
+a page it never named. Missing is `null` from the store and a 404 from the route. The
+same rule is why MCP resolves to the *default* page rather than "the current page" —
+the Worker has no current page, that lives in a browser's localStorage, and a bearer
+token carries no device.
+
+Two queries in `store.ts` were correct only because there was one page:
+`newestUnsealedRevision` would coalesce one page's save into another's revision, and the
+wipe's `(SELECT max(id) FROM revisions)` would seal the wrong page's newest one. Neither
+raises an error. **A query here that reaches for "the newest revision" without naming a
+page is a bug that will not show up until there are two.**
 
 **Every colour is a token, and amber is the only one.** The palette lives in the
 `:root` blocks at the top of `public/index.html` and nowhere else — pinned by a

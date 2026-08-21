@@ -13,6 +13,30 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **A page dimension behind the API** — the expand half of pages (#152, phase 6a of
+  #123). Nothing on screen changes: one page becomes "page 1 of n" and every request
+  that names no page behaves exactly as it did.
+
+  A new `pages` table rather than a column, because `documents` carries
+  `CHECK (id = 1)` and SQLite has no `ALTER TABLE ... DROP CONSTRAINT` — lifting it is a
+  full table rebuild, which is destructive. `documents` stays and is dual-written so the
+  previous Worker can still serve a current document if this one is rolled back. Dropping
+  it is a later release.
+
+### Fixed
+
+- 🔴 **Two queries that were correct only because there was one page.**
+  `newestUnsealedRevision` asked for the newest unsealed revision full stop, so a save to
+  one page inside the ten-minute coalescing window would have been folded into another
+  page's revision — one page's history quietly containing another page's body. The wipe's
+  `(SELECT max(id) FROM revisions)` would have sealed the wrong page's newest revision.
+
+  Neither raises an error, and neither was reachable before this release. Both were found
+  by writing a test with a second page in it, which is the argument for shipping the
+  schema on its own before anything can create one.
+
 ## [1.0.1] — 2026-08-20
 
 The first hour on 1.0, on a real desktop and a real phone.

@@ -1,7 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SESSION_COOKIE } from "../src/auth.js";
-import { readDocument, writeDocument } from "../src/store.js";
+import { DEFAULT_PAGE_ID, readDefaultPage, writePage } from "../src/store.js";
 
 /**
  * The MCP server (spec §10, §14.6), driven over real JSON-RPC through `SELF.fetch`.
@@ -310,7 +310,7 @@ describe("tools/list", () => {
 
 describe("knag_read", () => {
   it("returns the page verbatim, with the version to write against", async () => {
-    await writeDocument(env, { body: "  indented\n\nlast", baseVersion: SEEDED_VERSION, source: "pwa" });
+    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "  indented\n\nlast", baseVersion: SEEDED_VERSION, source: "pwa" });
 
     const result = await call("knag_read");
 
@@ -336,7 +336,7 @@ describe("knag_write", () => {
     expect(result.isError).toBeFalsy();
     expect(result.structuredContent).toMatchObject({ version: 2, changed: true });
     // Asserted against D1, not against the tool's own report.
-    expect((await readDocument(env)).body).toBe("written by an agent");
+    expect((await readDefaultPage(env)).body).toBe("written by an agent");
   });
 
   it("records the write as coming from the agent", async () => {
@@ -353,7 +353,7 @@ describe("knag_write", () => {
 
     await call("knag_write", { body: awkward, base_version: SEEDED_VERSION });
 
-    expect((await readDocument(env)).body).toBe(awkward);
+    expect((await readDefaultPage(env)).body).toBe(awkward);
   });
 
   it("reports an identical body as no change", async () => {
@@ -370,7 +370,7 @@ describe("knag_write", () => {
     const loser = await call("knag_write", { body: "loser", base_version: SEEDED_VERSION });
 
     expect(loser.isError).toBe(true);
-    expect((await readDocument(env)).body).toBe("winner");
+    expect((await readDefaultPage(env)).body).toBe("winner");
   });
 
   it("🔴 carries the current version AND body in the conflict", async () => {
@@ -391,7 +391,7 @@ describe("knag_write", () => {
     const result = await call("knag_write", { body: "", base_version: 2 });
 
     expect(result.isError).toBeFalsy();
-    expect((await readDocument(env)).body).toBe("");
+    expect((await readDefaultPage(env)).body).toBe("");
   });
 
   it("rejects a missing argument as a result, not a crash", async () => {
@@ -401,7 +401,7 @@ describe("knag_write", () => {
     const failed =
       response.error !== undefined || (response.result as ToolResult | undefined)?.isError === true;
     expect(failed).toBe(true);
-    expect((await readDocument(env)).body).toBe("");
+    expect((await readDefaultPage(env)).body).toBe("");
   });
 });
 
@@ -409,14 +409,14 @@ describe("knag_wipe", () => {
   const PAGE = "keep me\n- [x] done one\n- [ ] not done\n  - [X] nested done";
 
   beforeEach(async () => {
-    await writeDocument(env, { body: PAGE, baseVersion: SEEDED_VERSION, source: "pwa" });
+    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: PAGE, baseVersion: SEEDED_VERSION, source: "pwa" });
   });
 
   it("removes checked items at any indentation and leaves the rest", async () => {
     const result = await call("knag_wipe", { base_version: 2 });
 
     expect(result.structuredContent).toMatchObject({ wiped_count: 2, version: 3 });
-    expect((await readDocument(env)).body).toBe("keep me\n- [ ] not done");
+    expect((await readDefaultPage(env)).body).toBe("keep me\n- [ ] not done");
   });
 
   it("writes the done-record, which is what makes the wipe safe", async () => {
@@ -449,14 +449,14 @@ describe("knag_wipe", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("version_conflict");
-    expect((await readDocument(env)).body).toBe(PAGE);
+    expect((await readDefaultPage(env)).body).toBe(PAGE);
   });
 
   it("empties the page on scope all", async () => {
     const result = await call("knag_wipe", { base_version: 2, scope: "all" });
 
     expect(result.structuredContent).toMatchObject({ wiped_count: 4, cleared_count: 2 });
-    expect((await readDocument(env)).body).toBe("");
+    expect((await readDefaultPage(env)).body).toBe("");
   });
 
   it("🔴 does not claim unfinished lines as things that got done", async () => {
@@ -475,7 +475,7 @@ describe("knag_wipe", () => {
   it("defaults to completed when no scope is given", async () => {
     await call("knag_wipe", { base_version: 2 });
 
-    expect((await readDocument(env)).body).toBe("keep me\n- [ ] not done");
+    expect((await readDefaultPage(env)).body).toBe("keep me\n- [ ] not done");
   });
 
   it("reports zero on an already-empty page rather than wiping nothing loudly", async () => {
@@ -520,14 +520,14 @@ describe("knag_history", () => {
   });
 
   it("reports what changed, grouped by local day", async () => {
-    await writeDocument(
+    await writePage(
       env,
-      { body: "alpha", baseVersion: SEEDED_VERSION, source: "pwa" },
+      { pageId: DEFAULT_PAGE_ID, body: "alpha", baseVersion: SEEDED_VERSION, source: "pwa" },
       new Date("2026-03-08T13:00:00.000Z"),
     );
-    await writeDocument(
+    await writePage(
       env,
-      { body: "alpha\nbravo", baseVersion: 2, source: "agent" },
+      { pageId: DEFAULT_PAGE_ID, body: "alpha\nbravo", baseVersion: 2, source: "agent" },
       new Date("2026-03-09T04:00:00.000Z"), // 23:00 local on the 8th
     );
 

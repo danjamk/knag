@@ -5,7 +5,7 @@ import { type Principal, unauthorized } from "./auth.js";
 import type { Env } from "./env.js";
 import { isCompleted, parse, serialize } from "./blocks.js";
 import { loadHistory, reportingZone, resolveRange } from "./history.js";
-import { type WipeScope, readDocument, wipe, writeDocument } from "./store.js";
+import { DEFAULT_PAGE_ID, type WipeScope, readDefaultPage, wipe, writePage } from "./store.js";
 
 /**
  * The MCP server — the agent half of the product (spec §10, §14.6).
@@ -266,6 +266,24 @@ const BASE_VERSION = z
     "The version you last read, from knag_read. The write applies only if the page is still at this version; anything else is a conflict. Use 0 only for a page you believe is empty.",
   );
 
+/**
+ * The page every MCP tool reads and writes, until #153 gives them a parameter.
+ *
+ * 🔴 **The default page, and deliberately not "the current page."** #123's task list
+ * said the latter and it is not implementable: the Worker has no current page. "Current"
+ * is a per-device idea living in the browser's localStorage, and a bearer token carries
+ * no device — so an agent's write would land on whatever page a phone happened to be
+ * showing. Whole-document write is the only write here, which makes that a
+ * non-deterministic overwrite of a page nobody named.
+ *
+ * Non-null by construction: `readPage` answers for the default page even when the row is
+ * missing, which is spec §14.5's "empty is a valid state" and the reason a fresh database
+ * is readable before anything has been written to it.
+ */
+async function agentPage(env: Env) {
+  return await readDefaultPage(env);
+}
+
 function registerRead(server: McpServer, env: Env): void {
   server.registerTool(
     "knag_read",
@@ -292,7 +310,12 @@ function registerRead(server: McpServer, env: Env): void {
       },
     },
     async () => {
-      const doc = await readDocument(env);
+      // 🔴 The default page, explicitly, and #153 is where a `page` parameter arrives.
+      // Not "the current page": the Worker has no current page — that is a per-device
+      // idea living in the browser's localStorage, and a bearer token carries no device.
+      // Defaulting to whatever a phone happened to be showing would land a whole-document
+      // write somewhere the agent never named.
+      const doc = await agentPage(env);
       return ok(
         { body: doc.body, version: doc.version, updated_at: doc.updated_at },
         `Page at version ${doc.version}, updated ${doc.updated_at}.\n\n${doc.body}`,
@@ -341,7 +364,12 @@ function registerWrite(server: McpServer, env: Env): void {
       },
     },
     async ({ body, base_version }) => {
-      const result = await writeDocument(env, { body, baseVersion: base_version, source: "agent" });
+      const result = await writePage(env, {
+        pageId: DEFAULT_PAGE_ID,
+        body,
+        baseVersion: base_version,
+        source: "agent",
+      });
 
       if (result.status === "conflict") {
         return failed(conflictText("this write", base_version, result.current));
@@ -405,7 +433,7 @@ function registerWipe(server: McpServer, env: Env): void {
     },
     async ({ base_version, scope }) => {
       const wipeScope: WipeScope = scope === "all" ? "all" : "completed";
-      const current = await readDocument(env);
+      const current = await agentPage(env);
       const blocks = parse(current.body);
       const completed = blocks.filter(isCompleted);
 
@@ -426,6 +454,7 @@ function registerWipe(server: McpServer, env: Env): void {
       }
 
       const result = await wipe(env, {
+        pageId: DEFAULT_PAGE_ID,
         baseVersion: base_version,
         body: wipeScope === "all" ? "" : serialize(blocks.filter((block) => !isCompleted(block))),
         // The finished lines only, under both scopes — see the note in store.ts. The
@@ -540,7 +569,7 @@ function registerHistory(server: McpServer, env: Env): void {
         return failed(`invalid ${range.field}: ${range.message}`);
       }
 
-      const history = await loadHistory(env, range, timeZone);
+      const history = await loadHistory(env, { ...range, pageId: DEFAULT_PAGE_ID }, timeZone);
 
       // 🔴 The empty path returns structured content too. A day with nothing in it is a
       // real answer, and omitting `structuredContent` here would turn "quiet week" into

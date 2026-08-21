@@ -518,14 +518,19 @@ export function resolveRange(
  */
 export async function loadHistory(
   env: Env,
-  range: { since: Date; until: Date },
+  range: { pageId: number; since: Date; until: Date },
   timeZone: string,
 ): Promise<History> {
   // Three indexed reads in parallel. `revisionBefore` is issued unconditionally even
   // though a truncated page supersedes it — one extra indexed lookup is cheaper than
   // the second round trip that finding out first would cost.
+  //
+  // 🔴 All three carry `range.pageId` (#152). A diff floor taken from another page would
+  // report that page's whole body as `disappeared` and this page's as `appeared` — a
+  // history that is not merely incomplete but actively wrong, on the one query the
+  // feature exists for.
   const [before, page, cleared] = await Promise.all([
-    revisionBefore(env, range.since),
+    revisionBefore(env, range.pageId, range.since),
     revisionsInRange(env, range),
     clearedItemsInRange(env, range),
   ]);
