@@ -18,14 +18,23 @@ clears, promote the next one.** Nothing else decides what to pick up.
 This replaces the MVP plan's `#2 → #3 → #4 → #8`, which was true until it was
 not and stayed written down for a while afterwards.
 
-**Where it stands, 2026-08-20.** Phases 0 through 5 have shipped — 0.9.0 through 0.16.0,
-prod and dev on the same build, and the landing page live. **#114 is settled** (a device
-test, not a branch), and **#113 is done — the row list is deleted.** What is left inside
-1.0 is **#115** alone, waiting on a week of using both copy paths; its own issue says so.
+**Where it stands, 2026-08-20.** Phases 0 through 5 have shipped and so has Phase 3 —
+0.9.0 through 1.0.1, prod and dev on the same build, and the landing page live. **#114 is
+settled** (a device test, not a branch), **#113 is done — the row list is deleted**, and
+**#115 is ruled — leave both** (see Phase 3). **Nothing is left inside 1.0.**
 
-✅ **1.0 is this.** It was held back for one reason — the shape still had two editing
-surfaces in it, and 1.0 is a claim about shape rather than a count of closed issues. The
-hinge has turned.
+✅ **1.0 is this, and it is now finished rather than merely claimed.** It was held back
+for one reason — the shape still had two editing surfaces in it, and 1.0 is a claim about
+shape rather than a count of closed issues. The hinge has turned, and Phase 3 clearing is
+what makes the claim literally true.
+
+🔴 **1.0.1 is the record of what a first hour of real use finds.** Six items, none from
+the suite; two were defects, and one of them — the page wipe releasing its animation
+before the repaint — meant the `fall` timing's held empty board had never once run since
+it shipped in 0.13.0. It had been carried on #121 as a tuning question against
+`--page-travel`. **Read that as evidence about the suite, not about the wipe**: every
+defect this project has shipped was found by a person on a device, and this one hid for
+a release behind a plausible wrong diagnosis.
 
 🔴 **The design session answered, and it reordered phase 4.** The holistic pass
 came back on 2026-08-19 and is recorded in
@@ -223,7 +232,7 @@ The outstanding items on the precondition list were:
 Three PRs. #113 alone, because a ~400-line deletion deserves to be reviewable by
 itself. Natural **0.9.0**.
 
-### Phase 3 · Copy, settled — #115, ~~#118~~
+### Phase 3 · Copy, settled — ~~#115~~, ~~#118~~ · ✅ **done, 2026-08-20**
 
 🔴 **Corrected 2026-08-19: #118 did not depend on #115, and shipped alone in
 0.10.0.** This phase originally said the two were one branch because "the button
@@ -232,11 +241,25 @@ own issue, which says a whole-page copy is *"the only one with no room for
 interpretation: it carries the page, markers and all"* — the answer is forced by
 round-tripping, not by #115.
 
-**#115 is parked, and not because it is hard.** Its own first task says
+**#115 was parked, and not because it was hard.** Its own first task said
 *"use both for a week and notice whether it ever bites — do not decide from the
-armchair."* The editing surface shipped 2026-08-18. There is nothing to build
+armchair."* The editing surface shipped 2026-08-18. There was nothing to build
 that answers a question about how a gesture feels; what #115 gained from 0.10.0
-is that there are now three paths to rule on and the third is already decided.
+is that there were three paths to rule on and the third was already decided.
+
+🔴 **Ruled 2026-08-20: leave both, and nothing changes.** Arrange's copy is a
+whole-row verb and copies what the row displays; an editor selection copies document
+text, which is not a policy but what a selection is. Both paths were used against a real
+page and the disagreement never surfaced — which is the answer the experiment was set up
+to produce, not an absence of one.
+
+It was ruled *now* rather than left running because it is a **single-document** question
+and Phase 6 is next: once there are several pages, copy acquires a cross-page paste and
+this gets designed twice. That is finding 1 again — the same one that moved #91 out of
+1.0 — and the cheapest place to spend it is before the shape changes.
+
+**Phase 3 clearing is what makes 1.0's claim literally true**: the single-document
+product is done, with no open item inside it.
 
 ### Phase 4 · The bar, the wipe and the sheet — #139, #121, #132, ~~#92~~, ~~#120~~
 
