@@ -25,7 +25,7 @@ import {
   toggle,
 } from "../../worker/src/blocks.js";
 import { safeNext } from "./nav.js";
-import { offerExpiresAt, restoredBody } from "./restore.js";
+import { goneCount, offerExpiresAt, restoredBody } from "./restore.js";
 import {
   type Connectivity,
   RECONNECT_PROBE_MS,
@@ -1075,7 +1075,19 @@ rowsEl?.addEventListener("change", (event) => {
  * device's own day. `/api/history` reasons about days in `KNAG_TZ` because it reports
  * on the past; this is about the person holding the phone right now.
  */
-type WipeMemory = { preWipe: string; postWipe: string; count: number; expiresAt: number };
+type WipeMemory = {
+  preWipe: string;
+  postWipe: string;
+  count: number;
+  expiresAt: number;
+  /**
+   * Which wipe this was. Optional because a memory written before #91 does not carry it,
+   * and the honest reading of a missing scope is `completed` — that is what every wipe
+   * whose copy said `wiped N` was. The offer expires at local midnight anyway, so the
+   * window where this matters is one afternoon.
+   */
+  scope?: WipeScope;
+};
 
 /**
  * The undo offer, **per page** (#154).
@@ -1131,13 +1143,42 @@ function readWipe(): WipeMemory | null {
   }
 }
 
-/** The offer, or nothing. Deadpan, and it names the number so it is not a mystery. */
+/**
+ * The offer, or nothing. Deadpan, and it names the number so it is not a mystery.
+ *
+ * 🔴 **Two operations, two labels, and the difference between the labels is exactly the
+ * difference between the operations (#91): a sweep hands you lines, a reset hands you the
+ * page.** They used to share one, and it lied in both directions — `wiped 25` on a reset
+ * that put twenty lines straight back, and `bring back` for an undo that has to take a
+ * template off before it can put anything anywhere.
+ *
+ * `gone` rather than the server's count: see `goneCount`. On a sweep they are equal and
+ * this changes nothing.
+ *
+ * `put the page back` is longer than `bring back` on purpose. The reset is the bigger
+ * undo and should read as the bigger undo.
+ */
 function paintRestore(): void {
   const memory = readWipe();
   if (!recoveryLine) return;
 
   recoveryLine.toggleAttribute("hidden", memory === null);
-  if (memory && recoveryCountEl) recoveryCountEl.textContent = `wiped ${memory.count}`;
+  if (!memory) return;
+
+  const wholePage = memory.scope === "all";
+
+  if (recoveryCountEl) {
+    if (!wholePage) {
+      recoveryCountEl.textContent = `wiped ${memory.count}`;
+    } else {
+      // A page with a template was *reset*; one without was emptied. The post-wipe body
+      // is the only thing that knows which, and it is already in the memory.
+      const verb = memory.postWipe === "" ? "wiped page" : "reset";
+      recoveryCountEl.textContent = `${verb} · ${goneCount(memory.preWipe, memory.postWipe)} gone`;
+    }
+  }
+
+  if (restoreButton) restoreButton.textContent = wholePage ? "put the page back" : "bring back";
 }
 
 // ── The wipe animation (the only animation in the product) ───────────────────
@@ -1342,6 +1383,7 @@ async function requestWipe(scope: WipeScope): Promise<void> {
           postWipe: doc.body,
           count,
           expiresAt: offerExpiresAt(new Date()),
+          scope,
         });
       }
     }

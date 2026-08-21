@@ -150,6 +150,58 @@ function countOf(list: string[], value: string): number {
 }
 
 /**
+ * How many lines the wipe actually took away.
+ *
+ * 🔴 **Not `wiped_count`, and the difference is the whole point (#91).** The server
+ * records what the wipe *did* — it took twenty-five lines off the page — and a log should
+ * say that. But on a page with a template the wipe puts twenty back in the same breath, so
+ * `wiped 25` is a true statement about the operation and a false one about the outcome.
+ *
+ * This is the multiset difference of the page before and after: the lines that left **and
+ * did not come straight back**. On a sweep it equals `wiped_count` exactly and nothing
+ * anywhere changes. On a reset of a twenty-five-line page onto a twenty-line template it
+ * is five, which is the number a person would have counted.
+ *
+ * Duplicates are respected rather than collapsed, which is why it is a multiset: a page
+ * holding the same line twice and losing one of them lost one line.
+ */
+export function goneCount(preWipe: string, postWipe: string): number {
+  // `addedBlocks(a, b)` is "blocks in b that a does not account for", so the arguments
+  // reverse to give what the page lost rather than what it gained.
+  return addedBlocks(blocksOf(postWipe), blocksOf(preWipe)).length;
+}
+
+/**
+ * Append lines to the page, count-idempotently.
+ *
+ * For a restore with **no snapshot behind it** — a row from history rather than today's
+ * offer. `restoredBody` needs `preWipe` and `postWipe` to know where each line sat, and an
+ * older wipe has neither on this device; all that survives is the lines themselves.
+ *
+ * So they land at the end. **Content over position**, which is the ruling `restoredBody`
+ * already makes when an anchor has vanished — a line you went looking for is not less
+ * useful at the bottom of the page, and a restore that silently dropped it would be the
+ * failure the whole feature exists to prevent.
+ *
+ * 🔴 Count-idempotent for `restoredBody`'s reason and by the same rule: a line is appended
+ * only while the page holds it fewer times than this restore has asked for so far. Tapping
+ * twice is safe, and a page that legitimately contains the same line twice can still have
+ * both put back.
+ */
+export function insertLines(current: string, lines: string[]): string {
+  const result = blocksOf(current);
+  const asked = new Map<string, number>();
+
+  for (const line of lines) {
+    const want = (asked.get(line) ?? 0) + 1;
+    asked.set(line, want);
+    if (countOf(result, line) < want) result.push(line);
+  }
+
+  return result.join("\n");
+}
+
+/**
  * Put the wiped blocks back into the current page.
  *
  * `preWipe` and `postWipe` bracket what the wipe did; `current` is the page now, which
