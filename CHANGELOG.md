@@ -13,6 +13,21 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **`docs/planning/scale-model.html`** — a freemium economics and cost simulator on the
+  target Cloudflare architecture, and the answer to a question spec §17 had only ever asked
+  architecturally. §17 established that multi-tenant would break almost nothing; this prices
+  it, and finds there is no business case to break in the first place. Infrastructure is
+  ~$0.10–0.15 per user per year and flat with scale, paid acquisition can never pay back,
+  and the honest ceiling is beer money rather than an income.
+
+  🔴 It changes no decision in §17 — every "No" stays No and auth stays the only "Yes". It
+  changes the *reason* ADR-001's revisit trigger is a second human: there is no business
+  case, so the only thing that would ever move it is somebody wanting to use the thing.
+
+  Self-contained, opens in a browser, no build step. Docs only — nothing shipped changes.
+
 ## [1.1.4] — 2026-08-21
 
 The safety net was corrupting the page.

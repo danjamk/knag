@@ -1689,3 +1689,32 @@ The cost that is easy to miss is not in the code: holding other people's data
 turns `make backup` from a personal habit into an obligation, multiplies the
 polling budget of §14.4 by the tenant count, and gives the login rate-limit rule
 a different threat model.
+
+#### The economic half, modelled 2026-08-21
+
+The section above answers *what would tenancy break*. It never answered *what would
+tenancy be worth*, and that turns out to be the binding question.
+[docs/planning/scale-model.html](planning/scale-model.html) is a freemium simulator on the
+target Cloudflare architecture — Bass diffusion into a finite niche, downloads aged through
+a retention curve rather than a flat churn rate. Three findings survive the sliders:
+
+- **Price decides viability, infrastructure does not.** The bill is ~$0.10–0.15 per user
+  per year and flat with scale. $9.99/yr breaks even below the measured median conversion;
+  $1.99/yr needs triple it. **The Workers bill is never what kills this.**
+- **Paid acquisition can never pay back.** Net lifetime revenue per *download* is well
+  under $1 against consumer CPIs of $1–5. The gap is structural rather than a tuning
+  problem, so growth would have to be operator hours — which the model prices, and that
+  price is the actual finding.
+- **The ceiling is honest and low.** At benchmark assumptions the upside is beer money,
+  lessons and optionality — not an income.
+
+🔴 **This changes nothing in the table above, and that is the point.** Every "No" stays
+No; auth stays the only Yes. What it changes is the *reason* the trigger is a second human
+rather than a business case: there is no business case, so the only thing that would ever
+move this is somebody wanting to use it.
+
+One piece of it is engineering rather than economics and outlives the question entirely:
+the scaling ladder — prune sealed revisions, then hash-shard D1, then more shards, then
+Durable Objects only if the product changes. Step 2 is one binding lookup in `store.ts`
+**because all SQL already lives there**, which is this section's own insurance paying off a
+second time (the first was #152, §17 above).
