@@ -13,6 +13,16 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-08-21
+
+The release whose only job is to be deployed.
+
+🔴 **Nothing here is user-facing, and that is the point.** `documents` cannot be dropped
+until the Worker running at drop time has stopped writing to it — and `make migrate` runs
+*before* `make deploy`, so that Worker is this one. This release exists so the next one can
+carry the migration safely. Skipping it because "it is only a refactor" is what reopens the
+window.
+
 ### Changed
 
 - **The `documents` shadow write is gone** (#155). `pages` has been the authority since
@@ -1463,7 +1473,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/danjamk/knag/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/danjamk/knag/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/danjamk/knag/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/danjamk/knag/compare/v1.0.0...v1.0.1
