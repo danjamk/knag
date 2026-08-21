@@ -1,6 +1,6 @@
 {
   "name": "knag",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "One plain-text document, always live, edited from any device and by the agent",
   "license": "MIT",

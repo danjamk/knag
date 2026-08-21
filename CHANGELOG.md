@@ -13,6 +13,17 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-08-21
+
+Templates do what they say.
+
+**1.1.0 shipped templates backwards**, and this is the correction. The bug was a
+misreading of #123 rather than a defect in the code: *"a page's current body can be saved
+as its template, and creating a page starts from it"* — the second clause described one
+consequence, and it got built as the whole feature. What it cost was the wipe: on a page
+you use repeatedly, which is the only kind of page that wants a baseline, wiping still
+left you with nothing.
+
 ### Fixed
 
 - 🔴 **Templates are a page's reset state, not a seed for new pages** (#165). 1.1.0 shipped
@@ -1426,7 +1437,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/danjamk/knag/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/danjamk/knag/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/danjamk/knag/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/danjamk/knag/compare/v0.16.0...v1.0.0
