@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { offerExpiresAt, restoredBody } from "../src/restore.js";
+import { goneCount, insertLines, offerExpiresAt, restoredBody } from "../src/restore.js";
 
 /**
  * Undoing a wipe (#59).
@@ -235,5 +235,68 @@ describe("undoing a template reset (#173)", () => {
     const restored = restoredBody({ preWipe: SHOPPED, postWipe: TEMPLATE, current: TEMPLATE });
 
     expect(restored.split("\n").filter((line) => line === "- [ ] bread")).toHaveLength(1);
+  });
+});
+
+describe("goneCount (#91)", () => {
+  const TEMPLATE = "- [ ] milk\n- [ ] eggs\n- [ ] bread";
+  const SHOPPED = "- [x] milk\n- [x] eggs\n- [ ] bread\n- [x] birthday candles\n- [ ] foil";
+
+  it("🔴 counts what did not come straight back, not what the wipe touched", () => {
+    // The server records five lines removed, which is true about the operation. Two of
+    // them — bread by identity, and nothing else — survive; the template puts milk and
+    // eggs back in a different state, so those *did* leave.
+    expect(goneCount(SHOPPED, TEMPLATE)).toBe(4);
+  });
+
+  it("equals the whole page when the wipe leaves nothing", () => {
+    expect(goneCount(SHOPPED, "")).toBe(5);
+  });
+
+  it("is zero when the page already was its template", () => {
+    // Resetting a page that is already its own baseline removes nothing, and the line
+    // should say so rather than reporting the size of the page.
+    expect(goneCount(TEMPLATE, TEMPLATE)).toBe(0);
+  });
+
+  it("counts a duplicate line once per copy lost, because it is a multiset", () => {
+    expect(goneCount("a\na\nb", "a\nb")).toBe(1);
+    expect(goneCount("a\na\nb", "b")).toBe(2);
+  });
+
+  it("is zero on an empty page", () => {
+    expect(goneCount("", "")).toBe(0);
+  });
+});
+
+describe("insertLines (#91)", () => {
+  it("appends at the end, in order — content over position", () => {
+    expect(insertLines("today\n- [ ] one", ["a note", "- [ ] two"])).toBe(
+      "today\n- [ ] one\na note\n- [ ] two",
+    );
+  });
+
+  it("🔴 is count-idempotent, so a second tap changes nothing", () => {
+    const once = insertLines("today", ["a note"]);
+    expect(insertLines(once, ["a note"])).toBe(once);
+  });
+
+  it("puts back both copies of a line the page legitimately held twice", () => {
+    // Presence would refuse the second one. The count is what makes it right.
+    expect(insertLines("", ["dup", "dup"])).toBe("dup\ndup");
+  });
+
+  it("tops up rather than duplicating when the page already holds one copy", () => {
+    expect(insertLines("dup", ["dup", "dup"])).toBe("dup\ndup");
+  });
+
+  it("restores onto an empty page without a leading blank line", () => {
+    // `parse("")` yields one blank block, so the naive version returns "\nrestored".
+    expect(insertLines("", ["restored"])).toBe("restored");
+  });
+
+  it("preserves the bytes exactly, including indentation and markers", () => {
+    const awkward = "\t- [x] indented \n  * star marker";
+    expect(insertLines("", awkward.split("\n"))).toBe(awkward);
   });
 });

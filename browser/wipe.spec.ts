@@ -327,3 +327,71 @@ test.describe("undoing a template reset (#173)", () => {
     await expect.poll(() => knag.document()).toBe(`${SHOPPED}\n- [ ] batteries`);
   });
 });
+
+test.describe("the recovery line says which wipe it was (#91)", () => {
+  // 🔴 Two operations, two labels. They shared one until now, and it lied in both
+  // directions: `wiped 25` on a reset that put twenty lines straight back, and
+  // `bring back` for an undo that has to take a template off before it can put
+  // anything anywhere.
+  const TEMPLATE = "- [ ] milk\n- [ ] eggs\n- [ ] bread";
+  const SHOPPED = "- [x] milk\n- [x] eggs\n- [ ] bread\n- [x] birthday candles\n- [ ] foil";
+
+  test.afterEach(async ({ knag }) => {
+    await knag.resetPages();
+  });
+
+  test("a sweep is unchanged — `wiped N · bring back`", async ({ knag }) => {
+    // The path with a release of real use behind it. It must read exactly as it did.
+    await knag.resetPages();
+    await knag.seed(MIXED);
+
+    await knag.page.locator("[data-clear]").click();
+
+    await expect(knag.recovery()).toHaveText(/wiped 2\s*·\s*bring back/);
+  });
+
+  test("🔴 a page wipe with no template says `wiped page`, and counts what went", async ({
+    knag,
+  }) => {
+    await knag.resetPages();
+    await knag.seed(SHOPPED);
+
+    await wipeThePage(knag);
+
+    // Five lines on the page, nothing came back, so five went.
+    await expect(knag.recovery()).toHaveText(/wiped page\s*·\s*5 gone\s*·\s*put the page back/);
+  });
+
+  test("🔴 a reset says `reset`, and counts what did not come straight back", async ({
+    knag,
+  }) => {
+    await knag.resetPages();
+    await knag.seed(TEMPLATE);
+    await knag.saveTemplate();
+    await knag.seed(SHOPPED);
+
+    await wipeThePage(knag);
+    await expect.poll(() => knag.document()).toBe(TEMPLATE);
+
+    // 🔴 The number that made this worth doing. The server removed five lines and the
+    // template put three back — but two of those three came back *unchecked*, so they
+    // did leave. Four went and did not return; `wiped 5` would have been a true
+    // statement about the operation and a false one about the outcome.
+    await expect(knag.recovery()).toHaveText(/reset\s*·\s*4 gone\s*·\s*put the page back/);
+  });
+
+  test("the label survives a reload, since the offer does", async ({ knag }) => {
+    await knag.resetPages();
+    await knag.seed(SHOPPED);
+
+    await wipeThePage(knag);
+    // Wait for the offer before reloading. `wipeThePage` returns on the second click and
+    // the memory is written after the request lands, so reloading straight away races the
+    // write — which is a test bug and reads as a copy bug.
+    await expect(knag.recovery()).toBeVisible();
+
+    await knag.page.reload();
+
+    await expect(knag.recovery()).toHaveText(/wiped page\s*·\s*5 gone\s*·\s*put the page back/);
+  });
+});

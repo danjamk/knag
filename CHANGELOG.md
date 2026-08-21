@@ -13,6 +13,27 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Changed
+
+- 🔴 **The recovery line says which wipe it was, and counts what actually went** (#91).
+  Two operations shared one label, and it was wrong in both directions.
+
+  A sweep is unchanged: `wiped 6 · bring back`. A whole-page wipe now reads
+  `wiped page · 9 gone · put the page back`, and a reset onto a template reads
+  `reset · 5 gone · put the page back`.
+
+  **`gone` is not the server's count, and the difference is the point.** The log records
+  what the wipe *did* — it took twenty-five lines off the page — and it should. But on a
+  page with a template the wipe puts twenty back in the same breath, so `wiped 25` was a
+  true statement about the operation and a false one about the outcome. `gone` is the
+  multiset difference of the page before and after: what left **and did not come straight
+  back**. On a sweep the two are equal and nothing changes.
+
+  `put the page back` is longer than `bring back` on purpose. Undoing a reset has to take
+  the template off before it can put anything anywhere — the operation #173 uncovered — and
+  the bigger undo should read as the bigger undo.
+
+
 ### Fixed
 
 - 🔴 **A whole-page wipe now records what it took** (#91). It did not, and nothing said so.
