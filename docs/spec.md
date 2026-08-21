@@ -1615,11 +1615,13 @@ has no `ALTER TABLE ... DROP CONSTRAINT`. Removing that `CHECK` is a full table
 rebuild, which is destructive, and `make migrate` runs *before* `make deploy`, so the
 deployed Worker runs against the new schema in the gap (ADR-002 §3).
 
-So a few pages is **expand/contract across two releases**, not one additive column:
-a new `pages` table backfilled from `documents` and read going forward, then
+So a few pages is **expand/contract across more than one release**, not one additive
+column: a new `pages` table backfilled from `documents` and read going forward, then
 `documents` dropped in a later release. Still one file of SQL and still cheap — the
-chokepoint holds — but it is two releases, and a plan that budgeted one would have
+chokepoint holds — but it is not one release, and a plan that budgeted one would have
 found out at migration time.
+
+🔴 **It is three, not the two written here.** Finding 4 below, added 2026-08-21.
 
 ✅ **Run, 2026-08-20 (#152).** Migration 0004 is the expand half and it went exactly as
 described above: `pages` created and backfilled, `page_id INTEGER NOT NULL DEFAULT 1`
@@ -1641,6 +1643,13 @@ Three things the plan did not have, all found by writing it:
    page's newest revision. Neither raises an error. Both were found by writing a test
    with a second page in it — which is the argument for building the schema half on its
    own, before anything can create one.
+4. 🔴 **The dual write in finding 1 is what makes this three releases rather than two**
+   (#155, 2026-08-21). `make migrate` runs before `make deploy`, so the Worker live when
+   `documents` is dropped is the *previous* one — and the previous one still mirrors to
+   `documents`. Expand and contract cannot be adjacent: the write has to stop, and be
+   deployed, in a release of its own between them. That middle release carries no
+   migration, which is precisely why it reads as skippable. ADR-002 §3 now says three and
+   carries the worked example.
 
 The chokepoint did hold: every one of those is in `store.ts`.
 

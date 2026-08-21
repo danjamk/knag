@@ -346,7 +346,7 @@ describe("knag_write", () => {
   it("records the write as coming from the agent", async () => {
     await call("knag_write", { body: "agent wrote this", base_version: SEEDED_VERSION });
 
-    const row = await env.DB.prepare("SELECT source FROM documents WHERE id = 1").first<{
+    const row = await env.DB.prepare("SELECT source FROM pages WHERE id = 1").first<{
       source: string;
     }>();
     expect(row?.source).toBe("agent");

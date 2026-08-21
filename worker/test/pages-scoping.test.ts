@@ -220,18 +220,23 @@ describe("history stays on its page", () => {
   });
 });
 
-describe("the rollback shadow", () => {
-  it("🔴 tracks only the default page, because `documents` has CHECK (id = 1)", async () => {
-    const other = await second();
+describe("the rollback shadow, now inert (#155)", () => {
+  it("🔴 is left alone by a write to the *default* page, not just by a write to another", async () => {
     const before = await env.DB.prepare("SELECT body FROM documents WHERE id = 1").first<{ body: string }>();
 
-    await writePage(env, { pageId: other.id, body: "not the default page\n", baseVersion: V1, source: "pwa" }, at(0));
+    // This is the assertion that flipped. The shadow used to track the default page and
+    // only the default page, because `documents` carries CHECK (id = 1) and there was
+    // nowhere to put a second. Now nothing moves it at all, including the one page it
+    // was built to follow.
+    await writePage(
+      env,
+      { pageId: DEFAULT_PAGE_ID, body: "the default page moved\n", baseVersion: V1, source: "pwa" },
+      at(0),
+    );
 
-    // There is nowhere to put a second page, which is exactly the constraint the split
-    // exists to escape — and the reason #155 must drop `documents` before #154 can create
-    // pages a rollback would lose.
     const after = await env.DB.prepare("SELECT body FROM documents WHERE id = 1").first<{ body: string }>();
     expect(after?.body).toBe(before?.body);
+    expect((await readDefaultPage(env)).body).toBe("the default page moved\n");
   });
 });
 

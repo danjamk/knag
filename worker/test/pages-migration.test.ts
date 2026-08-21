@@ -126,10 +126,14 @@ describe("cleared_items", () => {
 });
 
 describe("the contract half has not run", () => {
-  it("🔴 leaves `documents` standing, so a rollback is still possible", async () => {
-    // The whole value of expand/contract is the window where the old Worker still
-    // works. Dropping `documents` here would close it before it had done any work, and
-    // it is gated on #4's clock as well (#155).
+  it("🔴 leaves `documents` standing, one release after the dual write stopped", async () => {
+    // 🔴 **Expand/contract is three deploys, not two.** The table can only be dropped by
+    // a migration, and `make migrate` runs before `make deploy` — so the Worker live at
+    // drop time is the *previous* one. Removing the dual write and dropping the table in
+    // one release puts a writer and a missing table in the same window (ADR-002 §3).
+    //
+    // So this release stops writing and leaves the table; the next one drops it. When
+    // that lands, this test inverts.
     const row = await env.DB.prepare("SELECT id FROM documents WHERE id = 1").first<{ id: number }>();
     expect(row?.id).toBe(1);
   });

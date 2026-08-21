@@ -150,8 +150,9 @@ jobs:
 
       # 🔴 Migrations run BEFORE the deploy, so between this step and the next the
       # currently-deployed Worker is running against the new schema. That is why
-      # migrations are additive-only and destructive changes take two releases
-      # (ADR-002 §3). If this ordering ever looks wrong, the migration is wrong.
+      # migrations are additive-only and destructive changes take three releases —
+      # expand, stop writing the old thing, then contract (ADR-002 §3). If this
+      # ordering ever looks wrong, the migration is wrong.
       - name: Apply D1 migrations
         if: ${{ !inputs.skip_migrations }}
         run: |

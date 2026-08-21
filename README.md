@@ -149,7 +149,8 @@ make verify ENV=prod       # smoke-tests routes, fonts and icons
 
 **Between `migrate` and `deploy`, the deployed Worker is running against the new
 schema.** Every migration must be backward-compatible with it. Additive changes are
-free; anything destructive takes two releases — expand, then contract. This is the one
+free; anything destructive takes three — expand, stop writing the old thing, then
+contract. This is the one
 rule whose violation does not produce a failed deploy: it produces a Worker writing to a
 column that no longer exists, against the only copy of the page. See
 [ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md).

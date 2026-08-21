@@ -287,7 +287,6 @@ export async function writePage(
     )
       .bind(input.pageId, DEFAULT_PAGE_NAME, input.body, updatedAt, input.source, updatedAt)
       .run();
-    await mirrorToDocuments(env, input.pageId, { body: input.body, version: 1, updatedAt, source: input.source });
     await recordRevision(
       env,
       { pageId: input.pageId, body: input.body, version: 1, source: input.source },
@@ -312,7 +311,6 @@ export async function writePage(
   }
 
   const version = current.version + 1;
-  await mirrorToDocuments(env, input.pageId, { body: input.body, version, updatedAt, source: input.source });
 
   // 🔴 After the CAS, never batched with it. D1's batch is a transaction but not a
   // conditional one — the revision write would apply even when the UPDATE matched
@@ -327,38 +325,6 @@ export async function writePage(
   );
 
   return { status: "applied", version, updated_at: updatedAt };
-}
-
-/**
- * Keep `documents` in step with the default page, for as long as it exists (#155).
- *
- * 🔴 **This is the rollback, and it is the whole reason expand and contract are two
- * releases.** `pages` is the authority from here on; `documents` is a shadow that lets the
- * previous Worker keep serving a current document if this one has to be rolled back.
- * Without it, expand and contract collapse into a single irreversible step against the
- * only copy of the document.
- *
- * Only the default page, because `documents` still carries `CHECK (id = 1)` and there is
- * nowhere to put a second page. That is exactly the constraint the split exists to escape,
- * and it means a rollback after #154 ships would lose pages 2..n — which is why #155
- * drops this before the switcher can create them.
- *
- * Never the authority on whether a write applied. It runs after the CAS has already
- * decided, and a mirror that silently matched zero rows must not turn an applied write
- * into a conflict.
- */
-async function mirrorToDocuments(
-  env: Env,
-  pageId: number,
-  state: { body: string; version: number; updatedAt: string; source: WriteSource },
-): Promise<void> {
-  if (pageId !== DEFAULT_PAGE_ID) return;
-
-  await env.DB.prepare(
-    `UPDATE documents SET body = ?, version = ?, updated_at = ?, source = ? WHERE id = ?`,
-  )
-    .bind(state.body, state.version, state.updatedAt, state.source, DEFAULT_PAGE_ID)
-    .run();
 }
 
 /**
@@ -404,7 +370,7 @@ async function newestUnsealedRevision(env: Env, pageId: number): Promise<Revisio
  *
  * The snapshot is of the state *after* the write: `version` is the version this body
  * became. So the log answers "what did the document look like at version N", and the
- * live row in `documents` is simply the newest such state.
+ * page's own row is simply the newest such state.
  */
 async function recordRevision(
   env: Env,
@@ -492,7 +458,8 @@ const EVENT_TYPE: Record<WipeScope, string> = {
  * and seals it, so every removed line is derivable from that snapshot and the body this
  * writes, for both scopes ([#59](https://github.com/danjamk/knag/issues/59)).
  *
- * 🔴 **Every statement carries the same `version = ?` guard, and the CAS is last.**
+ * 🔴 **Every statement carries the same `version = ?` guard, and the CAS is found by
+ * identity rather than by position** — see `casIndex`.
  *
  * D1's `batch()` is a transaction, but not a *conditional* one: a mismatched
  * `base_version` would otherwise still seal a revision and write `cleared_items` rows
@@ -501,7 +468,7 @@ const EVENT_TYPE: Record<WipeScope, string> = {
  * clearing at all, and invisible until someone reads their history.
  *
  * Guarding every statement on the *pre-wipe* version fixes it. Statements 1–3 do not
- * touch `documents.version`, so all four observe the same value, and no other writer
+ * touch `pages.version`, so all four observe the same value, and no other writer
  * can interleave inside a transaction. Either the version matches at batch start and
  * all four apply, or it does not and none do.
  */
@@ -553,6 +520,13 @@ export async function wipe(
   // and one reordering away from being wrong. Scoped here so it is right on purpose.
   const newestOnPage = "(SELECT max(id) FROM revisions WHERE page_id = ?)";
 
+  // Hoisted out of the array below so the batch's result can be found by identity rather
+  // than by arithmetic on the array's length. See `casIndex`.
+  const cas = env.DB.prepare(
+    `UPDATE pages SET body = ?, version = version + 1, updated_at = ?, source = ?
+      WHERE id = ? AND version = ?`,
+  ).bind(input.body, timestamp, input.source, pageId, version);
+
   const statements = [
     // 1. Seal the newest revision, so the pre-clear state cannot be swallowed by the
     //    ten-minute coalescing window (spec §3).
@@ -598,25 +572,18 @@ export async function wipe(
 
     // 4. The page itself, because this is the statement that moves the version the
     //    other three are guarding on. **The authority on whether the wipe happened.**
-    env.DB.prepare(
-      `UPDATE pages SET body = ?, version = version + 1, updated_at = ?, source = ?
-        WHERE id = ? AND version = ?`,
-    ).bind(input.body, timestamp, input.source, pageId, version),
-
-    // 5. The rollback shadow, after the CAS and never the authority — see
-    //    `mirrorToDocuments`. Guarded on the *old* version so a `documents` that has
-    //    drifted is left alone rather than overwritten from a page it no longer tracks.
-    env.DB.prepare(
-      `UPDATE documents SET body = ?, version = ?, updated_at = ?, source = ?
-        WHERE id = ? AND ? = ${DEFAULT_PAGE_ID}`,
-    ).bind(input.body, version + 1, timestamp, input.source, DEFAULT_PAGE_ID, pageId),
+    cas,
   ];
 
-  // 🔴 Statement 4 decides, by index rather than by position from the end. It was
-  // `results[results.length - 1]` and that was correct while the CAS was last; adding the
-  // shadow write after it would have made a mirror that matched zero rows report the
-  // whole wipe as a conflict.
-  const casIndex = statements.length - 2;
+  // 🔴 Which statement decided is looked up, never counted.
+  //
+  // It was `results[results.length - 1]`, which was correct only for as long as the CAS
+  // happened to be last. #152 added a rollback shadow after it, and a mirror matching zero
+  // rows would have reported the whole wipe as a conflict; the fix was `length - 2`, which
+  // is the same bug carrying a different constant. #155 removed that shadow, so counting
+  // from the end would give the right answer again today — which is exactly why it is
+  // still not counted. `indexOf` cannot disagree with which statement is the CAS.
+  const casIndex = statements.indexOf(cas);
   const results = await env.DB.batch(statements);
 
   if (results[casIndex]?.meta.changes !== 1) {

@@ -38,8 +38,8 @@ backup → migrate → deploy → health → verify
 
 🔴 **Migrations run before the deploy.** Between those two steps the *currently
 deployed* Worker is running against the *new* schema. That window is the reason
-migrations are additive-only and destructive changes take two releases (expand, then
-contract). Getting it wrong does not produce a failed deploy — it produces a live Worker
+migrations are additive-only and destructive changes take three releases (expand, stop
+writing the old thing, then contract). Getting it wrong does not produce a failed deploy — it produces a live Worker
 writing to a column that no longer exists, against the only copy of the page.
 
 Locally that is:

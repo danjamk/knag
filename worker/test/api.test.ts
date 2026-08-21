@@ -123,19 +123,28 @@ describe("PUT /api/doc", () => {
     expect(row?.source).toBe("agent");
   });
 
-  it("🔴 mirrors the default page into `documents`, which is the rollback (#152)", async () => {
-    await put({ body: "written after pages", base_version: SEEDED_VERSION });
+  it("🔴 no longer mirrors into `documents`, which is now inert (#155)", async () => {
+    const before = await env.DB.prepare("SELECT body, version FROM documents WHERE id = 1")
+      .first<{ body: string; version: number }>();
 
-    // `pages` is the authority from migration 0004 on. `documents` is a shadow kept in
-    // step so the *previous* Worker can still serve a current document if this one has
-    // to be rolled back — which is the entire reason expand and contract are two
-    // releases rather than one. #155 drops the table and this assertion with it.
-    const shadow = await env.DB.prepare("SELECT body, version FROM documents WHERE id = 1")
+    await put({ body: "written after the dual write went", base_version: SEEDED_VERSION });
+
+    // 🔴 **This assertion inverted on purpose, and it is the precondition for the drop.**
+    // The shadow let the pre-0004 Worker keep serving a current document through a
+    // rollback. #154 shipped the switcher, so a rollback now loses pages 2..n whatever
+    // this table says — the window it protected closed on its own.
+    //
+    // What matters is the *next* release: `make migrate` runs before `make deploy`, so
+    // the Worker still running when `documents` is dropped is this one. It must already
+    // be ignoring the table, or that gap has a live Worker writing somewhere that no
+    // longer exists (ADR-002 §3). This is what pins that.
+    const after = await env.DB.prepare("SELECT body, version FROM documents WHERE id = 1")
       .first<{ body: string; version: number }>();
     const page = await readDefaultPage(env);
 
-    expect(shadow?.body).toBe(page.body);
-    expect(shadow?.version).toBe(page.version);
+    expect(after?.body).toBe(before?.body);
+    expect(after?.version).toBe(before?.version);
+    expect(page.body).toBe("written after the dual write went");
   });
 });
 
