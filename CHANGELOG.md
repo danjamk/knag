@@ -15,6 +15,20 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- **`/api/pages`** — create, rename, save-a-template and retire (#154). The switcher's
+  API, with no switcher yet. The list carries `id`, `name` and `has_template` and nothing
+  else: anything more is a column, and a column is a file manager.
+
+  🔴 **Deleting a page removes no rows.** `deleted_at` is stamped, the page leaves every
+  list and lookup, and every revision and cleared item it ever had stays exactly where it
+  was — which is what makes "delete does not confirm" honest rather than a lie, with no
+  undo screen to fall back on. Recovering a page is clearing one column. The unique name
+  index became partial so a retired page's name is free to reuse.
+
+  The default page cannot be deleted, and that is structural: it is what a request naming
+  no page resolves to, what every MCP tool writes to, and what §14.5's defensive read
+  answers for.
+
 - **An optional `page` on all four MCP tools** (#153, phase 6b of #123), resolved **by
   name**, case-insensitively. Omit it for the default page, which is what every call meant
   before pages existed — optional because a required parameter would break every deployed

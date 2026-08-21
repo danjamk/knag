@@ -73,7 +73,7 @@ export type WriteResult =
  */
 export async function readPage(env: Env, pageId: number): Promise<PageRow | null> {
   const row = await env.DB.prepare(
-    "SELECT id, name, body, version, updated_at FROM pages WHERE id = ?",
+    "SELECT id, name, body, version, updated_at FROM pages WHERE id = ? AND deleted_at IS NULL",
   )
     .bind(pageId)
     .first<PageRow>();
@@ -123,7 +123,8 @@ export async function readDefaultPage(env: Env): Promise<PageRow> {
  */
 export async function findPageByName(env: Env, name: string): Promise<PageRow | null> {
   return await env.DB.prepare(
-    "SELECT id, name, body, version, updated_at FROM pages WHERE name = ? COLLATE NOCASE",
+    `SELECT id, name, body, version, updated_at FROM pages
+      WHERE name = ? COLLATE NOCASE AND deleted_at IS NULL`,
   )
     .bind(name)
     .first<PageRow>();
@@ -136,12 +137,99 @@ export async function findPageByName(env: Env, name: string): Promise<PageRow | 
  * *anything else you add is a column, and a column is a file manager*, and the cheapest
  * place to hold that line is the query that cannot return the data in the first place.
  */
-export async function listPages(env: Env): Promise<Array<{ id: number; name: string }>> {
-  const { results } = await env.DB.prepare("SELECT id, name FROM pages ORDER BY id").all<{
-    id: number;
-    name: string;
-  }>();
-  return results;
+export async function listPages(
+  env: Env,
+): Promise<Array<{ id: number; name: string; has_template: boolean }>> {
+  const { results } = await env.DB.prepare(
+    // `template IS NOT NULL` rather than the template itself: whether a page has one is a
+    // fact the switcher's last row needs, and the body of it is not something any list
+    // should be carrying around.
+    `SELECT id, name, template IS NOT NULL AS has_template FROM pages
+      WHERE deleted_at IS NULL ORDER BY id`,
+  ).all<{ id: number; name: string; has_template: number }>();
+
+  return results.map((row) => ({ id: row.id, name: row.name, has_template: row.has_template === 1 }));
+}
+
+/**
+ * Rename a page. The name is the agent's handle (#153), so this is not cosmetic.
+ *
+ * Returns `false` when the name is taken — by the partial unique index, which only sees
+ * live pages, so a retired page's name is free to reuse.
+ */
+export async function renamePage(env: Env, pageId: number, name: string): Promise<boolean> {
+  try {
+    const result = await env.DB.prepare(
+      "UPDATE pages SET name = ? WHERE id = ? AND deleted_at IS NULL",
+    )
+      .bind(name, pageId)
+      .run();
+    return result.meta.changes === 1;
+  } catch {
+    // A unique-index violation. Reported as "taken" rather than thrown: the caller is a
+    // route that has to say so in a sentence, and there is exactly one reason this fails.
+    return false;
+  }
+}
+
+/**
+ * Retire a page. **Nothing is deleted.**
+ *
+ * 🔴 Its revisions and cleared items stay exactly where they are, which is what makes
+ * "delete does not confirm" an honest thing to say (principle 4, ADR-003 §5). Recovering
+ * one is clearing a single column, and there is no code path here that removes a row.
+ *
+ * 🔴 The default page cannot be retired, and that is structural rather than a policy.
+ * `DEFAULT_PAGE_ID` is what a request naming no page resolves to, what every MCP tool
+ * writes to, and what spec §14.5's defensive read answers for. Deleting it would need a
+ * fallback in all three, and "there is always a page" is a cheaper invariant to keep than
+ * three fallbacks are to get right.
+ */
+export type DeleteResult = "deleted" | "not_found" | "refused_default";
+
+export async function deletePage(
+  env: Env,
+  pageId: number,
+  now: Date = new Date(),
+): Promise<DeleteResult> {
+  if (pageId === DEFAULT_PAGE_ID) return "refused_default";
+
+  const result = await env.DB.prepare(
+    "UPDATE pages SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+  )
+    .bind(now.toISOString(), pageId)
+    .run();
+
+  return result.meta.changes === 1 ? "deleted" : "not_found";
+}
+
+/**
+ * Save this page's current body as its template, or clear it.
+ *
+ * 🔴 **A template is a saved body.** No template language, no variables, no
+ * placeholders — the motivating case is a list that always starts with the same two
+ * headings, and every step past "the bytes you had" is a feature nobody asked for that
+ * the page cannot render anyway (ADR-004).
+ */
+export async function saveTemplate(env: Env, pageId: number, keep: boolean): Promise<boolean> {
+  const result = await env.DB.prepare(
+    keep
+      ? "UPDATE pages SET template = body WHERE id = ? AND deleted_at IS NULL"
+      : "UPDATE pages SET template = NULL WHERE id = ? AND deleted_at IS NULL",
+  )
+    .bind(pageId)
+    .run();
+  return result.meta.changes === 1;
+}
+
+/** A page's template, or null. Used when creating a page from one. */
+export async function pageTemplate(env: Env, pageId: number): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT template FROM pages WHERE id = ? AND deleted_at IS NULL",
+  )
+    .bind(pageId)
+    .first<{ template: string | null }>();
+  return row?.template ?? null;
 }
 
 /**
