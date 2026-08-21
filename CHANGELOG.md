@@ -15,6 +15,13 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- 🔴 **A list refresh no longer throws away a page name you are typing.** `paintManage`
+  rebuilds every row, so a refresh landing mid-rename put the old name back — silently,
+  looking exactly like the rename had been rejected. It now holds the repaint while a
+  field in the list has focus, which is the rule spec §6 already applies to the document
+  and for the same reason. Found by CI, not locally: the reload resolves before the first
+  keystroke on a fast machine and after it on a slow one.
+
 - 🔴 **Manage-pages says why it refused.** Every no in that pane — a duplicate name, a
   rename collision, the nine-page cap — went to the save-status slot in the bar, which
   sits *behind the dialog backdrop*. The refusal was correct and completely invisible, so

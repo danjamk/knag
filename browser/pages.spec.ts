@@ -145,6 +145,11 @@ test.describe("managing", () => {
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
 
+    // 🔴 Wait for the list to have arrived before typing into it. Without this the
+    // test races `loadPages`, which is the very thing the repaint guard now prevents —
+    // and a test that depends on the bug not happening cannot also be the test for it.
+    await expect(knag.page.locator("[data-manage-list] li")).toHaveCount(2);
+
     const field = knag.page.locator('[data-manage-list] input[data-rename-id]').last();
     await field.fill("shopping");
     // Commits on blur, like any field — never a write per keystroke against the name an
@@ -152,6 +157,33 @@ test.describe("managing", () => {
     await field.blur();
 
     await expect(knag.page.locator("[data-manage-list] input").last()).toHaveValue("shopping");
+  });
+
+  test("🔴 a list refresh does not throw away what you are typing", async ({ knag }) => {
+    await knag.seed(DAY);
+    await newPage(knag, "shoping");
+
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+    await expect(knag.page.locator("[data-manage-list] li")).toHaveCount(2);
+
+    const field = knag.page.locator('[data-manage-list] input[data-rename-id]').last();
+    await field.click();
+    await field.fill("shopping");
+
+    // 🔴 Toggling a template on **another row** runs the whole mutate → reload →
+    // repaint path while this field still holds focus and an uncommitted value. Before the
+    // guard, `replaceChildren` put `shoping` back with no error and no explanation — which
+    // is exactly how it failed in CI, where `loadPages` resolved after the first keystroke
+    // rather than before it.
+    //
+    // Dispatched rather than clicked: a click would blur the field first and commit the
+    // rename, which is the one thing that would hide the bug.
+    await knag.page.locator("[data-manage-list] [data-template-id]").first().dispatchEvent("click");
+    await knag.page.waitForTimeout(600);
+
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue("shopping");
   });
 
   test("🔴 offers no delete on the default page", async ({ knag }) => {

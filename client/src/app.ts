@@ -2096,6 +2096,20 @@ manageBack?.addEventListener("click", () => showManage(false));
 function paintManage(): void {
   if (!manageList) return;
 
+  // 🔴 **Never repaint under a live field.** `replaceChildren` below rebuilds every row,
+  // so a list refresh that lands mid-rename throws the typed name away and puts the old
+  // one back — silently, looking exactly like the rename was rejected.
+  //
+  // This is the same rule spec §6 already applies to the document, which holds a remote
+  // update while the surface has focus, and for the same reason: a repaint is the app
+  // talking over the person using it. The list is re-read the moment focus leaves, so the
+  // cost of skipping is a few seconds of staleness on a list of at most nine rows.
+  //
+  // Found by CI rather than locally (#154). `loadPages` resolves before the first
+  // keystroke on a fast machine and after it on a slow one, so the failure needed a
+  // slower runner to appear at all.
+  if (manageList.contains(document.activeElement)) return;
+
   manageList.replaceChildren(
     ...pages.map((page) => {
       const li = document.createElement("li");
@@ -2225,7 +2239,12 @@ manageList?.addEventListener("focusout", (event) => {
   const id = Number(target.dataset.renameId);
   const name = target.value.trim();
   const before = pages.find((page) => page.id === id)?.name;
-  if (!Number.isInteger(id) || name === "" || name === before) return;
+  if (!Number.isInteger(id) || name === "" || name === before) {
+    // Nothing to save, but the repaint that was skipped while this field had focus still
+    // owes the list an update — and an empty field has to go back to showing a name.
+    paintManage();
+    return;
+  }
   // 🔴 `loadPages` repaints the list from the server on both outcomes, so a refused
   // rename puts the old name back in the field rather than leaving one that was never
   // accepted sitting there looking saved.
