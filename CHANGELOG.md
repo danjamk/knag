@@ -13,6 +13,14 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.1.3] — 2026-08-21
+
+Phase 6 closes, and the migration it needed took four releases rather than one.
+
+🔴 **The first expand/contract this project has completed end to end**, and what it cost
+is the part worth keeping: expand (1.1.0) → stop writing (1.1.2, carrying no migration at
+all) → contract (this one). The middle release is the one that looks skippable and is not.
+
 ### Removed
 
 - **`documents` is dropped** (#155, migration 0006). It has not been read since 1.1.0 and
@@ -1498,7 +1506,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/danjamk/knag/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/danjamk/knag/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/danjamk/knag/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/danjamk/knag/compare/v1.0.1...v1.1.0
