@@ -1,0 +1,480 @@
+<!doctype html>
+<!--
+  knag scale model — freemium economics simulator and cost model.
+  Committed snapshot; the living copy is maintained in the operator's PageVault (private).
+  Self-contained: no external assets, opens directly in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>knag scale model</title>
+<style>
+:root{
+  color-scheme:light;
+  --plane:#f9f9f7; --surface:#fcfcfb;
+  --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+  --pos:#006300; --neg:#d03b3b;
+}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme:dark;
+    --plane:#0d0d0d; --surface:#1a1a19;
+    --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --pos:#0ca30c; --neg:#d03b3b;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --plane:#0d0d0d; --surface:#1a1a19;
+  --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+  --pos:#0ca30c; --neg:#d03b3b;
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--plane);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;padding:28px 18px 64px}
+main{max-width:900px;margin:0 auto}
+h1{font-size:22px;font-weight:650}
+h2{font-size:17px;font-weight:650;margin:40px 0 10px}
+h3{font-size:14px;font-weight:600}
+p,li{color:var(--ink2)} p{margin:8px 0}
+p strong,li strong{color:var(--ink)}
+.sub{color:var(--ink2);font-size:14px;margin-top:4px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-top:14px}
+.filters{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:flex-end}
+.filters .f{display:flex;flex-direction:column;gap:4px;min-width:140px;flex:1}
+.filters label{font-size:11.5px;color:var(--muted)}
+.filters output{font-size:13.5px;font-weight:600;color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--s1)}
+select{font:13px system-ui;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 6px}
+.hint{font-size:12px;color:var(--muted);margin-top:10px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.tile .tl{font-size:11.5px;color:var(--muted)}
+.tile .tv{font-size:21px;font-weight:600;margin-top:2px}
+.tile .tv.pos{color:var(--pos)} .tile .tv.neg{color:var(--neg)}
+figure.chart{margin-top:14px;position:relative}
+figure.chart .legend{display:flex;gap:16px;margin:6px 0 2px;font-size:12px;color:var(--ink2);flex-wrap:wrap}
+.key{display:inline-block;width:18px;height:2px;border-radius:1px;vertical-align:middle;margin-right:6px}
+svg{display:block;width:100%;height:auto}
+.chartwrap{outline:none;border-radius:8px}
+.chartwrap:focus-visible{box-shadow:0 0 0 2px var(--s1)}
+.tt{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.10);display:none;min-width:130px;z-index:3}
+.tt .tm{color:var(--muted);font-size:11px;margin-bottom:4px}
+.tt .row{display:flex;align-items:center;gap:7px;margin-top:2px}
+.tt .row b{color:var(--ink);font-weight:600}
+.tt .row span{color:var(--ink2)}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+th{font-size:11.5px;color:var(--muted);font-weight:600;text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--grid)}
+td{color:var(--ink2);padding:5px 10px 5px 0;border-bottom:1px solid var(--grid)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td strong{color:var(--ink)}
+details{margin-top:12px}
+summary{font-size:13px;color:var(--ink2);cursor:pointer}
+.tableview{max-height:320px;overflow:auto}
+ul{padding-left:20px;margin:8px 0}
+li{margin:5px 0}
+a{color:var(--s1);text-decoration:none} a:hover{text-decoration:underline}
+.small{font-size:12.5px;color:var(--muted)}
+.axis-t{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.endlab{fill:var(--ink);font-size:12px;font-weight:600}
+code{font-size:.9em;background:var(--plane);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+<main>
+<h1>knag · scale model</h1>
+<p class="sub">Freemium economics on the target Cloudflare architecture. Growth is Bass diffusion into a finite niche; downloads age through a front-loaded retention curve instead of a flat churn rate. The simulator asks whether the paying slice covers everyone — and what the operator's time earns. Compiled 2026-08-21, v3.</p>
+
+<section id="sim">
+<h2>Simulator — 36 months</h2>
+<div class="card">
+  <div class="filters">
+    <div class="f"><label for="price">Annual price</label><input id="price" type="range" min="0.99" max="49.99" step="1" value="9.99"><output id="priceO"></output></div>
+    <div class="f"><label for="conv">Conversion (per download)</label><input id="conv" type="range" min="0.5" max="12" step="0.25" value="2"><output id="convO"></output></div>
+    <div class="f"><label for="mkt">Addressable market</label><input id="mkt" type="range" min="0" max="7" step="1" value="4"><output id="mktO"></output></div>
+    <div class="f"><label for="q">Word of mouth</label><input id="q" type="range" min="0" max="10" step="0.5" value="3"><output id="qO"></output></div>
+    <div class="f"><label for="dph">Downloads per effort-hour</label><input id="dph" type="range" min="1" max="50" step="1" value="10"><output id="dphO"></output></div>
+    <div class="f"><label for="hours">Your time (hours / month)</label><input id="hours" type="range" min="5" max="160" step="5" value="20"><output id="hoursO"></output></div>
+    <div class="f"><label for="ret">Retention</label><select id="ret"><option value="weak">Weak utility · 25% at M1</option><option value="typical" selected>Typical utility · 35% at M1</option><option value="strong">Strong utility · 50% at M1</option></select></div>
+    <div class="f"><label for="rail">Payment rail</label><select id="rail"><option value="a15" selected>Apple · 15% (Small Business)</option><option value="a30">Apple · 30% (standard)</option><option value="web">Web · Stripe 2.9% + 30¢</option></select></div>
+  </div>
+  <p class="hint" id="ssHint"></p>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="tl">Active users, month 36</div><div class="tv" id="tUsers"></div></div>
+  <div class="tile"><div class="tl">Paying subscribers</div><div class="tv" id="tPayers"></div></div>
+  <div class="tile"><div class="tl">Market reached</div><div class="tv" id="tMkt"></div></div>
+  <div class="tile"><div class="tl">Monthly net, month 36</div><div class="tv" id="tNet"></div></div>
+  <div class="tile"><div class="tl">Breakeven</div><div class="tv" id="tBreak"></div></div>
+  <div class="tile"><div class="tl">Cumulative 3-yr net</div><div class="tv" id="tCum"></div></div>
+  <div class="tile"><div class="tl">Effective hourly · 3-yr avg</div><div class="tv" id="tHourly"></div></div>
+</div>
+
+<figure class="chart card">
+  <h3>User base</h3>
+  <div class="legend"><span><span class="key" style="background:var(--s1)"></span>Active users</span><span><span class="key" style="background:var(--s2)"></span>Paying subscribers</span></div>
+  <div class="chartwrap" id="c1wrap" tabindex="0" role="img" aria-label="Line chart of active users and paying subscribers over 36 months. Values are in the table view below."></div>
+  <div class="tt" id="c1tt"></div>
+</figure>
+
+<figure class="chart card">
+  <h3>Monthly economics</h3>
+  <div class="legend"><span><span class="key" style="background:var(--s3)"></span>Net revenue (after payment cut)</span><span><span class="key" style="background:var(--s4)"></span>Infrastructure + fixed cost</span></div>
+  <div class="chartwrap" id="c2wrap" tabindex="0" role="img" aria-label="Line chart of monthly net revenue against monthly infrastructure and fixed cost over 36 months. Values are in the table view below."></div>
+  <div class="tt" id="c2tt"></div>
+</figure>
+
+<details><summary>Table view — month by month</summary>
+  <div class="tableview"><table id="dataTable"><thead><tr><th>Month</th><th class="n">Downloads (cum.)</th><th class="n">Active</th><th class="n">Payers</th><th class="n">Net revenue</th><th class="n">Cost</th><th class="n">Net</th></tr></thead><tbody></tbody></table></div>
+</details>
+<noscript><p>The simulator needs JavaScript; the static tables below carry the model at the default assumptions.</p></noscript>
+</section>
+
+<section>
+<h2>Findings</h2>
+<ul>
+  <li><strong>The conversion default is measured, not lore.</strong> RevenueCat's State of Subscription Apps 2026 (their platform's install base, tens of thousands of apps) puts median freemium download→paid at <strong>2.1% within 35 days</strong>; hard-paywall apps convert 10.7% of a smaller funnel. The old "2–5% freemium" range is ProfitWell/OpenView-era SaaS lore. The simulator applies conversion <em>per download</em> — matching how the benchmark is measured — with paid renewal at 96%/month (≈61%/year, mid-range for consumer annual plans).</li>
+  <li><strong>Retention, not acquisition, sets the ceiling.</strong> With a front-loaded retention curve, steady-state active users ≈ monthly downloads × <strong>3.5 (weak) / 5 (typical) / 9 (strong)</strong>. Doubling marketing effort doubles the base; moving M1 retention from 25% to 50% nearly triples it. Product quality is the highest-leverage growth input, and it is the only one that doesn't cost recurring hours.</li>
+  <li><strong>Price decides viability, not infrastructure.</strong> $1.99/yr needs ~7% conversion just to cover the Cloudflare bill — more than triple the measured median. $9.99/yr breaks even at ~1.4%, below the median. Infrastructure is ~$0.10–0.15 per user per year and flat with scale; the Workers bill is never what kills this.</li>
+  <li><strong>Paid acquisition can never pay back.</strong> Net lifetime revenue per <em>download</em> is roughly 2% × $8.49 × a few subscriber-years ≈ well under $1. Consumer CPIs run $1–5. The gap is structural, not a tuning problem — growth must be organic/guerrilla, which is operator time, not money. The effective-hourly tile is that time priced.</li>
+  <li><strong>Support is the cost that can break it, and the mitigation is the product.</strong> Even 0.5% monthly contact at scale is hundreds of emails. A one-page plain-text product with AI-automated first-line support plausibly holds this near zero — but it is an assumption the model does not price.</li>
+  <li><strong>The free tier must cap its own cost.</strong> The two behaviors that drive the bill — multi-device sync (the polling multiplier) and agent/MCP access — are also the most premium-feeling features. Gating them keeps a free user under half a cent a month structurally.</li>
+  <li><strong>Risk profile: low stakes, honest ceiling.</strong> Downside is time (opportunity cost — the hourly tile makes it visible); upside at benchmark assumptions is beer money plus lessons and optionality, not an income. The model's job is to keep that trade explicit.</li>
+</ul>
+</section>
+
+<section id="model">
+<h2>The model behind the simulator</h2>
+<p><strong>Growth — Bass diffusion into a finite niche.</strong> New downloads each month are effort pull plus word-of-mouth pull, scaled by how much of the market remains: <code>D(t) = (dph·hours + q·U(t−1)) × (1 − A(t−1)/M)</code>, where <code>A</code> is lifetime downloads and <code>M</code> the addressable market. The parameters are decisions, not curve-fitting knobs: <strong>M</strong> is the honest size of the niche (the input nobody wants to type), <strong>effort pull</strong> is your guerrilla hours priced in downloads, and <strong>q</strong> is the product's inherent shareability — deliberately low for a private, single-user utility.</p>
+<p><strong>Retention — a curve, not a rate.</strong> Downloads age through a front-loaded retention curve <code>r(a)</code> instead of flat churn: <code>U(t) = Σ D(t−a)·r(a)</code>. Flat monthly churn was the previous model's biggest lie — it kept a third of a cohort alive at month 36, when real consumer utilities lose most of a cohort in the first month and then flatten:</p>
+<div class="card"><table>
+<thead><tr><th>Preset</th><th class="n">M1</th><th class="n">M6</th><th class="n">Tail decay</th><th class="n">Steady-state multiple¹</th></tr></thead>
+<tbody>
+<tr><td>Weak utility</td><td class="n">25%</td><td class="n">7%</td><td class="n">−1.5%/mo</td><td class="n">~3.5×</td></tr>
+<tr><td>Typical utility</td><td class="n">35%</td><td class="n">12%</td><td class="n">−1%/mo</td><td class="n">~5×</td></tr>
+<tr><td>Strong utility</td><td class="n">50%</td><td class="n">22%</td><td class="n">−0.5%/mo</td><td class="n">~9×</td></tr>
+</tbody></table>
+<p class="small">¹ Active users at steady state per monthly download rate. Payers convert once per download and renew at 96%/month, independent of the free-user curve.</p></div>
+<p><strong>Infrastructure.</strong> Target architecture: <strong>Cloudflare Workers + D1</strong> (hash-sharded, 90-day revision retention — the ladder below), Workers Paid plan. Blended usage per active user: ~365 requests/day (~11K/month — adaptive polling per spec §14.4 plus saves), ~3 D1 row reads per request, ~4.5K row writes/month, ~3MB steady-state storage, plus login email.</p>
+<div class="card"><table>
+<thead><tr><th>Meter</th><th>Rate (Workers Paid)</th><th class="n">10K users</th><th class="n">50K</th><th class="n">100K</th></tr></thead>
+<tbody>
+<tr><td>Requests</td><td>10M incl, then $0.30/M</td><td class="n">$35</td><td class="n">$167</td><td class="n">$332</td></tr>
+<tr><td>CPU time</td><td>30M ms incl, then $0.02/M ms</td><td class="n">$2</td><td class="n">$10</td><td class="n">$21</td></tr>
+<tr><td>D1 row reads</td><td>25B incl, then $0.001/M</td><td class="n">$0</td><td class="n">$0</td><td class="n">$0</td></tr>
+<tr><td>D1 row writes</td><td>50M incl, then $1.00/M</td><td class="n">$0</td><td class="n">$175</td><td class="n">$400</td></tr>
+<tr><td>D1 storage (90-day retention)</td><td>5GB incl, then $0.75/GB-mo</td><td class="n">$19</td><td class="n">$109</td><td class="n">$221</td></tr>
+<tr><td>Email (login links/OTP)</td><td>Resend / SES</td><td class="n">$8</td><td class="n">$20</td><td class="n">$35</td></tr>
+<tr><td>Fixed (plan base, Apple dev, domain, WAF zone)</td><td></td><td class="n">$35</td><td class="n">$35</td><td class="n">$35</td></tr>
+<tr><td><strong>Total / month</strong></td><td></td><td class="n"><strong>~$100</strong></td><td class="n"><strong>~$515</strong></td><td class="n"><strong>~$1,045</strong></td></tr>
+</tbody></table>
+<p class="small">Static assets bill nothing — Workers Static Assets requests are free and the service worker precaches the shell, so polling + saves are effectively the whole request line.</p></div>
+<p><strong>Sensitivity.</strong> The profile above is the blended realistic case. Spec §14.4's worst case — every device, board open all day — is ~4K requests/day (~3.6×). If <em>every</em> user behaved that way, cost rises to ~$0.55/user-yr and $9.99 at benchmark conversion goes underwater — which is exactly why the free tier caps devices (below). The paid tier can absorb heavy use; the free tier must not be able to generate it.</p>
+</section>
+
+<section id="freetier">
+<h2>Free tier — shaped to cap its own cost</h2>
+<div class="card"><table>
+<thead><tr><th>Capability</th><th>Free</th><th>Paid</th><th>Why the line sits here</th></tr></thead>
+<tbody>
+<tr><td>Devices</td><td><strong>1</strong></td><td>All</td><td>Multi-device sync is the polling multiplier — the #1 cost driver. A one-device cap bounds free-user cost structurally, not by policy.</td></tr>
+<tr><td>Pages</td><td><strong>1</strong></td><td>Up to 9</td><td>The single-page product is the free taste; pages are the 1.1 feature.</td></tr>
+<tr><td>Agent / MCP access</td><td>—</td><td>✓</td><td>The most premium-feeling feature and a real compute consumer. Costliest behavior = strongest upgrade hook, on both charts at once.</td></tr>
+<tr><td>History &amp; recovery screen</td><td>Bring-back only</td><td>Full history</td><td>Storage (revisions) is the compounding meter; retention depth is a paid feature.</td></tr>
+<tr><td>The wipe, boards, offline shell</td><td>✓</td><td>✓</td><td>The product's identity is never gated. The free tier must feel like knag.</td></tr>
+</tbody></table></div>
+<p>The alignment is the point: <strong>the two things that cost money are the two things worth paying for.</strong> That is rare, and it means scale cannot hurt the free tier economics.</p>
+</section>
+
+<section id="apple">
+<h2>Payment economics</h2>
+<p>Apple Small Business Program: <strong>15%</strong> commission while proceeds stay under $1M/yr — every scenario here qualifies. Standard rate is 30%. Since the US anti-steering ruling, web checkout via Stripe (2.9% + 30¢) is a legal alternative for US users. Apple Developer Program: $99/yr.</p>
+<div class="card"><table>
+<thead><tr><th>Annual price</th><th class="n">Net · Apple 15%</th><th class="n">Net · Apple 30%</th><th class="n">Net · Stripe web</th><th>Read</th></tr></thead>
+<tbody>
+<tr><td>$1.99</td><td class="n">$1.69</td><td class="n">$1.39</td><td class="n">$1.63</td><td>Stripe's fixed 30¢ is 15% of the price — micro-pricing loses on every rail</td></tr>
+<tr><td>$9.99</td><td class="n">$8.49</td><td class="n">$6.99</td><td class="n">$9.40</td><td>Web checkout nets ~11% more than Apple 15%</td></tr>
+<tr><td>$29.99</td><td class="n">$25.49</td><td class="n">$20.99</td><td class="n">$28.82</td><td>At Bear-tier pricing the rails barely matter</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="arch">
+<h2>Architecture at scale — stay on Cloudflare</h2>
+<p>The current architecture is already the cheap one for this workload shape (billions of tiny requests, KB payloads, per-user data, a free static shell). Scaling is a ladder of deferred steps, each behind a tripwire, all inside the platform:</p>
+<div class="card"><table>
+<thead><tr><th>Step</th><th>Tripwire</th><th>What changes</th></tr></thead>
+<tbody>
+<tr><td><strong>1 · Revision retention policy</strong></td><td>~1K users (append-only snapshots fill the 10GB database within a year)</td><td>Prune sealed revisions past ~90 days. One store.ts change. History UX opens on “yesterday”; nothing needs forever.</td></tr>
+<tr><td><strong>2 · Hash-shard D1</strong></td><td>~10K users (~30GB steady state vs 10GB/database)</td><td>4–10 databases, users hash to a shard, <code>store.ts</code> resolves the binding. All SQL is already behind that chokepoint — the §17 insurance paying off again.</td></tr>
+<tr><td><strong>3 · ~30–100 shards</strong></td><td>~100K users (~300GB; account holds 50K databases / 1TB)</td><td>Same mechanism, more bindings. Per-user databases are the far end — chosen for tenant isolation (export, delete-by-drop), not cost.</td></tr>
+<tr><td><strong>4 · Durable Objects + WebSockets</strong> <em>(only if the product changes)</em></td><td>Live collaboration ambitions, or ~1M users</td><td>Hibernating WebSockets replace polling with push-on-save; DO SQLite storage is $0.20/GB vs D1's $0.75. Saves only ~$500/mo at 100K — a re-platform never pays for itself on infra at these scales.</td></tr>
+</tbody></table></div>
+<p><strong>Why not AWS.</strong> The equivalent stack (Lambda + DynamoDB + Cognito + CloudFront) runs ~$1,900–2,500/mo at 100K users — roughly 2× — before ops burden. Two structural reasons: auth is a real line item on AWS (Cognito ~$500/mo at 100K MAU) and a rounding error self-hosted, and per-request gateways price this workload worst (API Gateway alone would add ~$1,100/mo at $1/M). The only futures where AWS makes sense are organizational — an acquisition, an enterprise estate — never cost or capability.</p>
+</section>
+
+<section id="refs">
+<h2>References</h2>
+<ul>
+  <li><a href="https://www.revenuecat.com/state-of-subscription-apps">RevenueCat · State of Subscription Apps 2026</a> (freemium median 2.1% download→paid; hard paywall 10.7%) · <a href="https://www.revenuecat.com/state-of-subscription-apps-2026-utilities/">utilities segment</a></li>
+  <li><a href="https://en.wikipedia.org/wiki/Bass_diffusion_model">Bass diffusion model</a> — the growth mechanics</li>
+  <li><a href="https://developers.cloudflare.com/workers/platform/pricing/">Cloudflare Workers pricing</a> · <a href="https://developers.cloudflare.com/d1/platform/pricing/">D1 pricing</a> · <a href="https://developers.cloudflare.com/d1/platform/limits">D1 limits</a> (10GB/db, 50K dbs, 1TB/account) · <a href="https://developers.cloudflare.com/durable-objects/platform/pricing/">Durable Objects pricing</a></li>
+  <li><a href="https://aws.amazon.com/cognito/pricing/">Amazon Cognito pricing</a> · <a href="https://costgoat.com/pricing/amazon-api-gateway">API Gateway pricing guide</a> · <a href="https://costgoat.com/pricing/aws-lambda">Lambda pricing guide</a> · <a href="https://costbench.com/software/database-as-service/dynamodb/hidden-costs/">DynamoDB cost breakdown</a></li>
+  <li><a href="https://developer.apple.com/app-store/small-business-program/">Apple Small Business Program</a> · <a href="https://stripe.com/pricing">Stripe pricing</a></li>
+  <li><a href="https://dev.to/araldhafeeri/scaling-your-cloudflare-d1-database-from-the-10-gb-limit-to-tbs-4a16">Sharding D1 past 10GB — 50-shard field report</a></li>
+  <li>knag internals: <a href="https://github.com/danjamk/knag/blob/main/docs/spec.md">spec</a> (§14.4 polling budget, §17 futures) · <a href="https://github.com/danjamk/knag/blob/main/docs/roadmap.md">roadmap</a> (Phase 8, #122 auth spike) · <a href="https://github.com/danjamk/knag/blob/main/docs/adr/ADR-001-passphrase-auth.md">ADR-001</a> · <a href="https://github.com/danjamk/knag/blob/main/docs/adr/ADR-005-mcp-oauth.md">ADR-005</a></li>
+</ul>
+<p class="small">Model assumptions are simplifications for planning: retention presets are ballpark consumer-utility shapes, conversion is applied once per download with fixed 96%/mo paid renewal, usage is a blended profile, no per-cohort pricing effects, no marketing spend, support unpriced, upfront build effort excluded — the hours input prices ongoing operation only and also drives effort-pull downloads. Pricing checked 2026-08. The living copy of this model is maintained in the operator's PageVault (private); this snapshot is committed for reference.</p>
+</section>
+</main>
+
+<script>
+(function(){
+"use strict";
+var HORIZON=36;
+var MKTS=[5e3,1e4,2e4,5e4,1e5,2e5,5e5,1e6];
+var RET={
+  weak:{head:[1,0.25,0.16,0.12,0.10,0.08,0.07],tail:0.985},
+  typical:{head:[1,0.35,0.24,0.18,0.15,0.13,0.12],tail:0.99},
+  strong:{head:[1,0.50,0.38,0.31,0.27,0.24,0.22],tail:0.995}
+};
+var els={price:g('price'),conv:g('conv'),mkt:g('mkt'),q:g('q'),dph:g('dph'),hours:g('hours'),ret:g('ret'),rail:g('rail')};
+function g(id){return document.getElementById(id);}
+
+function params(){
+  return {
+    price:parseFloat(els.price.value),
+    conv:parseFloat(els.conv.value)/100,
+    market:MKTS[parseInt(els.mkt.value,10)],
+    q:parseFloat(els.q.value)/100,
+    dph:parseFloat(els.dph.value),
+    hours:parseFloat(els.hours.value),
+    ret:els.ret.value,
+    rail:els.rail.value
+  };
+}
+function netPrice(p){
+  var n = p.rail==='a15' ? p.price*0.85 : p.rail==='a30' ? p.price*0.70 : p.price*0.971-0.30;
+  return Math.max(0,n);
+}
+function rAge(preset,a){
+  var c=RET[preset];
+  if(a<c.head.length) return c.head[a];
+  return c.head[c.head.length-1]*Math.pow(c.tail,a-c.head.length+1);
+}
+function infra(u){
+  var req=u*11000;
+  return 5
+    + Math.max(0,req-10e6)/1e6*0.30
+    + Math.max(0,req-30e6)/1e6*0.02
+    + Math.max(0,req*3-25e9)/1e6*0.001
+    + Math.max(0,u*4500-50e6)/1e6*1.00
+    + Math.max(0,u*0.003-5)*0.75
+    + (u>0 ? 5+u*0.0003 : 0)
+    + 35;
+}
+function simulate(p){
+  var rows=[],n=[],np=netPrice(p),A=0,Uprev=0;
+  for(var m=0;m<=HORIZON;m++){
+    var room=Math.max(0,1-A/p.market);
+    var adopt=Math.min((p.dph*p.hours+p.q*Uprev)*room, p.market-A);
+    n.push(adopt); A+=adopt;
+    var U=0,payers=0;
+    for(var a=0;a<=m;a++){
+      U+=n[m-a]*rAge(p.ret,a);
+      payers+=n[m-a]*p.conv*Math.pow(0.96,a);
+    }
+    var rev=payers*np/12, cost=infra(U);
+    rows.push({m:m,users:U,payers:payers,adopted:A,rev:rev,cost:cost,net:rev-cost});
+    Uprev=U;
+  }
+  return rows;
+}
+
+function fN(v){
+  if(v>=1e6) return (v/1e6).toFixed(1)+'M';
+  if(v>=1e4) return Math.round(v/1e3)+'K';
+  if(v>=1e3) return (v/1e3).toFixed(1)+'K';
+  return String(Math.round(v));
+}
+function fM(v){
+  var s=v<0?'−$':'$', a=Math.abs(v);
+  if(a>=1e6) return s+(a/1e6).toFixed(2)+'M';
+  if(a>=1e3) return s+(a/1e3).toFixed(1)+'K';
+  if(a>=100) return s+Math.round(a);
+  return s+a.toFixed(2);
+}
+function fInt(v){return Math.round(v).toLocaleString('en-US');}
+function niceMax(v){
+  if(v<=0) return 1;
+  var e=Math.pow(10,Math.floor(Math.log10(v))),f=v/e;
+  var n=f<=1?1:f<=2?2:f<=5?5:10;
+  return n*e;
+}
+
+var charts={};
+function buildChart(wrapId,ttId,series,yFmt){
+  var wrap=g(wrapId),tt=g(ttId);
+  var W=720,H=290,L=52,R=104,T=14,B=30,PW=W-L-R,PH=H-T-B;
+  var chart={wrap:wrap,tt:tt,series:series,yFmt:yFmt,W:W,H:H,L:L,R:R,T:T,B:B,PW:PW,PH:PH,idx:-1,data:null};
+  charts[wrapId]=chart;
+  wrap.addEventListener('pointermove',function(ev){
+    var r=wrap.getBoundingClientRect();
+    var x=(ev.clientX-r.left)*(W/r.width);
+    var i=Math.round((x-L)/(PW/HORIZON));
+    setIdx(chart,Math.max(0,Math.min(HORIZON,i)));
+  });
+  wrap.addEventListener('pointerleave',function(){setIdx(chart,-1);});
+  wrap.addEventListener('keydown',function(ev){
+    if(ev.key==='ArrowRight'){setIdx(chart,Math.min(HORIZON,(chart.idx<0?HORIZON:chart.idx)+1));ev.preventDefault();}
+    else if(ev.key==='ArrowLeft'){setIdx(chart,Math.max(0,(chart.idx<0?HORIZON:chart.idx)-1));ev.preventDefault();}
+    else if(ev.key==='Escape'){setIdx(chart,-1);}
+  });
+  wrap.addEventListener('focus',function(){if(chart.idx<0)setIdx(chart,HORIZON);});
+  wrap.addEventListener('blur',function(){setIdx(chart,-1);});
+  return chart;
+}
+function svgEl(n,attrs){
+  var e=document.createElementNS('http://www.w3.org/2000/svg',n);
+  for(var k in attrs) e.setAttribute(k,attrs[k]);
+  return e;
+}
+function renderChart(chart,data){
+  chart.data=data;
+  var s=chart.series,L=chart.L,T=chart.T,PW=chart.PW,PH=chart.PH;
+  var max=0;
+  data.forEach(function(d){s.forEach(function(sr){if(d[sr.key]>max)max=d[sr.key];});});
+  var yMax=niceMax(max*1.05);
+  chart.yMax=yMax;
+  var svg=svgEl('svg',{viewBox:'0 0 '+chart.W+' '+chart.H,'aria-hidden':'true'});
+  var xs=function(m){return L+PW*m/HORIZON;};
+  var ys=function(v){return T+PH-(PH*v/yMax);};
+  chart.xs=xs;chart.ys=ys;
+  for(var t=0;t<=4;t++){
+    var v=yMax*t/4,y=ys(v);
+    svg.appendChild(svgEl('line',{x1:L,x2:L+PW,y1:y,y2:y,stroke:t===0?'var(--axis)':'var(--grid)','stroke-width':1}));
+    var lab=svgEl('text',{x:L-8,y:y+4,'text-anchor':'end','class':'axis-t'});
+    lab.textContent=chart.yFmt(v);
+    svg.appendChild(lab);
+  }
+  for(var m=0;m<=HORIZON;m+=6){
+    var tx=svgEl('text',{x:xs(m),y:T+PH+20,'text-anchor':'middle','class':'axis-t'});
+    tx.textContent=String(m);
+    svg.appendChild(tx);
+  }
+  var mo=svgEl('text',{x:L+PW/2,y:chart.H-2,'text-anchor':'middle','class':'axis-t'});
+  mo.textContent='months';
+  svg.appendChild(mo);
+  var ends=[];
+  s.forEach(function(sr){
+    var d='';
+    data.forEach(function(row,i){d+=(i===0?'M':'L')+xs(row.m).toFixed(1)+' '+ys(row[sr.key]).toFixed(1)+' ';});
+    svg.appendChild(svgEl('path',{d:d,fill:'none',stroke:sr.color,'stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+    var last=data[data.length-1];
+    var ex=xs(last.m),ey=ys(last[sr.key]);
+    svg.appendChild(svgEl('circle',{cx:ex,cy:ey,r:4.5,fill:sr.color,stroke:'var(--surface)','stroke-width':2}));
+    ends.push({y:ey,val:last[sr.key],sr:sr,ex:ex});
+  });
+  ends.sort(function(a,b){return a.y-b.y;});
+  for(var i=1;i<ends.length;i++){
+    if(ends[i].y-ends[i-1].y<16) ends[i].ly=(ends[i-1].ly!==undefined?ends[i-1].ly:ends[i-1].y)+16;
+  }
+  ends.forEach(function(e){
+    var ly=e.ly!==undefined?e.ly:e.y;
+    if(e.ly!==undefined && Math.abs(ly-e.y)>3)
+      svg.appendChild(svgEl('line',{x1:e.ex+6,y1:e.y,x2:e.ex+16,y2:ly,stroke:'var(--axis)','stroke-width':1}));
+    var t1=svgEl('text',{x:e.ex+20,y:ly+4,'class':'endlab'});
+    t1.textContent=chart.yFmt(e.val);
+    svg.appendChild(t1);
+  });
+  chart.hoverG=svgEl('g',{});
+  svg.appendChild(chart.hoverG);
+  chart.wrap.textContent='';
+  chart.wrap.appendChild(svg);
+  if(chart.idx>=0) setIdx(chart,chart.idx);
+}
+function setIdx(chart,i){
+  chart.idx=i;
+  var hg=chart.hoverG,tt=chart.tt;
+  while(hg.firstChild) hg.removeChild(hg.firstChild);
+  if(i<0||!chart.data){tt.style.display='none';return;}
+  var row=chart.data[i],x=chart.xs(row.m);
+  hg.appendChild(svgEl('line',{x1:x,x2:x,y1:chart.T,y2:chart.T+chart.PH,stroke:'var(--muted)','stroke-width':1}));
+  chart.series.forEach(function(sr){
+    hg.appendChild(svgEl('circle',{cx:x,cy:chart.ys(row[sr.key]),r:3.5,fill:sr.color,stroke:'var(--surface)','stroke-width':2}));
+  });
+  tt.textContent='';
+  var tm=document.createElement('div');tm.className='tm';tm.textContent='Month '+row.m;
+  tt.appendChild(tm);
+  chart.series.forEach(function(sr){
+    var r=document.createElement('div');r.className='row';
+    var k=document.createElement('span');k.className='key';k.style.background=sr.color;
+    var b=document.createElement('b');b.textContent=chart.yFmt(row[sr.key]);
+    var nm=document.createElement('span');nm.textContent=sr.name;
+    r.appendChild(k);r.appendChild(b);r.appendChild(nm);
+    tt.appendChild(r);
+  });
+  var wrapR=chart.wrap.getBoundingClientRect();
+  var figR=chart.wrap.parentElement.getBoundingClientRect();
+  var px=(x/chart.W)*wrapR.width + (wrapR.left-figR.left);
+  tt.style.display='block';
+  var flip=px>figR.width-170;
+  tt.style.left=flip?(px-tt.offsetWidth-14)+'px':(px+14)+'px';
+  tt.style.top=(wrapR.top-figR.top+18)+'px';
+}
+
+var c1=buildChart('c1wrap','c1tt',[{key:'users',name:'Active users',color:'var(--s1)'},{key:'payers',name:'Payers',color:'var(--s2)'}],fN);
+var c2=buildChart('c2wrap','c2tt',[{key:'rev',name:'Net revenue',color:'var(--s3)'},{key:'cost',name:'Cost',color:'var(--s4)'}],fM);
+
+function update(){
+  var p=params();
+  g('priceO').textContent='$'+p.price.toFixed(2)+' / yr';
+  g('convO').textContent=(p.conv*100).toFixed(2).replace(/\.?0+$/,'')+'% of downloads';
+  g('mktO').textContent=fN(p.market)+' people';
+  g('qO').textContent=(p.q*100).toFixed(1).replace(/\.0$/,'')+' per 100 active / mo';
+  g('dphO').textContent=p.dph+' / hour';
+  g('hoursO').textContent=p.hours+' h / mo';
+  var rows=simulate(p);
+  var last=rows[HORIZON];
+  var womShare=0;
+  var prev=rows[HORIZON-1];
+  var ext=p.dph*p.hours, wom=p.q*prev.users;
+  if(ext+wom>0) womShare=wom/(ext+wom);
+  g('ssHint').textContent='By month 36: '+fN(last.adopted)+' lifetime downloads ('+Math.round(100*last.adopted/p.market)+'% of the market), '+fN(last.users)+' still active — the gap between those two numbers is retention, and product quality is what moves it. Word of mouth is driving '+Math.round(womShare*100)+'% of new downloads by the end. Rule of thumb: steady-state actives ≈ monthly downloads × 3.5 (weak) / 5 (typical) / 9 (strong retention).';
+  g('tUsers').textContent=fN(last.users);
+  g('tPayers').textContent=fN(last.payers);
+  g('tMkt').textContent=Math.round(100*last.adopted/p.market)+'%';
+  var tn=g('tNet');tn.textContent=fM(last.net)+' / mo';tn.className='tv '+(last.net>=0?'pos':'neg');
+  var be=null;
+  for(var i=1;i<=HORIZON;i++){if(rows[i].net>=0){be=i;break;}}
+  g('tBreak').textContent=be===null?'— not in 36 mo':'Month '+be;
+  var cum=rows.reduce(function(a,r){return a+r.net;},0);
+  var tc=g('tCum');tc.textContent=fM(cum);tc.className='tv '+(cum>=0?'pos':'neg');
+  var hourly=cum/(HORIZON*p.hours);
+  var th=g('tHourly');th.textContent=fM(hourly)+' / hr';th.className='tv '+(hourly>=0?'pos':'neg');
+  renderChart(c1,rows);
+  renderChart(c2,rows);
+  var tb=g('dataTable').tBodies[0];tb.textContent='';
+  rows.forEach(function(r){
+    var tr=document.createElement('tr');
+    [String(r.m),fInt(r.adopted),fInt(r.users),fInt(r.payers),fM(r.rev),fM(r.cost),fM(r.net)].forEach(function(v,ci){
+      var td=document.createElement('td');
+      if(ci>0)td.className='n';
+      td.textContent=v;
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+}
+['price','conv','mkt','q','dph','hours','ret','rail'].forEach(function(id){g(id).addEventListener('input',update);});
+update();
+})();
+</script>
+</body>
+</html>
