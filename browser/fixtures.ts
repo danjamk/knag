@@ -166,6 +166,15 @@ export class Knag {
       if (entry.id === 1) continue;
       await this.page.request.delete(`/api/pages/${entry.id}`, { headers });
     }
+
+    // 🔴 And clear the default page's template. Deleting the *pages* is not enough:
+    // a template saved by an earlier run makes every new page start from that body, so a
+    // test asserting a fresh page is empty fails with the previous test's document in it.
+    // Membership is not the whole of a page's state.
+    await this.page.request.patch("/api/pages/1", {
+      headers: { ...headers, "Content-Type": "application/json" },
+      data: { template: "clear" },
+    });
   }
 
   /** Tier 2 of the bar (#139). */
