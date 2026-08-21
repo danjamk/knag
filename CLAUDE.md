@@ -207,8 +207,15 @@ When writing to knag through MCP:
   the only write tool; surgical edits only, nothing else touched.
 - **Always read immediately before writing.** Never write from a body carried
   over from earlier in a conversation.
-- **Report the diff in chat** after every write — added, removed, changed.
+- **Report the diff in chat** after every write — added, removed, changed, **and which
+  page**. Once there are several, "the page" stops being an answer.
 - **On 409, re-read and re-apply the intent.** Never retry with the stale body.
+- **Name the page you read, and write to that one.** Every tool takes an optional `page`
+  by name; `knag_read` echoes back the name it answered with. An unrecognised name is an
+  error listing what exists — it **never** falls back to the default, because a
+  whole-page write to the wrong page destroys a document while preserving every byte of
+  it (#153). Omitting `page` means the default page and never "the one you were last
+  looking at": the Worker has no current page.
 
 ## Testing
 

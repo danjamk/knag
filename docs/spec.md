@@ -950,10 +950,36 @@ the login form is worth more to a phisher than a plain one.
 
 | Tool | Signature | Notes |
 |---|---|---|
-| `knag_read` | `() → { body, version, updated_at }` | |
-| `knag_write` | `(body, base_version) → { version, updated_at, changed }` | Full replacement. Conflict on mismatch. |
-| `knag_wipe` | `(base_version, scope?) → { version, wiped_count, cleared_count }` | Same path as the wipe control. `scope` is `completed` (default) or `all`. |
-| `knag_history` | `(since?, until?) → History` | Identical shape to `GET /api/history`. |
+| `knag_read` | `(page?) → { body, version, updated_at, page }` | |
+| `knag_write` | `(body, base_version, page?) → { version, updated_at, changed, page }` | Full replacement. Conflict on mismatch. |
+| `knag_wipe` | `(base_version, scope?, page?) → { version, wiped_count, cleared_count, page }` | Same path as the wipe control. `scope` is `completed` (default) or `all`. |
+| `knag_history` | `(since?, until?, page?) → History & { page }` | `History` is the identical shape to `GET /api/history`. |
+
+### `page` is optional, by name, and never falls back (#153)
+
+**Optional is load-bearing, not polite.** §17 is explicit that a parameter added later is
+backward-compatible only while it is optional; a required one breaks every deployed
+Claude Code config the moment it ships, and those configs are on machines nobody is going
+to edit. Omitted means **the default page**.
+
+**By name, case-insensitively** — `page: "shopping"`, not `page: 3`. This is the one
+identifier in the product a *person* writes down, into a saved prompt or a project
+instruction, and a name survives being read back where an id does not. The browser holds
+ids because it never has to explain them to anybody, which is why `/api/doc?page=` takes
+an integer and this does not. The cost is that a rename breaks whatever was written down,
+and that cost is paid deliberately:
+
+> 🔴 **An unrecognised name is an error listing the pages that exist. It never falls back
+> to the default.** Whole-document write is the only write here, so an agent told to write
+> to `shopping` after that page was renamed would otherwise replace today's page instead —
+> byte-preserving every line it was handed, into the wrong document. The error is also the
+> only way to learn the names, because **knag has no index and no tool that lists pages**
+> (§12). A wrong name is usually a nearly-right one, so getting it wrong once is the
+> intended discovery path.
+
+Absent likewise never means "the page you were last looking at". The Worker has no current
+page — that is a per-device idea in a browser's localStorage, and a bearer token carries no
+device.
 
 One write tool, not three. The document is small enough that read-modify-write
 is cheaper than inventing append/patch/delete semantics, and it covers every

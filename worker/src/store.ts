@@ -105,6 +105,31 @@ export async function readDefaultPage(env: Env): Promise<PageRow> {
 }
 
 /**
+ * Find a page by name, case-insensitively (#153).
+ *
+ * 🔴 **Names, because a human types them into a prompt.** The MCP `page` parameter is
+ * the one identifier in this product that gets written down by a person — into a project
+ * instruction, a saved prompt, a CLAUDE.md — and `page: "shopping"` survives being read
+ * back by a human where `page: 3` does not. The browser holds ids because it never has to
+ * explain them to anybody.
+ *
+ * The cost is that a rename breaks whatever was written down. That is accepted and it is
+ * why the caller must fail loudly with the list rather than fall back to the default —
+ * a rename that silently redirects an agent's whole-document write is the one outcome
+ * worse than an error.
+ *
+ * Case-insensitive against `idx_pages_name`, which is `COLLATE NOCASE` and unique — so
+ * this can never have two answers.
+ */
+export async function findPageByName(env: Env, name: string): Promise<PageRow | null> {
+  return await env.DB.prepare(
+    "SELECT id, name, body, version, updated_at FROM pages WHERE name = ? COLLATE NOCASE",
+  )
+    .bind(name)
+    .first<PageRow>();
+}
+
+/**
  * Every page, oldest first — the switcher's list (#154) and nothing more.
  *
  * 🔴 No counts, no last-modified, no body. §7's rule for the selector is that
