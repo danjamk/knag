@@ -148,6 +148,26 @@ export class Knag {
     });
   }
 
+  /**
+   * Retire every page but the default one.
+   *
+   * 🔴 The browser suite runs against one live database and nothing resets it between
+   * tests â `seed` replaces the *document*, which was the whole state until pages existed
+   * (#154). Without this, a page created in one test is still there in the next, and the
+   * second test to ask for a page called `shopping` fails on a duplicate name with an
+   * error that says nothing about the real cause.
+   */
+  async resetPages(): Promise<void> {
+    const headers = { Authorization: `Bearer ${TEST_BEARER}` };
+    const res = await this.page.request.get("/api/pages", { headers });
+    const { pages } = (await res.json()) as { pages: Array<{ id: number }> };
+
+    for (const entry of pages) {
+      if (entry.id === 1) continue;
+      await this.page.request.delete(`/api/pages/${entry.id}`, { headers });
+    }
+  }
+
   /** Tier 2 of the bar (#139). */
   ledge() {
     return this.page.locator("[data-ledge]");

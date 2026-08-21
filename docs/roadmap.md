@@ -308,6 +308,23 @@ the single-document product.
 
 ### Phase 6 · A handful of pages — #123 · **ships 1.1**
 
+🔴 **Split into four on 2026-08-20, and the split is the finding.** #123 was ten tasks
+across schema, store, three routes, MCP, the switcher, manage-pages, templates and two
+spec sections — and one of those pieces cannot ship in the same release as the others,
+so the boundary existed whether or not it was named.
+
+| | | |
+|---|---|---|
+| #152 | the page dimension behind the API | ✅ |
+| #153 | MCP takes an optional page, by name | ✅ |
+| #154 | `/api/pages`, the switcher, manage-pages, templates | ✅ |
+| #155 | **contract** — drop `documents` | gated on #4 and on #152 surviving a release |
+
+Two things in #123's own task list turned out to be wrong and are corrected in the
+children: MCP cannot default to "the current page" (the Worker has no current page — it
+is a per-device idea and a bearer token carries no device), and the switcher did not need
+a design session, because [§7](design/holistic-response.md) had already specified it.
+
 Ships independently of auth; §17 is explicit that it "can ship long before
 tenancy does". Before #91, per finding 1.
 

@@ -185,17 +185,25 @@ test.describe("what is on which tier", () => {
     await expect(bar.locator(".wordmark")).toHaveCount(0);
   });
 
-  test("🔴 the page's name is not a control until there is a second page", async ({ knag }) => {
+  test("🔴 the page's name is the switcher's control now, and the ledge ignores it", async ({
+    knag,
+  }) => {
     await knag.seed(DAY);
 
-    // One page is not a special case of many; many is the special case, and it earns
-    // the caret by existing (#123). Until then this is a status display and pressing it
-    // must do nothing at all — no selector, no menu, no half-built affordance.
+    // 🔴 **This test inverted in #154, and the inversion is the record of why.** It used
+    // to assert the name was a `<span>` — "one page is not a special case of many; many
+    // is the special case, and it earns the caret by existing" (#123). That was scoping
+    // the state *before* pages existed. The switcher is how the second page gets made, so
+    // it cannot wait for one to appear.
     const name = knag.page.locator("[data-page-name]");
     await expect(name).toHaveCount(1);
-    expect(await name.evaluate((el: { tagName: string }) => el.tagName)).toBe("SPAN");
+    expect(await name.evaluate((el: { tagName: string }) => el.tagName)).toBe("BUTTON");
 
     await name.click();
+
+    // What survives unchanged: pressing it does not open the ledge. Two things over the
+    // bar at once is a menu, and the bar's whole rationale is that it is not one.
+    await expect(knag.page.locator("[data-switcher]")).toBeVisible();
     await expect(knag.ledge()).not.toBeVisible();
   });
 

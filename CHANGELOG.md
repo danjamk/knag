@@ -15,6 +15,25 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Added
 
+- **A page switcher, manage-pages, and templates** (#154) — the part a person can see.
+  The page's name in tier 1 is a drop-up now: current page in amber, the rest in chalk,
+  one last row for the rare verbs. **No icons, no counts, no last-modified times** — the
+  row is its name, because anything else is a column and a column is a file manager. It
+  never scrolls, because the server caps pages at nine.
+
+  🔴 **knag has no index.** There is no screen that lists your pages and nothing to pick
+  from on the way in — **launch opens the last page you were on**, which is device state
+  and never synced.
+
+  Manage-pages is a third pane of the settings dialog: the name is an editable field
+  rather than a rename *mode*, templates toggle per page, and delete asks nothing —
+  which #154's schema is what makes honest.
+
+  Two things that were single-valued and quietly wrong once a second page existed: the
+  undo offer's `localStorage` key (wipe the shopping list, switch to today, and today
+  offered to bring the shopping list back — into today), and the poll, which now asks
+  about the open page only so §14.4's budget does not multiply by nine.
+
 - **`/api/pages`** — create, rename, save-a-template and retire (#154). The switcher's
   API, with no switcher yet. The list carries `id`, `name` and `has_template` and nothing
   else: anything more is a column, and a column is a file manager.

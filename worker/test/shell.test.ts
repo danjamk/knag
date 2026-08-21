@@ -232,12 +232,23 @@ describe("PWA shell (spec §9)", () => {
     const buttons = bar.match(/<button[^>]*/g) ?? [];
     const permanent = buttons.filter((button) => !button.includes("hidden"));
 
-    // One: the control that opens the ledge. It went *down* — arrange and settings left
-    // for the ledge, and the wordmark left the bar entirely so the page's name has a
-    // permanent slot (#123). A second tier that cost tier 1 nothing is the whole claim.
-    expect(permanent).toHaveLength(1);
-    expect(permanent[0]).toContain("data-ledge-toggle");
-    expect(buttons).toHaveLength(2);
+    // Two, and the second one **took no space** (#154). Arrange and settings went down
+    // to the ledge, and the wordmark left the bar entirely so the page's name could have
+    // a permanent slot (#123). That slot was always occupied — it held a `<span>` reading
+    // `today` — and pages turned the label in it into the control that switches them.
+    //
+    // 🔴 So the budget this test protects is **space above the keyboard**, not a count of
+    // buttons, and the assertion says which control is which rather than how many there
+    // are. §7's "not a control until there is a second page to switch to" was scoping the
+    // state *before* pages existed: the switcher is how the second page gets made, so it
+    // cannot wait for one.
+    expect(permanent).toHaveLength(2);
+    expect(permanent.some((button) => button.includes("data-page-name"))).toBe(true);
+    expect(permanent.some((button) => button.includes("data-ledge-toggle"))).toBe(true);
+
+    // Anything beyond those two has to ship `hidden`, which is the half of the rule that
+    // stops permanent chrome arriving by calling itself transient.
+    expect(buttons).toHaveLength(3);
   });
 
   it("🔴 keeps the ledge closed and inert in the shipped shell", () => {

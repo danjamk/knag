@@ -46,6 +46,7 @@ import {
   linkify,
   move,
   readFontSize,
+  readPageId,
   readSound,
   readTheme,
   readView,
@@ -53,13 +54,19 @@ import {
   rows,
   themeColor,
   writeFontSize,
+  writePageId,
   writeSound,
   writeTheme,
   writeView,
 } from "./view.js";
 import { knockAt, play as playWipeSound, unlock as unlockSound } from "./sound.js";
 
-type Doc = { body: string; version: number; updated_at: string };
+/**
+ * `id` and `name` arrived with pages (#152) and are optional here on purpose: an older
+ * cached `app.js` reading a newer server, or a 304 path that carries no body, must not
+ * depend on them. The bar falls back to what it already had.
+ */
+type Doc = { body: string; version: number; updated_at: string; id?: number; name?: string };
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -93,6 +100,16 @@ const reorderButton = document.querySelector<HTMLButtonElement>("[data-reorder]"
 const recoveryLine = document.querySelector<HTMLElement>("[data-recovery]");
 const recoveryCountEl = document.querySelector<HTMLElement>("[data-recovery-count]");
 const envBadge = document.querySelector<HTMLElement>("[data-env]");
+const pageNameButton = document.querySelector<HTMLButtonElement>("[data-page-name]");
+const pageLabel = document.querySelector<HTMLElement>("[data-page-label]");
+const switcherEl = document.querySelector<HTMLElement>("[data-switcher]");
+const switcherList = document.querySelector<HTMLUListElement>("[data-switcher-list]");
+const managePane = document.querySelector<HTMLElement>("[data-manage-pane]");
+const manageOpen = document.querySelector<HTMLButtonElement>("[data-manage-open]");
+const manageBack = document.querySelector<HTMLButtonElement>("[data-manage-back]");
+const manageList = document.querySelector<HTMLUListElement>("[data-manage-list]");
+const manageNote = document.querySelector<HTMLElement>("[data-manage-note]");
+const newPageForm = document.querySelector<HTMLFormElement>("[data-new-page]");
 
 /** Which rows a wipe takes. Mirrors `WipeScope` in the Worker's store. */
 type WipeScope = "completed" | "all";
@@ -146,6 +163,38 @@ let fontSize: FontSize = 16;
 let sound = false;
 
 /** The version we believe we are editing. Every write carries it (spec §6). */
+/**
+ * The page a request naming none resolves to.
+ *
+ * 🔴 Duplicated from `store.ts` rather than imported, and that is not the parser
+ * mistake CLAUDE.md warns about. Importing it would pull `store.ts` — and with it `Env`
+ * and the D1 types — into the client bundle. It is a *protocol* constant, the same kind
+ * of thing `/api/doc` is, and the server is the authority: the client sends it and the
+ * server decides. Nothing here depends on the number being right beyond "somewhere to
+ * fall back to", and a wrong value would 404 loudly on the first read rather than
+ * silently write to the wrong page.
+ */
+const DEFAULT_PAGE_ID = 1;
+
+/**
+ * Which page this device is on, and what it knows about the rest (#154).
+ *
+ * 🔴 `pageId` is a **hint** until a read confirms it. It comes out of localStorage,
+ * and the page may have been deleted from another device since — so every path that uses
+ * it has to survive a 404 by falling back to the default page rather than showing an
+ * error. That is `openDefaultPage` below, and it is the only place a fallback is allowed.
+ */
+let pageId = DEFAULT_PAGE_ID;
+let pageName = "today";
+let pages: PageSummary[] = [];
+
+type PageSummary = { id: number; name: string; has_template: boolean };
+
+/** The document URL for the page in hand. Every read and write goes through this. */
+function docUrl(path = "/api/doc"): string {
+  return `${path}?page=${pageId}`;
+}
+
 let baseVersion = 0;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 /** True between an edit and its save landing. Half of the dirty guard. */
@@ -271,11 +320,22 @@ function showEditor(authed: boolean): void {
 
 // ── Loading ──────────────────────────────────────────────────────────────────
 
+/**
+ * The page named in the request is not there any more (#154).
+ *
+ * \U0001f534 Its own error type because it is the one failure with a *correct recovery* —
+ * open the default page — and every other failure's recovery is to say so and stop. A
+ * 404 folded in with "load failed" would either strand a phone on an error screen after
+ * a laptop deleted a page, or make a network blip silently move you to a different
+ * document. Both are worse than the extra class.
+ */
+class PageGone extends Error {}
+
 /** Returns null when unauthenticated, so the caller shows the login screen. */
 async function load(): Promise<Doc | null> {
   let res: Response;
   try {
-    res = await fetch("/api/doc", { headers: { Accept: "application/json" } });
+    res = await fetch(docUrl(), { headers: { Accept: "application/json" } });
   } catch (error) {
     // A thrown fetch is the network, not the server. Recorded before rethrowing so the
     // caller's own error path still runs.
@@ -285,6 +345,7 @@ async function load(): Promise<Doc | null> {
   noteConnectivity(true);
 
   if (res.status === 401) return null;
+  if (res.status === 404) throw new PageGone();
   if (!res.ok) throw new Error(`load failed: ${res.status}`);
   return (await res.json()) as Doc;
 }
@@ -643,7 +704,10 @@ function openElement(url: string): HTMLAnchorElement {
  */
 async function poll(): Promise<void> {
   try {
-    const res = await fetch("/api/doc", {
+    // 🔴 One page, not all of them. §14.4's polling budget was written for a single
+    // document and pages must not multiply it — the poll asks about the page you are
+    // looking at and knows nothing about the others.
+    const res = await fetch(docUrl(), {
       headers: { Accept: "application/json", "If-None-Match": `"${baseVersion}"` },
     });
     // 🔴 The poll is the app's heartbeat and usually the first thing to notice a drop,
@@ -654,6 +718,16 @@ async function poll(): Promise<void> {
     if (res.status === 401) {
       stopPolling();
       showEditor(false);
+      return;
+    }
+    // 🔴 Deleted from another device while this tab sat open — the exact thing a
+    // day-long tab on a phone is for. Falling back is right here and nowhere else: the
+    // reader did not ask for anything, so landing on today beats a stuck poll that
+    // quietly stops noticing edits.
+    if (res.status === 404 && pageId !== DEFAULT_PAGE_ID) {
+      setStatus("that page is gone");
+      await openPage(DEFAULT_PAGE_ID, "today");
+      await loadPages();
       return;
     }
     if (!res.ok) return;
@@ -828,7 +902,7 @@ async function writeDocument(): Promise<void> {
       res = await fetch("/api/doc", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: sent, base_version: baseVersion }),
+        body: JSON.stringify({ body: sent, base_version: baseVersion, page: pageId }),
       });
     } catch (error) {
       noteConnectivity(false);
@@ -1002,11 +1076,25 @@ rowsEl?.addEventListener("change", (event) => {
  */
 type WipeMemory = { preWipe: string; postWipe: string; count: number; expiresAt: number };
 
-const WIPE_MEMORY_KEY = "knag:last-wipe";
+/**
+ * The undo offer, **per page** (#154).
+ *
+ * 🔴 This was one key, and one key is a bug the moment there are two pages: wipe the
+ * shopping list, switch to today, and today would offer to bring the shopping list back —
+ * into today. The offer is about a page, so the key names one.
+ *
+ * Old single-key memories are simply not found and the offer is not made. That is the
+ * correct migration: the offer expires at local midnight anyway, so the worst case is one
+ * undo lost on the day of the upgrade, and reading a keyless memory into whatever page
+ * happens to be open is exactly the bug this fixes.
+ */
+function wipeMemoryKey(id: number): string {
+  return `knag:last-wipe:${id}`;
+}
 
 function rememberWipe(memory: WipeMemory): void {
   try {
-    globalThis.localStorage?.setItem(WIPE_MEMORY_KEY, JSON.stringify(memory));
+    globalThis.localStorage?.setItem(wipeMemoryKey(pageId), JSON.stringify(memory));
   } catch {
     // Private mode, or a full quota. The wipe still happened and is still in history;
     // only the one-tap undo is lost, which is not worth failing the wipe over.
@@ -1016,7 +1104,7 @@ function rememberWipe(memory: WipeMemory): void {
 
 function forgetWipe(): void {
   try {
-    globalThis.localStorage?.removeItem(WIPE_MEMORY_KEY);
+    globalThis.localStorage?.removeItem(wipeMemoryKey(pageId));
   } catch {
     // Nothing to do — `readWipe` treats anything unparseable as absent.
   }
@@ -1026,7 +1114,7 @@ function forgetWipe(): void {
 function readWipe(): WipeMemory | null {
   let raw: string | null = null;
   try {
-    raw = globalThis.localStorage?.getItem(WIPE_MEMORY_KEY) ?? null;
+    raw = globalThis.localStorage?.getItem(wipeMemoryKey(pageId)) ?? null;
   } catch {
     return null;
   }
@@ -1192,7 +1280,7 @@ async function requestWipe(scope: WipeScope): Promise<void> {
     const res = await fetch("/api/doc/clear-completed", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ base_version: baseVersion, scope }),
+      body: JSON.stringify({ base_version: baseVersion, scope, page: pageId }),
     });
 
     if (res.status === 401) {
@@ -1396,7 +1484,7 @@ restoreButton?.addEventListener("click", async () => {
     const res = await fetch("/api/doc", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: restored, base_version: baseVersion }),
+      body: JSON.stringify({ body: restored, base_version: baseVersion, page: pageId }),
     });
 
     if (res.status === 401) {
@@ -1860,6 +1948,305 @@ sessionsList?.addEventListener("click", (event) => {
   if (id) void revoke(`/api/sessions/${encodeURIComponent(id)}`, "DELETE");
 });
 
+// ── Pages (#154) ─────────────────────────────────────────────────────────────
+
+/**
+ * Read the page list. The switcher's whole data source, and the manage pane's.
+ *
+ * Failures are silent and leave the list as it was: the switcher is chrome, and a page
+ * list that could not be refreshed is not a reason to interrupt someone typing.
+ */
+async function loadPages(): Promise<void> {
+  try {
+    const res = await fetch("/api/pages", { credentials: "same-origin" });
+    if (!res.ok) return;
+    pages = ((await res.json()) as { pages: PageSummary[] }).pages;
+  } catch {
+    return;
+  }
+
+  // The name can change from another device, and the bar is where it shows.
+  const mine = pages.find((page) => page.id === pageId);
+  if (mine) {
+    pageName = mine.name;
+    if (pageLabel) pageLabel.textContent = mine.name;
+  }
+  paintSwitcher();
+  paintManage();
+}
+
+/**
+ * Open a page: remember it, read it, repaint.
+ *
+ * 🔴 **A 404 falls back to the default page rather than showing an error.** The stored
+ * id is a hint — the page may have been deleted from another device, and a phone that
+ * came out of a pocket to an error screen because a laptop tidied up is a worse outcome
+ * than landing on today. This is the *only* place a fallback is allowed; every other path
+ * treats a missing page as missing (#152).
+ */
+async function openPage(id: number, name?: string): Promise<void> {
+  // Flush first. Switching repaints from a different document entirely, and an unsaved
+  // edit still on the debounce would have its save race the new page's render — and
+  // `baseVersion` would already belong to the other page by the time it landed.
+  await saveNow();
+
+  pageId = id;
+  if (name !== undefined) pageName = name;
+  writePageId(globalThis.localStorage, id);
+  if (pageLabel) pageLabel.textContent = pageName;
+
+  let doc: Doc | null = null;
+  try {
+    const res = await fetch(docUrl(), { headers: { Accept: "application/json" } });
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+    if (res.status === 404 && id !== DEFAULT_PAGE_ID) {
+      setStatus("that page is gone");
+      await openPage(DEFAULT_PAGE_ID, "today");
+      await loadPages();
+      return;
+    }
+    if (!res.ok) throw new Error(String(res.status));
+    doc = (await res.json()) as Doc;
+  } catch {
+    setStatus("not loaded");
+    return;
+  }
+
+  if (doc) {
+    pageName = doc.name ?? pageName;
+    if (pageLabel) pageLabel.textContent = pageName;
+    render(doc);
+  }
+  // The offer belongs to the page, so it is re-read rather than carried across.
+  paintRestore();
+  paintSwitcher();
+}
+
+/** The list, current page in amber. Rebuilt rather than diffed — it is at most nine rows. */
+function paintSwitcher(): void {
+  if (!switcherList) return;
+
+  switcherList.replaceChildren(
+    ...pages.map((page) => {
+      const li = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = page.name;
+      button.dataset.pageId = String(page.id);
+      // 🔴 `aria-current`, and the CSS colours from it. The amber *is* the marker —
+      // no tick, no dot, no second colour, which is the same rule the checked checkbox
+      // and the machine voice follow.
+      button.setAttribute("aria-current", String(page.id === pageId));
+      li.append(button);
+      return li;
+    }),
+  );
+}
+
+function setSwitcher(open: boolean): void {
+  if (!switcherEl || open === !switcherEl.hasAttribute("hidden")) return;
+  switcherEl.toggleAttribute("hidden", !open);
+  pageNameButton?.setAttribute("aria-expanded", String(open));
+}
+
+pageNameButton?.addEventListener("click", () => {
+  const opening = switcherEl?.hasAttribute("hidden") === true;
+  if (opening) void loadPages();
+  setSwitcher(opening);
+});
+
+switcherList?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const id = Number(target.closest<HTMLElement>("[data-page-id]")?.dataset.pageId);
+  if (!Number.isInteger(id)) return;
+
+  setSwitcher(false);
+  if (id !== pageId) void openPage(id);
+});
+
+/**
+ * Manage pages — the rare per-page verbs, in a pane (#149's amendment to §3d).
+ *
+ * Reached from the switcher rather than from the settings list, because these are things
+ * you want when pages are already on your mind. Opening it closes the switcher and opens
+ * the dialog, which is one surface replacing another rather than two being open at once.
+ */
+function showManage(on: boolean): void {
+  settingsPane?.toggleAttribute("hidden", on);
+  managePane?.toggleAttribute("hidden", !on);
+  if (on) void loadPages();
+}
+
+manageOpen?.addEventListener("click", () => {
+  setSwitcher(false);
+  devicesPane?.setAttribute("hidden", "");
+  showManage(true);
+  settingsDialog?.showModal();
+});
+
+manageBack?.addEventListener("click", () => showManage(false));
+
+/** One row per page: the name as a field, the template state, and delete. */
+function paintManage(): void {
+  if (!manageList) return;
+
+  manageList.replaceChildren(
+    ...pages.map((page) => {
+      const li = document.createElement("li");
+      if (page.id === pageId) li.setAttribute("data-current", "");
+
+      const name = document.createElement("input");
+      name.type = "text";
+      name.value = page.name;
+      name.maxLength = 32;
+      name.spellcheck = false;
+      name.setAttribute("aria-label", `name of ${page.name}`);
+      name.dataset.renameId = String(page.id);
+      li.append(name);
+
+      const template = document.createElement("button");
+      template.type = "button";
+      template.textContent = "template";
+      template.title = page.has_template
+        ? "this page's body is saved as its template"
+        : "save this page's body as its template";
+      template.setAttribute("aria-pressed", String(page.has_template));
+      template.dataset.templateId = String(page.id);
+      li.append(template);
+
+      // 🔴 The default page has no delete control at all, rather than a disabled one.
+      // It cannot be deleted — that is structural, not a permission — and a control that
+      // is present and refuses is a control that has to explain itself.
+      if (page.id !== DEFAULT_PAGE_ID) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "delete";
+        remove.dataset.deletePage = String(page.id);
+        li.append(remove);
+      }
+
+      return li;
+    }),
+  );
+
+  if (manageNote) {
+    const template = pages.find((page) => page.id === pageId)?.has_template === true;
+    manageNote.textContent = template
+      ? `A new page starts from "${pageName}", because that page has a template saved. Deleting a page keeps its history — nothing is removed.`
+      : "A template is a saved body: turn one on and a new page starts from it. Deleting a page keeps its history — nothing is removed.";
+  }
+
+  const submit = document.querySelector<HTMLButtonElement>("[data-new-page-submit]");
+  if (submit) {
+    // Nine is a tripwire rather than a limit, so the control says what happened instead
+    // of vanishing — a missing button is a bug and a full one is a decision.
+    submit.disabled = pages.length >= 9;
+    submit.textContent = pages.length >= 9 ? "9 pages" : "new page";
+  }
+}
+
+/** Every page mutation goes through here, so the list is re-read exactly once each time. */
+async function mutatePages(url: string, method: string, payload?: unknown): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      method,
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+    });
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => null)) as { error?: string } | null;
+      setStatus(detail?.error ?? "not saved");
+      await loadPages();
+      return false;
+    }
+    await loadPages();
+    return true;
+  } catch {
+    setStatus("not saved");
+    return false;
+  }
+}
+
+manageList?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+
+  const template = target.closest<HTMLElement>("[data-template-id]");
+  if (template) {
+    const id = Number(template.dataset.templateId);
+    const on = template.getAttribute("aria-pressed") === "true";
+    void mutatePages(`/api/pages/${id}`, "PATCH", { template: on ? "clear" : "save" });
+    return;
+  }
+
+  const remove = target.closest<HTMLElement>("[data-delete-page]");
+  if (remove) {
+    const id = Number(remove.dataset.deletePage);
+    // 🔴 No confirmation, and this is the one place that claim had to be paid for: the
+    // page is retired rather than removed, every revision it ever had stays where it is,
+    // and recovering it is clearing a column. Principle 4, made true in the schema
+    // (#154) rather than merely asserted.
+    void mutatePages(`/api/pages/${id}`, "DELETE").then(async (ok) => {
+      if (ok && id === pageId) await openPage(DEFAULT_PAGE_ID, "today");
+    });
+  }
+});
+
+// Rename commits on blur and on Enter — the same contract as any field, and never a
+// keystroke-by-keystroke write against the only copy of a name an agent resolves by.
+manageList?.addEventListener("focusout", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  const id = Number(target.dataset.renameId);
+  const name = target.value.trim();
+  const before = pages.find((page) => page.id === id)?.name;
+  if (!Number.isInteger(id) || name === "" || name === before) return;
+  void mutatePages(`/api/pages/${id}`, "PATCH", { name });
+});
+
+manageList?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+    event.preventDefault();
+    event.target.blur();
+  }
+});
+
+newPageForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = newPageForm.querySelector<HTMLInputElement>('input[name="name"]');
+  const name = input?.value.trim() ?? "";
+  if (name === "") return;
+
+  // 🔴 From the current page's template when it has one — the motivating case is a list
+  // that always starts from the same standing items, and the page you are on is the one
+  // you are thinking about. A template is a saved body and nothing else, so this is a
+  // copy (§7).
+  const from = pages.find((page) => page.id === pageId)?.has_template === true ? pageId : undefined;
+
+  void mutatePages("/api/pages", "POST", {
+    name,
+    ...(from === undefined ? {} : { from_template: from }),
+  }).then(async (ok) => {
+    if (!ok) return;
+    if (input) input.value = "";
+
+    const created = pages.find((page) => page.name.toLowerCase() === name.toLowerCase());
+    if (!created) return;
+
+    // 🔴 Open it and get out of the way. Making a page is a thing you do *in order to
+    // write on it*, and leaving the reader in a management pane after it worked is the
+    // shape of a settings screen rather than of a page you just made.
+    settingsDialog?.close();
+    await openPage(created.id, created.name);
+    surface?.focus();
+  });
+});
+
 /**
  * The ledge — tier 2 of the bar (#139).
  *
@@ -1897,6 +2284,15 @@ function setLedge(open: boolean): void {
   if (!open) disarmWipeAll();
 }
 
+/** Opening the ledge closes the switcher. Two things over the bar at once is a menu. */
+ledgeEl?.addEventListener("click", () => setSwitcher(false));
+
+document.addEventListener("keydown", (event) => {
+  // A drop-up is not a dialog and gets none of `<dialog>`'s behaviour for free. Escape
+  // is the one piece of it people reach for without thinking.
+  if (event.key === "Escape") setSwitcher(false);
+});
+
 ledgeToggle?.addEventListener("click", () => {
   setLedge(!ledgeEl?.hasAttribute("data-open"));
 });
@@ -1923,6 +2319,10 @@ document.addEventListener("focusin", (event) => {
     (footerEl?.contains(target) === true || recoveryLine?.contains(target) === true);
   if (inChrome) return;
   setLedge(false);
+  // The switcher lives inside the footer so it does not fight the ledge's focus rule
+  // (#154), which means it needs the rule applied to it explicitly rather than
+  // inheriting it. Same sentence: going back to the page closes what is over it.
+  setSwitcher(false);
 });
 
 /**
@@ -1994,7 +2394,11 @@ devicesBack?.addEventListener("click", () => showDevices(false));
 // 🔴 Escape and the backdrop close the dialog from whichever pane is showing, and the
 // platform tells nobody which one that was. Reset on the way out, or the next tap on
 // `settings` opens a sheet that is still showing the device list.
-settingsDialog?.addEventListener("close", () => showDevices(false));
+settingsDialog?.addEventListener("close", () => {
+  showDevices(false);
+  managePane?.setAttribute("hidden", "");
+  settingsPane?.removeAttribute("hidden");
+});
 
 settingsOpen?.addEventListener("click", () => {
   markChoices("[data-theme-set]", "themeSet", theme);
@@ -2153,7 +2557,28 @@ sound = readSound(globalThis.localStorage);
 
 view = readView(globalThis.localStorage);
 
-const doc = await load();
+// \U0001f534 **Launch opens the last page you were on, never a list** (spec §12). Read before
+// the first fetch so the very first request is already scoped — a boot that read the
+// default page and then switched would show today's document for a frame on a device
+// that has not looked at today in a week.
+//
+// A stored id is only a hint. If that page has since been deleted from another device
+// the read below 404s, and the fallback lands on the default page rather than on an
+// error screen.
+pageId = readPageId(globalThis.localStorage) ?? DEFAULT_PAGE_ID;
+
+let doc: Doc | null;
+try {
+  doc = await load();
+} catch (error) {
+  // Only a page that is gone recovers here. A network failure or a 500 rethrows and the
+  // boot fails loudly, because silently opening a different document on a bad connection
+  // is the one outcome worse than not opening at all.
+  if (!(error instanceof PageGone)) throw error;
+  pageId = DEFAULT_PAGE_ID;
+  writePageId(globalThis.localStorage, DEFAULT_PAGE_ID);
+  doc = await load();
+}
 if (doc) {
   // Already logged in and sent here by the consent screen anyway — a session that was
   // absent when `/oauth/authorize` looked and present a moment later. Rare, and cheap
@@ -2165,8 +2590,14 @@ if (doc) {
   } else {
     // 🔴 Before `render`, not after — see the login path above and `autoGrow`.
     showEditor(true);
+    pageName = doc.name ?? pageName;
+    if (pageLabel) pageLabel.textContent = pageName;
     render(doc);
     schedulePoll();
+    // After the first paint, deliberately: the switcher is chrome and the document is
+    // the product. A boot that waited on the page list to show the page would be slower
+    // for the ninety-nine reads out of a hundred that never open it.
+    void loadPages();
     // The offer survives a reload, which is most of what "rest of the day" means in
     // practice — a phone discards the page constantly and would otherwise forget the
     // wipe within seconds of you switching apps.
