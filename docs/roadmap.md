@@ -371,11 +371,23 @@ the release shape above: the bring-back and the agent-readable history already
 work, so what this revisits is the screen, and a screen designed for one page and
 then redesigned for several is the waste finding 1 exists to avoid.
 
+✅ **The bundle came back, 2026-08-21** —
+[design/history-response.md](design/history-response.md). It is the ruling; the build works
+from it. Three things it decided that the phase did not know:
+
+- **A surface, not a widened constant.** `offerExpiresAt` stays at local midnight, because
+  *the constant says how long and the problem is which one* — by tomorrow yesterday's sweep
+  sits behind three newer wipes whatever the number says.
+- **It argues with the Out list and wins on a distinction**: *a list of lines is a document;
+  a list of wipes is chrome about actions.* Rows are wipes, one wipe's lines at a time, so
+  no view ever shows a week of lines and search never has anything to be for. Replacement
+  text for brand §10 and spec §12 is in the response.
+- **`carbon` is retired** — done separately and first, ahead of the pane.
+
 🔴 **Moved out of 1.1 on 2026-08-20, and the reason it was here is untouched by that.**
-The condition was "after pages exist", and pages now do — so the next thing this needs is
-a **design bundle**, not a branch. It is also the one phase whose likeliest shape argues
-with the Out list, which is a conversation to have deliberately rather than under release
-pressure.
+The condition was "after pages exist", and pages now do. It was also the one phase whose
+likeliest shape argues with the Out list, which is why it wanted a bundle rather than a
+branch — and the bundle did argue with it, on purpose, rather than routing around it.
 
 🔴 **Reshaped by #149, and this paragraph is the amendment.** §7 wrote history as a
 full **screen** reached from the ledge. Then devices became a *pane* of the settings
@@ -387,10 +399,17 @@ alongside the amendment that replaced it. Corrected 2026-08-21. A brief assemble
 stale half would have asked for the wrong surface, which is the failure mode the
 *Keeping this true* section at the bottom exists to catch.
 
-What survives from §7 unchanged, because #149 touched the container and not the content:
-it is **a place you go and come back from**, it opens on *yesterday* rather than today,
-and its action says `add 3 to the page`, never "restore" — because the page does not go
-back to how it was, and that is the one thing it cannot be ambiguous about.
+What survives from §7, because #149 touched the container and not the content: it is **a
+place you go and come back from**, and its action is never called "restore" — because the
+page does not go back to how it was, and that is the one thing it cannot be ambiguous
+about.
+
+🔴 **Two details of §7 the response supersedes**, recorded so the older document is not
+read as current. It opens on **today, newest first, grouped by day** rather than on
+yesterday; and the action is `bring back` on a sweep and `put the page back` on a reset,
+rather than `add 3 to the page`. The second is downstream of #173: a reset's undo has to
+take the template off as well as put the lines back, which is a bigger operation and reads
+as one.
 
 ### Phase 8 · Multi-user — #122 · **ships 1.2**
 
