@@ -14,16 +14,18 @@ import { loadHistory, reportingZone, resolveRange } from "./history.js";
 import { handleMcp } from "./mcp.js";
 import { handleAuthorize } from "./oauth.js";
 import {
-  type DocumentSource,
+  type WriteSource,
   type WipeScope,
   deleteOtherSessions,
   deleteSession,
   deleteSessionByToken,
   listLiveSessions,
+  DEFAULT_PAGE_ID,
   oldestRevisionAt,
-  readDocument,
+  type PageRow,
+  readPage,
   wipe,
-  writeDocument,
+  writePage,
 } from "./store.js";
 
 /**
@@ -135,7 +137,7 @@ const router = {
       const principal = await authenticate(request, env);
       if (!principal) return unauthorized();
 
-      if (request.method === "GET") return getDoc(request, env);
+      if (request.method === "GET") return getDoc(request, env, url);
       if (request.method === "PUT") return putDoc(request, env, principal);
 
       return Response.json(
@@ -430,7 +432,14 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
-  const { base_version: baseVersion, scope } = (payload ?? {}) as Record<string, unknown>;
+  const {
+    base_version: baseVersion,
+    scope,
+    page,
+  } = (payload ?? {}) as Record<string, unknown>;
+
+  const lookup = await resolvePage(env, page);
+  if (!lookup.ok) return lookup.response;
   if (typeof baseVersion !== "number" || !Number.isInteger(baseVersion) || baseVersion < 0) {
     return Response.json({ error: "base_version must be a non-negative integer" }, { status: 400 });
   }
@@ -443,7 +452,7 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
   }
   const wipeScope: WipeScope = scope === "all" ? "all" : "completed";
 
-  const current = await readDocument(env);
+  const current = lookup.page;
   const blocks = parse(current.body);
   const completed = blocks.filter(isCompleted);
 
@@ -462,6 +471,7 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
   }
 
   const result = await wipe(env, {
+    pageId: current.id,
     baseVersion,
     body: wipeScope === "all" ? "" : serialize(blocks.filter((block) => !isCompleted(block))),
     // 🔴 The finished lines only, under both scopes. `cleared_items` answers "what did I
@@ -506,6 +516,9 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
  * same question differently.
  */
 async function getHistory(url: URL, env: Env): Promise<Response> {
+  const lookup = await resolvePage(env, url.searchParams.get("page"));
+  if (!lookup.ok) return lookup.response;
+
   const timeZone = reportingZone(env.KNAG_TZ);
   const range = resolveRange(
     { since: url.searchParams.get("since"), until: url.searchParams.get("until") },
@@ -517,7 +530,7 @@ async function getHistory(url: URL, env: Env): Promise<Response> {
     return Response.json({ error: range.message }, { status: 400 });
   }
 
-  return Response.json(await loadHistory(env, range, timeZone));
+  return Response.json(await loadHistory(env, { ...range, pageId: lookup.page.id }, timeZone));
 }
 
 /**
@@ -545,8 +558,51 @@ function ifNoneMatchSatisfied(header: string | null, version: number): boolean {
   });
 }
 
-async function getDoc(request: Request, env: Env): Promise<Response> {
-  const doc = await readDocument(env);
+/**
+ * Which page a request is about (#152).
+ *
+ * Absent means the **default page**, which is what every client built before pages
+ * sends — so `/api/doc` with no `page` behaves exactly as it did, and that is what
+ * makes the expand half deployable on its own.
+ *
+ * 🔴 An unrecognised page is a 404, never a fall back to the default. Whole-document
+ * write is the only write this product has, so serving page 1 to a caller who asked for
+ * page 7 would let it overwrite a page it never named. Same rule the store states on
+ * `DEFAULT_PAGE_ID`, enforced at the edge where the number arrives from outside.
+ *
+ * Ids here, not names. Name resolution is #153's — it belongs with the MCP parameter an
+ * agent actually types, and putting a second lookup in front of the browser's requests
+ * before then would be building it twice.
+ */
+type PageLookup = { ok: true; page: PageRow } | { ok: false; response: Response };
+
+async function resolvePage(env: Env, raw: unknown): Promise<PageLookup> {
+  let pageId = DEFAULT_PAGE_ID;
+
+  if (raw !== undefined && raw !== null && raw !== "") {
+    const parsed = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      return {
+        ok: false,
+        response: Response.json({ error: "page must be a positive integer" }, { status: 400 }),
+      };
+    }
+    pageId = parsed;
+  }
+
+  const page = await readPage(env, pageId);
+  if (!page) {
+    return { ok: false, response: Response.json({ error: "No such page" }, { status: 404 }) };
+  }
+
+  return { ok: true, page };
+}
+
+async function getDoc(request: Request, env: Env, url: URL): Promise<Response> {
+  const lookup = await resolvePage(env, url.searchParams.get("page"));
+  if (!lookup.ok) return lookup.response;
+
+  const doc = lookup.page;
   const etag = etagFor(doc.version);
 
   // 304 carries no body but must still carry the tag, so a client that revalidates
@@ -564,7 +620,7 @@ async function getDoc(request: Request, env: Env): Promise<Response> {
  * information the principal does not already have, and a caller-supplied value is
  * unvalidated text headed for the only copy of the document.
  */
-function sourceFor(principal: Principal): DocumentSource {
+function sourceFor(principal: Principal): WriteSource {
   return principal.source === "bearer" ? "agent" : "pwa";
 }
 
@@ -576,7 +632,10 @@ async function putDoc(request: Request, env: Env, principal: Principal): Promise
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
-  const { body, base_version: baseVersion } = (payload ?? {}) as Record<string, unknown>;
+  const { body, base_version: baseVersion, page } = (payload ?? {}) as Record<string, unknown>;
+
+  const lookup = await resolvePage(env, page);
+  if (!lookup.ok) return lookup.response;
 
   // An empty string is a valid document and a valid write. Only the absence of a
   // string is an error — conflating the two is how "empty" starts reading as "failed"
@@ -591,7 +650,12 @@ async function putDoc(request: Request, env: Env, principal: Principal): Promise
     return Response.json({ error: "Document too large" }, { status: 413 });
   }
 
-  const result = await writeDocument(env, { body, baseVersion, source: sourceFor(principal) });
+  const result = await writePage(env, {
+    pageId: lookup.page.id,
+    body,
+    baseVersion,
+    source: sourceFor(principal),
+  });
 
   // 🔴 The 409 body is not a courtesy. The agent contract (spec §10) re-applies its
   // intent from exactly this payload, so it has to carry the current body as well as

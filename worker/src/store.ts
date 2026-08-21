@@ -11,10 +11,28 @@ import type { Env } from "./env.js";
  * The single-row id is a constant here, never a literal 1 in a handler.
  */
 
-/** The one and only document row. `documents` has CHECK (id = 1). */
-export const DOC_ID = 1;
+/**
+ * The page every caller resolves to when none is named.
+ *
+ * 🔴 **The default page, not an identity** (#152). It was `DOC_ID` and it meant "the
+ * only row there can be" — `documents` carried `CHECK (id = 1)` and the constant was a
+ * statement of that fact. `pages` has no such CHECK, so this is now a *default*: the page
+ * a request that names none is talking about, and the page every row written before
+ * migration 0004 was backfilled onto.
+ *
+ * 🔴 It is never the answer to "the page you asked for does not exist." Falling back
+ * here on an unrecognised page would put a whole-document write somewhere the caller did
+ * not name, against the only copy of that document. Missing is `null` and the route says
+ * so; see `readPage`.
+ */
+export const DEFAULT_PAGE_ID = 1;
 
-export type DocumentRow = {
+/** What migration 0004 named page 1 — the label tier 1 has always displayed. */
+export const DEFAULT_PAGE_NAME = "today";
+
+export type PageRow = {
+  id: number;
+  name: string;
   body: string;
   version: number;
   updated_at: string;
@@ -28,7 +46,7 @@ export type DocumentRow = {
  *
  * `system` is the migration's seed row. Nothing at runtime writes it.
  */
-export type DocumentSource = "pwa" | "agent" | "system";
+export type WriteSource = "pwa" | "agent" | "system";
 
 export type WriteResult =
   /** Applied. `version` is the new one. */
@@ -36,24 +54,69 @@ export type WriteResult =
   /** Body was already identical. Nothing bumped, nothing written. */
   | { status: "noop"; version: number; updated_at: string }
   /** `base_version` did not match. Carries the current state so the caller can re-apply. */
-  | { status: "conflict"; current: DocumentRow };
+  | { status: "conflict"; current: PageRow };
 
 /**
- * Read the live document.
+ * Read one page's live state, or `null` if there is no such page.
  *
- * A missing row reads as an empty body at version 0 rather than throwing — defensive
- * in case the migration was skipped, and because empty is a valid state that must
- * never be confused with a failed read (spec §14.5). `PUT` with `base_version: 0`
- * then initialises it.
+ * 🔴 **Two different kinds of absence, and conflating them is a data-loss path.**
+ *
+ * A missing *default* page reads as an empty body at version 0 rather than throwing —
+ * defensive in case the migration was skipped, and because empty is a valid state that
+ * must never be confused with a failed read (spec §14.5). `PUT` with `base_version: 0`
+ * then initialises it. That behaviour is unchanged and is scoped to the default page.
+ *
+ * A missing *named* page is `null`, and the caller must say so rather than serving the
+ * default. A request for page 7 answered with page 1's body would let a caller write a
+ * whole document over a page it never named — and whole-document write is the only write
+ * this product has.
  */
-export async function readDocument(env: Env): Promise<DocumentRow> {
+export async function readPage(env: Env, pageId: number): Promise<PageRow | null> {
   const row = await env.DB.prepare(
-    "SELECT body, version, updated_at FROM documents WHERE id = ?",
+    "SELECT id, name, body, version, updated_at FROM pages WHERE id = ?",
   )
-    .bind(DOC_ID)
-    .first<DocumentRow>();
+    .bind(pageId)
+    .first<PageRow>();
 
-  return row ?? { body: "", version: 0, updated_at: new Date(0).toISOString() };
+  if (row) return row;
+  if (pageId !== DEFAULT_PAGE_ID) return null;
+
+  return {
+    id: DEFAULT_PAGE_ID,
+    name: DEFAULT_PAGE_NAME,
+    body: "",
+    version: 0,
+    updated_at: new Date(0).toISOString(),
+  };
+}
+
+/**
+ * The default page, which always answers.
+ *
+ * A named seam for the one case `readPage` cannot return `null` for, so callers that
+ * genuinely mean "the page a request without a page is about" do not each carry a
+ * non-null assertion. The invariant is spec §14.5's — empty is a valid state, so a
+ * missing row reads as an empty body at version 0 rather than as an absence.
+ */
+export async function readDefaultPage(env: Env): Promise<PageRow> {
+  const page = await readPage(env, DEFAULT_PAGE_ID);
+  if (!page) throw new Error("readPage returned null for the default page");
+  return page;
+}
+
+/**
+ * Every page, oldest first — the switcher's list (#154) and nothing more.
+ *
+ * 🔴 No counts, no last-modified, no body. §7's rule for the selector is that
+ * *anything else you add is a column, and a column is a file manager*, and the cheapest
+ * place to hold that line is the query that cannot return the data in the first place.
+ */
+export async function listPages(env: Env): Promise<Array<{ id: number; name: string }>> {
+  const { results } = await env.DB.prepare("SELECT id, name FROM pages ORDER BY id").all<{
+    id: number;
+    name: string;
+  }>();
+  return results;
 }
 
 /**
@@ -68,12 +131,18 @@ export async function readDocument(env: Env): Promise<DocumentRow> {
  * Never merges, never overwrites. A conflict returns the current state so the caller
  * re-applies its intent rather than making a second round trip (spec §5, §10).
  */
-export async function writeDocument(
+export async function writePage(
   env: Env,
-  input: { body: string; baseVersion: number; source: DocumentSource },
+  input: { pageId: number; body: string; baseVersion: number; source: WriteSource },
   now: Date = new Date(),
 ): Promise<WriteResult> {
-  const current = await readDocument(env);
+  const current = await readPage(env, input.pageId);
+  // Only reachable if the caller skipped `readPage` — every route resolves the page
+  // first and 404s. Treated as a conflict rather than throwing: the caller's `base_version`
+  // describes a page that is not there, which is exactly what a conflict means.
+  if (!current) {
+    return { status: "conflict", current: { id: input.pageId, name: "", body: "", version: 0, updated_at: new Date(0).toISOString() } };
+  }
   const updatedAt = now.toISOString();
 
   // spec §14.5: base_version 0 means "I believe nothing is here yet." It is honoured
@@ -93,29 +162,37 @@ export async function writeDocument(
   // 0001_init.sql means the normal path never comes here (spec §14.5).
   if (current.version === 0) {
     await env.DB.prepare(
-      "INSERT INTO documents (id, body, version, updated_at, source) VALUES (?, ?, 1, ?, ?)",
+      `INSERT INTO pages (id, name, body, version, updated_at, source, created_at)
+       VALUES (?, ?, ?, 1, ?, ?, ?)`,
     )
-      .bind(DOC_ID, input.body, updatedAt, input.source)
+      .bind(input.pageId, DEFAULT_PAGE_NAME, input.body, updatedAt, input.source, updatedAt)
       .run();
-    await recordRevision(env, { body: input.body, version: 1, source: input.source }, now);
+    await mirrorToDocuments(env, input.pageId, { body: input.body, version: 1, updatedAt, source: input.source });
+    await recordRevision(
+      env,
+      { pageId: input.pageId, body: input.body, version: 1, source: input.source },
+      now,
+    );
     return { status: "applied", version: 1, updated_at: updatedAt };
   }
 
   const result = await env.DB.prepare(
-    `UPDATE documents
+    `UPDATE pages
         SET body = ?, version = version + 1, updated_at = ?, source = ?
       WHERE id = ? AND version = ?`,
   )
-    .bind(input.body, updatedAt, input.source, DOC_ID, current.version)
+    .bind(input.body, updatedAt, input.source, input.pageId, current.version)
     .run();
 
   // Zero rows means another write landed between the read and the UPDATE. Re-read
   // rather than reporting the state we no longer believe.
   if (result.meta.changes !== 1) {
-    return { status: "conflict", current: await readDocument(env) };
+    const reread = await readPage(env, input.pageId);
+    return { status: "conflict", current: reread ?? current };
   }
 
   const version = current.version + 1;
+  await mirrorToDocuments(env, input.pageId, { body: input.body, version, updatedAt, source: input.source });
 
   // 🔴 After the CAS, never batched with it. D1's batch is a transaction but not a
   // conditional one — the revision write would apply even when the UPDATE matched
@@ -123,9 +200,45 @@ export async function writeDocument(
   // if D1 fails between the two, and that failure surfaces as a 500 rather than a
   // silent gap: the document is saved, one intermediate snapshot is missing, and
   // coalescing already discards intermediates by design.
-  await recordRevision(env, { body: input.body, version, source: input.source }, now);
+  await recordRevision(
+    env,
+    { pageId: input.pageId, body: input.body, version, source: input.source },
+    now,
+  );
 
   return { status: "applied", version, updated_at: updatedAt };
+}
+
+/**
+ * Keep `documents` in step with the default page, for as long as it exists (#155).
+ *
+ * 🔴 **This is the rollback, and it is the whole reason expand and contract are two
+ * releases.** `pages` is the authority from here on; `documents` is a shadow that lets the
+ * previous Worker keep serving a current document if this one has to be rolled back.
+ * Without it, expand and contract collapse into a single irreversible step against the
+ * only copy of the document.
+ *
+ * Only the default page, because `documents` still carries `CHECK (id = 1)` and there is
+ * nowhere to put a second page. That is exactly the constraint the split exists to escape,
+ * and it means a rollback after #154 ships would lose pages 2..n — which is why #155
+ * drops this before the switcher can create them.
+ *
+ * Never the authority on whether a write applied. It runs after the CAS has already
+ * decided, and a mirror that silently matched zero rows must not turn an applied write
+ * into a conflict.
+ */
+async function mirrorToDocuments(
+  env: Env,
+  pageId: number,
+  state: { body: string; version: number; updatedAt: string; source: WriteSource },
+): Promise<void> {
+  if (pageId !== DEFAULT_PAGE_ID) return;
+
+  await env.DB.prepare(
+    `UPDATE documents SET body = ?, version = ?, updated_at = ?, source = ? WHERE id = ?`,
+  )
+    .bind(state.body, state.version, state.updatedAt, state.source, DEFAULT_PAGE_ID)
+    .run();
 }
 
 /**
@@ -147,10 +260,19 @@ type RevisionRow = { id: number; created_at: string };
  * would let the next save inside the window silently overwrite the pre-clear
  * document.
  */
-async function newestUnsealedRevision(env: Env): Promise<RevisionRow | null> {
+async function newestUnsealedRevision(env: Env, pageId: number): Promise<RevisionRow | null> {
+  // 🔴 `page_id` is in the WHERE clause, and it has to be (#152). Without it the newest
+  // unsealed revision is the newest on *any* page — so a save to the shopping list inside
+  // the ten-minute window would be coalesced into today's revision, overwriting one page's
+  // history with another page's body. Invisible while there is one page and silent
+  // corruption the moment there are two.
   return await env.DB.prepare(
-    "SELECT id, created_at FROM revisions WHERE is_sealed = 0 ORDER BY id DESC LIMIT 1",
-  ).first<RevisionRow>();
+    `SELECT id, created_at FROM revisions
+      WHERE page_id = ? AND is_sealed = 0
+      ORDER BY id DESC LIMIT 1`,
+  )
+    .bind(pageId)
+    .first<RevisionRow>();
 }
 
 /**
@@ -166,10 +288,10 @@ async function newestUnsealedRevision(env: Env): Promise<RevisionRow | null> {
  */
 async function recordRevision(
   env: Env,
-  input: { body: string; version: number; source: DocumentSource; eventType?: string },
+  input: { pageId: number; body: string; version: number; source: WriteSource; eventType?: string },
   now: Date,
 ): Promise<void> {
-  const newest = await newestUnsealedRevision(env);
+  const newest = await newestUnsealedRevision(env, input.pageId);
   const withinWindow =
     newest !== null && now.getTime() - new Date(newest.created_at).getTime() < COALESCE_WINDOW_MS;
 
@@ -184,10 +306,17 @@ async function recordRevision(
   }
 
   await env.DB.prepare(
-    `INSERT INTO revisions (body, version, created_at, is_sealed, source, event_type)
-     VALUES (?, ?, ?, 0, ?, ?)`,
+    `INSERT INTO revisions (page_id, body, version, created_at, is_sealed, source, event_type)
+     VALUES (?, ?, ?, ?, 0, ?, ?)`,
   )
-    .bind(input.body, input.version, now.toISOString(), input.source, input.eventType ?? null)
+    .bind(
+      input.pageId,
+      input.body,
+      input.version,
+      now.toISOString(),
+      input.source,
+      input.eventType ?? null,
+    )
     .run();
 }
 
@@ -200,7 +329,7 @@ export type ClearResult =
       /** Rows removed from the page. Larger than `cleared_count` on a wipe-all. */
       wiped_count: number;
     }
-  | { status: "conflict"; current: DocumentRow };
+  | { status: "conflict"; current: PageRow };
 
 /**
  * Which lines a wipe takes (spec §5, #58).
@@ -259,43 +388,75 @@ const EVENT_TYPE: Record<WipeScope, string> = {
 export async function wipe(
   env: Env,
   input: {
+    pageId: number;
     baseVersion: number;
     body: string;
     clearedLines: string[];
-    source: DocumentSource;
+    source: WriteSource;
     scope: WipeScope;
     /** Rows removed from the page. Equals `clearedLines.length` for `completed`. */
     wipedCount: number;
   },
   now: Date = new Date(),
 ): Promise<ClearResult> {
-  const current = await readDocument(env);
+  const current = await readPage(env, input.pageId);
+  if (!current) {
+    return {
+      status: "conflict",
+      current: { id: input.pageId, name: "", body: "", version: 0, updated_at: new Date(0).toISOString() },
+    };
+  }
   if (input.baseVersion !== current.version) {
     return { status: "conflict", current };
   }
 
   const timestamp = now.toISOString();
   const version = current.version;
+  const pageId = input.pageId;
 
-  // Repeated on every statement below. `documents` has CHECK (id = 1), so this reads
-  // the single row.
-  const guard = "(SELECT version FROM documents WHERE id = ?) = ?";
+  // Repeated on every statement below, and it reads *this* page's version rather than
+  // the single row `documents` used to guarantee.
+  const guard = "(SELECT version FROM pages WHERE id = ?) = ?";
+
+  // 🔴 The newest revision **on this page**, and every statement below that reaches for
+  // one goes through here (#152). It was `(SELECT max(id) FROM revisions)` — the newest
+  // revision on *any* page.
+  //
+  // Statement 1 is where that is a real bug: it runs **before** statement 2 inserts, so
+  // the global max is whatever page was written to last. Wiping the shopping list would
+  // seal today's revision — freezing today's history against a wipe it had nothing to do
+  // with, and nothing in the wipe's own result would look wrong. Negative-verified.
+  //
+  // Statement 3 was correct *by construction* rather than by intent: statement 2 has
+  // already inserted by then and always holds the highest id, so the global max happened
+  // to be the right row. That is a property of the batch's ordering, not of the query,
+  // and one reordering away from being wrong. Scoped here so it is right on purpose.
+  const newestOnPage = "(SELECT max(id) FROM revisions WHERE page_id = ?)";
 
   const statements = [
     // 1. Seal the newest revision, so the pre-clear state cannot be swallowed by the
     //    ten-minute coalescing window (spec §3).
     env.DB.prepare(
       `UPDATE revisions SET is_sealed = 1
-        WHERE id = (SELECT max(id) FROM revisions) AND ${guard}`,
-    ).bind(DOC_ID, version),
+        WHERE id = ${newestOnPage} AND ${guard}`,
+    ).bind(pageId, pageId, version),
 
     // 2. Record the pre-clear document. Sealed as well: it is the newest revision
     //    after this batch, and an unsealed one would be coalesced into by the next
     //    save inside the window — overwriting the very state this row exists to keep.
     env.DB.prepare(
-      `INSERT INTO revisions (body, version, created_at, is_sealed, source, event_type)
-       SELECT ?, ?, ?, 1, ?, ? WHERE ${guard}`,
-    ).bind(current.body, version, timestamp, input.source, EVENT_TYPE[input.scope], DOC_ID, version),
+      `INSERT INTO revisions (page_id, body, version, created_at, is_sealed, source, event_type)
+       SELECT ?, ?, ?, ?, 1, ?, ? WHERE ${guard}`,
+    ).bind(
+      pageId,
+      current.body,
+      version,
+      timestamp,
+      input.source,
+      EVENT_TYPE[input.scope],
+      pageId,
+      version,
+    ),
 
     // 3. The authoritative done-record, so "what did I finish" is a lookup rather
     //    than a diff.
@@ -311,23 +472,36 @@ export async function wipe(
     ...input.clearedLines.map((line) =>
       env.DB.prepare(
         `INSERT INTO cleared_items (revision_id, line_text, cleared_at)
-         SELECT (SELECT max(id) FROM revisions), ?, ? WHERE ${guard}`,
-      ).bind(line, timestamp, DOC_ID, version),
+         SELECT ${newestOnPage}, ?, ? WHERE ${guard}`,
+      ).bind(pageId, line, timestamp, pageId, version),
     ),
 
-    // 4. The document itself, last, because this is the statement that moves the
-    //    version the other three are guarding on.
+    // 4. The page itself, because this is the statement that moves the version the
+    //    other three are guarding on. **The authority on whether the wipe happened.**
     env.DB.prepare(
-      `UPDATE documents SET body = ?, version = version + 1, updated_at = ?, source = ?
+      `UPDATE pages SET body = ?, version = version + 1, updated_at = ?, source = ?
         WHERE id = ? AND version = ?`,
-    ).bind(input.body, timestamp, input.source, DOC_ID, version),
+    ).bind(input.body, timestamp, input.source, pageId, version),
+
+    // 5. The rollback shadow, after the CAS and never the authority — see
+    //    `mirrorToDocuments`. Guarded on the *old* version so a `documents` that has
+    //    drifted is left alone rather than overwritten from a page it no longer tracks.
+    env.DB.prepare(
+      `UPDATE documents SET body = ?, version = ?, updated_at = ?, source = ?
+        WHERE id = ? AND ? = ${DEFAULT_PAGE_ID}`,
+    ).bind(input.body, version + 1, timestamp, input.source, DEFAULT_PAGE_ID, pageId),
   ];
 
+  // 🔴 Statement 4 decides, by index rather than by position from the end. It was
+  // `results[results.length - 1]` and that was correct while the CAS was last; adding the
+  // shadow write after it would have made a mirror that matched zero rows report the
+  // whole wipe as a conflict.
+  const casIndex = statements.length - 2;
   const results = await env.DB.batch(statements);
 
-  // The CAS is the authority on whether anything happened at all.
-  if (results[results.length - 1]?.meta.changes !== 1) {
-    return { status: "conflict", current: await readDocument(env) };
+  if (results[casIndex]?.meta.changes !== 1) {
+    const reread = await readPage(env, pageId);
+    return { status: "conflict", current: reread ?? current };
   }
 
   return {
@@ -395,6 +569,13 @@ export type RevisionPage = {
  * Cheap by construction: `min()` over an indexed integer primary key's table with no
  * predicate is a single row read, and it is fetched when the sheet opens rather than on
  * the poll that runs every few seconds.
+ *
+ * 🔴 **Deliberately not per-page** (#152). Every other query in this file gained a page
+ * and this one did not, so the omission is a decision rather than a miss. It answers "how
+ * long have I been using knag", which is a fact about the record as a whole and belongs on
+ * the build line with the version and the environment. Per-page it would answer "how old
+ * is this page", which is a different question nobody has asked and which would make the
+ * build line change when you switch pages.
  */
 export async function oldestRevisionAt(env: Env): Promise<string | null> {
   // 🔴 Ordered by `id`, **not** `min(created_at)`, and the difference is not stylistic.
@@ -435,17 +616,18 @@ export async function oldestRevisionAt(env: Env): Promise<string | null> {
  */
 export async function revisionsInRange(
   env: Env,
-  range: { since: Date; until: Date; limit?: number },
+  range: { pageId: number; since: Date; until: Date; limit?: number },
 ): Promise<RevisionPage> {
   const limit = range.limit ?? MAX_HISTORY_REVISIONS;
 
   const { results } = await env.DB.prepare(
     `SELECT ${REVISION_COLUMNS} FROM revisions
-      WHERE created_at >= ? AND created_at < ?
+      WHERE page_id = ? AND created_at >= ? AND created_at < ?
       ORDER BY created_at DESC, id DESC
       LIMIT ?`,
   )
     .bind(
+      range.pageId,
       range.since.toISOString(),
       range.until.toISOString(),
       // One past the cap, so "exactly at the limit" is distinguishable from "more than
@@ -473,14 +655,18 @@ export async function revisionsInRange(
  * entire document as `appeared`. `null` is a correct answer and means the range reaches
  * back past the start of the log.
  */
-export async function revisionBefore(env: Env, since: Date): Promise<RevisionRecord | null> {
+export async function revisionBefore(
+  env: Env,
+  pageId: number,
+  since: Date,
+): Promise<RevisionRecord | null> {
   return await env.DB.prepare(
     `SELECT ${REVISION_COLUMNS} FROM revisions
-      WHERE created_at < ?
+      WHERE page_id = ? AND created_at < ?
       ORDER BY created_at DESC, id DESC
       LIMIT 1`,
   )
-    .bind(since.toISOString())
+    .bind(pageId, since.toISOString())
     .first<RevisionRecord>();
 }
 
@@ -492,17 +678,59 @@ export async function revisionBefore(env: Env, since: Date): Promise<RevisionRec
  */
 export async function clearedItemsInRange(
   env: Env,
-  range: { since: Date; until: Date },
+  range: { pageId: number; since: Date; until: Date },
 ): Promise<ClearedRecord[]> {
+  // 🔴 Joined to `revisions` rather than given a `page_id` of its own (#152). A
+  // cleared item's page **is** its revision's page, and a second copy of that fact is a
+  // second thing to keep in step — they would disagree the first time a revision moved,
+  // and the done-record is the authoritative answer to "what did I finish".
   const { results } = await env.DB.prepare(
-    `SELECT id, revision_id, line_text, cleared_at FROM cleared_items
-      WHERE cleared_at >= ? AND cleared_at < ?
-      ORDER BY cleared_at, id`,
+    `SELECT c.id, c.revision_id, c.line_text, c.cleared_at FROM cleared_items c
+       JOIN revisions r ON r.id = c.revision_id
+      WHERE r.page_id = ? AND c.cleared_at >= ? AND c.cleared_at < ?
+      ORDER BY c.cleared_at, c.id`,
   )
-    .bind(range.since.toISOString(), range.until.toISOString())
+    .bind(range.pageId, range.since.toISOString(), range.until.toISOString())
     .all<ClearedRecord>();
 
   return results;
+}
+
+/**
+ * Create a page (#154 uses it; #152 needs it to have something to test scoping against).
+ *
+ * 🔴 No ceiling enforced here, on purpose. The cap of nine is a **design** decision
+ * about what the switcher may show (§7) — a tripwire, not a limit — and putting it in the
+ * store would make it a data constraint that the agent and a future import would also hit,
+ * which is not what it is for. The control that creates pages enforces it.
+ *
+ * A duplicate name is rejected by `idx_pages_name`, case-insensitively, and surfaces as a
+ * thrown D1 error rather than a silently renamed page.
+ */
+export async function createPage(
+  env: Env,
+  input: { name: string; body?: string; source: WriteSource },
+  now: Date = new Date(),
+): Promise<{ id: number; name: string }> {
+  const timestamp = now.toISOString();
+  const body = input.body ?? "";
+
+  const row = await env.DB.prepare(
+    `INSERT INTO pages (name, body, version, updated_at, source, template, created_at)
+     VALUES (?, ?, 1, ?, ?, NULL, ?)
+     RETURNING id, name`,
+  )
+    .bind(input.name, body, timestamp, input.source, timestamp)
+    .first<{ id: number; name: string }>();
+
+  if (!row) throw new Error("page insert returned no row");
+
+  // The page starts with a revision, like the seeded one does (migration 0002), so its
+  // history has a floor to diff the first edit against rather than reporting the whole
+  // body as `appeared`.
+  await recordRevision(env, { pageId: row.id, body, version: 1, source: input.source }, now);
+
+  return row;
 }
 
 /** Drop sessions that have already expired. Called on login; no cron trigger. */

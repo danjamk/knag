@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { readDocument } from "../src/store.js";
+import { readDefaultPage } from "../src/store.js";
 
 describe("GET /health", () => {
   it("reports the baked build id without authentication", async () => {
@@ -53,7 +53,7 @@ describe("first boot", () => {
   // The migration seeds the single row. Empty body is a valid state and must never
   // be confused with a failed read anywhere downstream (spec §14.5).
   it("reads the seeded document as an empty body", async () => {
-    const doc = await readDocument(env);
+    const doc = await readDefaultPage(env);
 
     expect(doc.body).toBe("");
     expect(doc.version).toBe(1);

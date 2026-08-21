@@ -1035,9 +1035,13 @@ coalesced revision log · history diff · 4 MCP tools · PWA manifest · two boa
 and system · two self-hosted typefaces · **cross-line selection, on one editing
 surface** ([ADR-007](adr/ADR-007-one-editing-surface.md))
 
-**Out:** search · tags · multiple documents · attachments · offline editing ·
-WebSockets · Electron · native apps · email auth · multi-user · sharing ·
-brain reads or writes · rollover · day boundaries · rich formatting
+**Out:** search · tags · attachments · offline editing · WebSockets · Electron ·
+native apps · email auth · multi-user · sharing · brain reads or writes ·
+rollover · day boundaries · rich formatting · **a page index of any kind**
+
+`multiple documents` left this list in 1.1 and is argued below; what replaced it is
+the narrower thing, because the guard is what keeps the door from opening the rest of
+the way.
 
 If a weekend turns into two, something from the second list came back.
 
@@ -1054,6 +1058,28 @@ Two entries have since been argued properly rather than merely listed:
   ambition: it was measuring a maintained editor library instead of hand-rolling the
   input layer, and scoping a carve-out of the no-framework rule to the editing surface
   alone.
+- **multiple documents** — comes off the Out list in 1.1 as **a handful of pages**
+  (#123), and the distance between those two phrasings is the whole decision. What is
+  in is a small, fixed number of pages you switch between. What stays out is everything
+  a *document manager* implies, and §17's guard below is now a rule rather than a
+  prediction.
+
+  🔴 **knag has no index.** There is no screen that lists your pages — only a control
+  that switches between them, and it is never what you land on. **Launch opens the last
+  page you were on.** The switcher is capped at **nine and never scrolls**: a tripwire,
+  not a limit.
+
+  The cap is what keeps the rest of the Out list unnecessary rather than merely
+  forbidden. Search arrives the moment the list stops fitting; folders arrive because
+  search implies a namespace; a home screen arrives because a namespace needs a root.
+  All three are still out, and the honest way to keep them out is to notice the day the
+  ninth page is not enough — and treat that as a question about the product rather than
+  as a number to raise.
+
+  Designed in [design/holistic-response.md](design/holistic-response.md) §7: the
+  selector is a drop-up from tier 1, current page in amber, the rest in chalk, one last
+  row for the rare verbs. **No icons, no counts, no last-modified times — anything else
+  you add is a column, and a column is a file manager.**
 
 ---
 
@@ -1520,7 +1546,7 @@ sourced as a self-hosted thing.
 
 | Future | Breaks | Insurance taken today |
 |---|---|---|
-| Multi-user | Schema (`CHECK (id = 1)`), every query | All SQL in `store.ts`, `DOC_ID` constant. Adding `owner_id` is one file plus a migration. |
+| Multi-user | Schema (`CHECK (id = 1)`), every query | All SQL in `store.ts`, `DEFAULT_PAGE_ID` constant. Adding `owner_id` is one file plus a migration. |
 | A few pages | Same `CHECK (id = 1)`, and every route assuming a singleton | Same chokepoint. `page_id` on `revisions` is additive; `documents` is not — see the correction below. |
 | Any real auth | Passphrase is a shared secret — no revocation, no accounts | `authenticate() → Principal`; handlers key off `principal.id` |
 | Native / App Store | Cookies don't fit a Keychain-token client | Bearer is first-class on every `/api/*` route |
@@ -1539,6 +1565,29 @@ a new `pages` table backfilled from `documents` and read going forward, then
 `documents` dropped in a later release. Still one file of SQL and still cheap — the
 chokepoint holds — but it is two releases, and a plan that budgeted one would have
 found out at migration time.
+
+✅ **Run, 2026-08-20 (#152).** Migration 0004 is the expand half and it went exactly as
+described above: `pages` created and backfilled, `page_id INTEGER NOT NULL DEFAULT 1`
+added to `revisions`, `documents` left standing. The contract half is #155.
+
+Three things the plan did not have, all found by writing it:
+
+1. **The expand release dual-writes `documents`.** `pages` is the authority; the old
+   table is kept in step so the *previous* Worker still serves a current document if this
+   one is rolled back. Without that, expand and contract collapse into one irreversible
+   step against the only copy of the document, and the two-release split buys nothing.
+2. **`page_id` cannot carry a `REFERENCES` clause.** SQLite allows a foreign key on a
+   column added by `ALTER TABLE` only when its default is `NULL`, and this one has to be
+   `NOT NULL DEFAULT 1` to backfill. The integrity lives in `store.ts` instead.
+3. 🔴 **Two queries were correct only because there was one page.**
+   `newestUnsealedRevision` asked for the newest unsealed revision full stop, so a save
+   to one page inside the coalescing window would have been folded into another page's
+   revision; and the wipe's `(SELECT max(id) FROM revisions)` would have sealed the wrong
+   page's newest revision. Neither raises an error. Both were found by writing a test
+   with a second page in it — which is the argument for building the schema half on its
+   own, before anything can create one.
+
+The chokepoint did hold: every one of those is in `store.ts`.
 
 **What is not insured, deliberately:** no `owner_id` columns, no accounts table,
 no billing hooks, no CORS. Each is a future that may never come, and each is
