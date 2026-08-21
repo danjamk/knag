@@ -13,6 +13,31 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- 🔴 **`bring back` duplicated every checked line after a template reset** (#173). Wipe a
+  grocery page down to its template and tap `bring back` — with no editing in between —
+  and every standing item you had checked off came back twice: once checked from the
+  restore, once unchecked from the template. It was persisted, since restore is an
+  ordinary versioned write.
+
+  The cause is a seam between two releases rather than a mistake in either. `restore.ts`
+  was built on the property that *a wipe only deletes whole blocks, so the post-wipe page
+  is a subsequence of the pre-wipe one* — true of every wipe until 1.1.1 made the
+  whole-page wipe lay a **template** down instead of emptying. `- [x] milk` and
+  `- [ ] milk` are different bytes, so the subsequence walk matched nothing, called the
+  entire page removed, and put it back on top of the template.
+
+  An undo of a reset now **removes what the reset added and restores what it took**.
+  Anything typed after the reset is untouched: the added set is computed from the
+  post-wipe snapshot rather than from the page as it is now, so merge-on-edit — the
+  property the whole module exists to protect — survives intact. The sweep path is
+  byte-identical to what it was; only the replacement branch is new.
+
+  Neither `client/test/restore.test.ts` nor `browser/wipe.spec.ts` had mentioned
+  templates. Both do now, and the browser test cleans up after itself — a template left on
+  page 1 changes what every later whole-page wipe in the run does.
+
 ## [1.1.3] — 2026-08-21
 
 Phase 6 closes, and the migration it needed took four releases rather than one.

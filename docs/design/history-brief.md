@@ -100,7 +100,17 @@ on it, and a history browser is the surface most likely to make search feel nece
 Do not redesign what already works:
 
 - **The recovery line** — `wiped 6 · bring back`, amber, in the footer. One tap. Its
-  action is additive: it puts lines back on the page rather than reverting the page.
+  action is additive: it puts lines back on the page rather than reverting the page, and
+  it **survives editing** — type after a wipe, then tap it, and you keep both. That is
+  deliberate and tested; writing the snapshot back would discard the edit, which is a
+  worse data-loss path than the one the undo exists to prevent.
+
+- 🔴 **`bring back` now has to undo two different kinds of wipe** (#173, fixed
+  2026-08-21). A sweep *deletes* lines; a whole-page wipe on a page with a template
+  *replaces* the body. The undo of a deletion is putting lines back; the undo of a
+  replacement is taking the template off **and** putting lines back. This was a real bug —
+  every checked-off standing item came back duplicated — and it is worth knowing because
+  it is the shape of the problem: one affordance, two meanings, one label.
 - **`knag_history`** — per-day entries carrying `appeared`, `disappeared` and `cleared`.
   `cleared` is the authoritative done-record and is exact; the line diff is a set
   difference and is blind to a duplicate line being removed. Capped at 500 revisions with

@@ -182,3 +182,58 @@ describe("how long the offer lasts", () => {
     expect(expires.getDate()).toBe(9);
   });
 });
+
+describe("undoing a template reset (#173)", () => {
+  // 🔴 The whole-page wipe stopped emptying the page in 1.1.1 and started laying the
+  // page's template down instead. That broke `restore.ts`'s founding assumption — that
+  // the post-wipe body is a subsequence of the pre-wipe one — and the symptom was every
+  // standing item coming back twice: once checked from the restore, once unchecked from
+  // the template.
+  //
+  // These pin the grocery flow the feature was designed around, because that is the flow
+  // that produced the bug and no synthetic case would have found it.
+  const TEMPLATE = "- [ ] milk\n- [ ] eggs\n- [ ] bread";
+  // Shopping done: the standing items checked off, two one-offs added for the week.
+  const SHOPPED = "- [x] milk\n- [x] eggs\n- [ ] bread\n- [x] birthday candles\n- [ ] foil";
+
+  it("🔴 brings the page back without duplicating a single line", () => {
+    const restored = restoredBody({ preWipe: SHOPPED, postWipe: TEMPLATE, current: TEMPLATE });
+
+    // Byte-exact and in the original order, not merely "contains the right lines".
+    expect(restored).toBe(SHOPPED);
+  });
+
+  it("🔴 keeps what was typed after the reset — merge-on-edit is not sacrificed", () => {
+    // The property the sweep path already had, now holding for a reset too. Writing the
+    // snapshot back would pass the test above and lose this line, which is the trade this
+    // module exists to refuse.
+    const afterReset = `${TEMPLATE}\n- [ ] batteries`;
+
+    const restored = restoredBody({ preWipe: SHOPPED, postWipe: TEMPLATE, current: afterReset });
+
+    expect(restored).toBe(`${SHOPPED}\n- [ ] batteries`);
+  });
+
+  it("takes the template back off when the page was empty before the reset", () => {
+    // Nothing was removed and the template was added, so the undo is purely a removal.
+    // The early return used to fire on `removed.length === 0` and would have left the
+    // template sitting there.
+    expect(restoredBody({ preWipe: "", postWipe: TEMPLATE, current: TEMPLATE })).toBe("");
+  });
+
+  it("is idempotent — a second tap changes nothing", () => {
+    const once = restoredBody({ preWipe: SHOPPED, postWipe: TEMPLATE, current: TEMPLATE });
+    const twice = restoredBody({ preWipe: SHOPPED, postWipe: TEMPLATE, current: once });
+
+    expect(twice).toBe(once);
+  });
+
+  it("leaves a line the template shares with the pre-wipe page exactly once", () => {
+    // `- [ ] bread` is unchecked in both, so it is not something the reset *added* and
+    // must not be stripped. The count guard already handled the restore side; this pins
+    // the removal side, which is new.
+    const restored = restoredBody({ preWipe: SHOPPED, postWipe: TEMPLATE, current: TEMPLATE });
+
+    expect(restored.split("\n").filter((line) => line === "- [ ] bread")).toHaveLength(1);
+  });
+});

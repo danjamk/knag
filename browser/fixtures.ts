@@ -177,6 +177,23 @@ export class Knag {
     });
   }
 
+  /**
+   * Save the page's current body as its template (#165), the way manage-pages does.
+   *
+   * 🔴 Whatever saves one **must** clear it. The browser suite runs against one live
+   * database, and a template left on page 1 changes what every later whole-page wipe
+   * does — the wipe stops emptying the page and starts resetting it, so an unrelated
+   * test fails with the previous test's groceries in it. `resetPages` clears it; call it
+   * in an `afterEach`.
+   */
+  async saveTemplate(): Promise<void> {
+    const res = await this.page.request.patch("/api/pages/1", {
+      headers: { Authorization: `Bearer ${TEST_BEARER}`, "Content-Type": "application/json" },
+      data: { template: "save" },
+    });
+    expect(res.ok()).toBe(true);
+  }
+
   /** Tier 2 of the bar (#139). */
   ledge() {
     return this.page.locator("[data-ledge]");

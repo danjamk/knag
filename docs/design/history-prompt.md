@@ -46,6 +46,13 @@ Two things about how this lands:
   about itself — and a history pane is mostly the app speaking *about* lines the user wrote,
   which I think is a genuine typographic problem rather than a detail.
 
+🔴 **One thing found while writing this brief**, in §5: `bring back` is a single label
+over two different operations now. Undoing a *sweep* means putting deleted lines back;
+undoing a whole-page *reset* means taking the template off and putting the lines back. It
+shipped broken — every checked-off standing item came back twice — and is fixed. I mention
+it because the one-tap undo already carries more meaning than its four characters admit,
+and whatever you design sits next to it.
+
 One flag on the data, in §5: **`wiped_count` counts what left**, so a reset on a
 twenty-five-line page with a twenty-line template reports `wiped 25` and twenty lines come
 straight back. A count of what remains would report a reset as having done nothing. Whatever
