@@ -278,6 +278,67 @@ test.describe("managing", () => {
     await expect(knag.page.locator("[data-manage-list] li")).toHaveCount(2);
   });
 
+  test("🔴 saves a body as a template, and a new page starts from it", async ({
+    knag,
+  }) => {
+    const TEMPLATE = ["## work", "", "## home", ""].join("\n");
+    await knag.seed(TEMPLATE);
+
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+    await expect(knag.page.locator("[data-manage-list] li")).toHaveCount(1);
+
+    const toggle = knag.page.locator("[data-manage-list] [data-template-id]").first();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    // The note names the page it will copy from, because "a new page starts from a
+    // template" is meaningless without saying whose.
+    await expect(knag.page.locator("[data-manage-note]")).toContainText('starts from "today"');
+
+    await knag.page.locator('[data-new-page] input[name="name"]').fill("tuesday");
+    await knag.page.locator("[data-new-page-submit]").click();
+    await expect(knag.page.locator("[data-page-label]")).toHaveText("tuesday");
+
+    // 🔴 Asserted on the **bytes**, not on what CodeMirror renders. A template is a
+    // saved body and nothing else — no language, no variables, no placeholders — so a
+    // blank line that did not survive the copy is the whole feature being subtly wrong.
+    const pages = (await (
+      await knag.page.request.get("/api/pages", { headers: knag.bearer() })
+    ).json()) as { pages: Array<{ id: number; name: string; has_template: boolean }> };
+    const made = pages.pages.find((entry) => entry.name === "tuesday");
+    expect(made).toBeDefined();
+
+    const doc = (await (
+      await knag.page.request.get(`/api/doc?page=${made?.id}`, { headers: knag.bearer() })
+    ).json()) as { body: string };
+
+    expect(doc.body).toBe(TEMPLATE);
+    // And the page it was copied from is untouched — a template is read, never moved.
+    expect(await knag.document()).toBe(TEMPLATE);
+  });
+
+  test("clears a template, and then a new page is empty again", async ({ knag }) => {
+    await knag.seed("standing items\n");
+    await knag.page.locator("[data-page-name]").click();
+    await knag.page.locator("[data-manage-open]").click();
+
+    const toggle = knag.page.locator("[data-manage-list] [data-template-id]").first();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await knag.page.locator('[data-new-page] input[name="name"]').fill("blank");
+    await knag.page.locator("[data-new-page-submit]").click();
+    await expect(knag.page.locator("[data-page-label]")).toHaveText("blank");
+
+    // One line, because `parse("")` yields a single blank block — an empty page.
+    await expect(knag.lines()).toHaveCount(1);
+    await expect(knag.surface()).toHaveText("");
+  });
+
   test("the sheet still does not scroll with the pane in it", async ({ knag }) => {
     await knag.page.setViewportSize(PHONE);
     await knag.seed(DAY);

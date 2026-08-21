@@ -177,6 +177,11 @@ export class Knag {
     });
   }
 
+  /** The agent's credential, for reads that have to bypass the UI to be worth anything. */
+  bearer() {
+    return { Authorization: `Bearer ${TEST_BEARER}` };
+  }
+
   /** Tier 2 of the bar (#139). */
   ledge() {
     return this.page.locator("[data-ledge]");
