@@ -406,11 +406,17 @@ Four things are decided rather than obvious:
   whole document as `appeared`.
 - **Bodies are never returned.** The response grows with what happened, not with
   the document.
-- **A `clear_completed` entry has an empty diff by construction** — it snapshots
-  the *pre*-clear body, identical to the revision before it (§14.2), and the
-  swept body enters the log on the next ordinary save. `cleared_count` and the
-  day's `cleared` rows are the record of what was finished; the diff is not, and
-  §5 already says so.
+- **A wipe entry has an empty diff by construction** — it snapshots the
+  *pre*-wipe body, identical to the revision before it (§14.2), so the event's own
+  diff is necessarily empty. `cleared_count` and the day's `cleared` rows are the
+  record of what was *finished*; the diff is not, and §5 already says so.
+- 🔴 **The row immediately after a wipe entry carries what it took** (#91). The
+  wipe records the state it left as a second sealed revision with no `event_type`,
+  sharing the event's timestamp, and *that* row's `disappeared` is the lines the
+  wipe removed. It is the only place a note or an undone task taken by a
+  whole-page wipe can be found, because `cleared_items` deliberately holds
+  finished lines only. Before #91 the post-wipe state entered the log on the next
+  ordinary save, so those lines surfaced on an unrelated later revision.
 
 Capped at 500 revisions per request, **keeping the newest**, with `truncated`
 saying when the cap bit. `cleared_items` are uncapped — they are single lines.

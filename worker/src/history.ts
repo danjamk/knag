@@ -373,12 +373,21 @@ export type History = {
  * an empty document and reports the whole thing as new. A `null` baseline is correct
  * and means the range reaches back past the start of the log.
  *
- * 🔴 **A `clear_completed` entry has an empty diff, by construction.** The clear path
- * snapshots the *pre*-clear body (spec §14.2), which is identical to the revision
- * before it, and the swept body only enters the log on the next ordinary save — where
- * the swept lines then show up as `disappeared`. That is faithful to the log and it is
- * why the entry carries `cleared_count`, and why the day carries `cleared`: those rows,
- * not the diff, are the record of what was finished.
+ * 🔴 **A wipe entry has an empty diff, by construction, and the row after it carries the
+ * lines.** The wipe path snapshots the *pre*-wipe body (spec §14.2), which is identical to
+ * the revision before it — so the event's own diff is necessarily empty. That is why the
+ * entry carries `cleared_count` and why the day carries `cleared`: those rows, not the
+ * diff, are the record of what was *finished*.
+ *
+ * 🔴 **Since #91 the wipe also records the state it left**, as a second sealed revision
+ * with no `event_type`. Its diff against the snapshot is the lines the wipe took — which
+ * is the only place a note or an undone task removed by a whole-page wipe can be found,
+ * because `cleared_items` deliberately holds finished lines only.
+ *
+ * Before that, the post-wipe state entered the log on the next ordinary save, so those
+ * lines surfaced as `disappeared` on an unrelated later revision, attributed to whatever
+ * edit happened to come next. A consumer pairing an event row with its result row should
+ * pair on the row immediately following, which shares its timestamp.
  */
 export function buildHistory(input: {
   baseline: RevisionRecord | null;

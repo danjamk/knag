@@ -104,7 +104,11 @@ describe("order of operations (spec §5)", () => {
     await clear({ base_version: SEEDED_VERSION + 1 });
 
     const log = await revisions();
-    const clearRevision = log[log.length - 1];
+    // 🔴 Named by its event, not taken as the newest (#91). A wipe writes **two** rows
+    // now — the pre-wipe snapshot that carries the event, and the state it left — so
+    // `log[log.length - 1]` is the result row and this assertion silently moved to the
+    // wrong one. Exactly the shape of the bug #152 found in `store.ts`, one layer up.
+    const clearRevision = log.find((r) => r.event_type === "clear_completed");
 
     expect(clearRevision).toMatchObject({ event_type: "clear_completed", is_sealed: 1 });
     // 🔴 Pre-clear, not post-clear. This row is the recovery path for a sweep done by
@@ -116,7 +120,8 @@ describe("order of operations (spec §5)", () => {
     await clear({ base_version: SEEDED_VERSION + 1 });
 
     const log = await revisions();
-    const clearRevision = log[log.length - 1];
+    // Named by its event rather than by position — see the note above.
+    const clearRevision = log.find((r) => r.event_type === "clear_completed");
     const items = await clearedItems();
 
     expect(items).toHaveLength(2);
@@ -347,5 +352,89 @@ describe("wipe-all (#58)", () => {
 
     expect(res.status).toBe(400);
     expect((await readDefaultPage(env)).body).toBe(MIXED);
+  });
+});
+
+describe("the state the wipe left (#91)", () => {
+  // 🔴 The log used to be unable to say what a whole-page wipe took.
+  //
+  // A wipe snapshots the *pre*-wipe body, which is byte-identical to the revision before
+  // it, so the event's own diff is empty by construction. The post-wipe state only entered
+  // the log on the next ordinary save, which meant the wiped lines surfaced as
+  // `disappeared` on an unrelated later revision — minutes away and attributed to whatever
+  // edit happened to come next.
+  //
+  // For the sweep that was survivable: `cleared_items` is exact and carries the ticked
+  // lines. For a page wipe it was not, because `cleared_items` deliberately holds finished
+  // lines only — so a note or an undone task appeared **nowhere** in `/api/history`.
+  const NOTE = "Kingspan 70mm quoted 2wks";
+  const PAGE = `${NOTE}\n- [x] done thing\n- [ ] undone thing`;
+
+  beforeEach(async () => {
+    await put({ body: PAGE, base_version: SEEDED_VERSION });
+  });
+
+  it("🔴 records the post-wipe body as a second sealed revision", async () => {
+    await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
+
+    const log = await revisions();
+    const event = log.find((r) => r.event_type === "wipe_all");
+    const result = log[log.length - 1];
+
+    // Two rows, and they are different rows: the event holds what was there, the result
+    // holds what is there. Naming them by role rather than by position, because position
+    // is exactly what broke when this shipped.
+    expect(event?.body).toBe(PAGE);
+    expect(result?.event_type).toBeNull();
+    expect(result?.body).toBe("");
+    expect(result?.id).toBeGreaterThan(event?.id ?? 0);
+
+    // Sealed for the same reason the event row is: an unsealed row here would be
+    // coalesced into by the next save inside the ten-minute window, overwriting the
+    // state it exists to record.
+    expect(result?.is_sealed).toBe(1);
+    expect(result?.version).toBe(SEEDED_VERSION + 2);
+  });
+
+  it("🔴 puts a wiped note in /api/history, which cleared_items never could", async () => {
+    await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
+
+    const res = await SELF.fetch("https://knag.test/api/history?days=7", { headers: authed });
+    const history = (await res.json()) as {
+      days: Array<{
+        revisions: Array<{ event_type: string | null; disappeared: string[] }>;
+        cleared: Array<{ line_text: string }>;
+      }>;
+    };
+
+    const day = history.days[0];
+    const disappeared = day?.revisions.flatMap((r) => r.disappeared) ?? [];
+
+    // The whole point. A note has no done state, so it is not in the done-record — and
+    // before this change that meant it was not anywhere.
+    expect(disappeared).toContain(NOTE);
+    expect(disappeared).toContain("- [ ] undone thing");
+    expect(day?.cleared.map((c) => c.line_text)).toEqual(["- [x] done thing"]);
+  });
+
+  it("does not record a result row when the wipe was refused", async () => {
+    // The guard reads the *post*-CAS version, unlike every other statement in the batch.
+    // A stale base_version must leave the log exactly as it was.
+    const before = await revisions();
+
+    const res = await clear({ base_version: SEEDED_VERSION, scope: "all" });
+
+    expect(res.status).toBe(409);
+    expect(await revisions()).toHaveLength(before.length);
+  });
+
+  it("records what a sweep left too, so the two scopes read the same way", async () => {
+    await clear({ base_version: SEEDED_VERSION + 1 });
+
+    const log = await revisions();
+    const result = log[log.length - 1];
+
+    expect(result?.event_type).toBeNull();
+    expect(result?.body).toBe(`${NOTE}\n- [ ] undone thing`);
   });
 });
