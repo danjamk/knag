@@ -430,9 +430,13 @@ export type WipeScope = "completed" | "all";
  *
  * 🔴 Two values, not one, and the distinction is load-bearing rather than cosmetic. A
  * wipe-all removes lines that were never finished, and those are deliberately **not**
- * written to `cleared_items` — see below. Without a distinct event, history would show
- * an entry claiming two items were cleared and then, on the next ordinary save, four
- * more lines disappearing with nothing to explain them.
+ * written to `cleared_items` — see below. Without a distinct event, history would show an
+ * entry claiming two items were cleared and then four more lines disappearing with nothing
+ * to explain them.
+ *
+ * Since #91 those four lines land on the result row this batch writes rather than on
+ * whatever save came next, so they are at least adjacent to their cause — but they still
+ * need the event to say *why*, which is what this distinction is for.
  *
  * The column is free text with no CHECK, so this needs no migration.
  */
@@ -573,6 +577,36 @@ export async function wipe(
     // 4. The page itself, because this is the statement that moves the version the
     //    other three are guarding on. **The authority on whether the wipe happened.**
     cas,
+
+    // 5. The state the wipe *left*, recorded now rather than whenever the next save
+    //    happens to arrive (#91).
+    //
+    //    🔴 **Without this the log cannot say what a wipe took.** Statement 2 snapshots
+    //    the *pre*-wipe body, which is byte-identical to the revision before it, so a wipe
+    //    entry's diff is empty by construction. The post-wipe state used to enter the log
+    //    only on the next ordinary save — which meant the wiped lines surfaced as
+    //    `disappeared` on an unrelated later revision, minutes or hours away and attributed
+    //    to whatever edit happened to come next.
+    //
+    //    For the everyday sweep that was survivable, because `cleared_items` is the
+    //    authoritative done-record and carries the ticked lines exactly. For a whole-page
+    //    wipe it was not: `cleared_items` deliberately holds finished lines only, so a note
+    //    or an undone task taken by a page wipe appeared **nowhere** in `/api/history`. It
+    //    existed solely inside statement 2's body, and that endpoint returns diffs and
+    //    cleared rows, never bodies.
+    //
+    //    Sealed, for statement 2's reason: an unsealed row here would be coalesced into by
+    //    the next save inside the ten-minute window, overwriting the state it exists to
+    //    record. `event_type` is NULL — the *event* is statement 2; this is its result.
+    //
+    //    🔴 Guarded on the **post-CAS** version rather than the pre-wipe one, unlike every
+    //    statement above. By the time this runs statement 4 has already bumped it, so the
+    //    guard the others use would refuse every time. Reading `version + 1` makes this
+    //    land exactly when the CAS applied and never when it did not.
+    env.DB.prepare(
+      `INSERT INTO revisions (page_id, body, version, created_at, is_sealed, source, event_type)
+       SELECT ?, ?, ?, ?, 1, ?, NULL WHERE (SELECT version FROM pages WHERE id = ?) = ?`,
+    ).bind(pageId, input.body, version + 1, timestamp, input.source, pageId, version + 1),
   ];
 
   // 🔴 Which statement decided is looked up, never counted.

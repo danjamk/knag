@@ -13,6 +13,29 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- 🔴 **A whole-page wipe now records what it took** (#91). It did not, and nothing said so.
+
+  A wipe snapshots the *pre*-wipe body, which is byte-identical to the revision before it,
+  so the event's own diff is empty by construction. The state it *left* only entered the
+  log on the next ordinary save — so the wiped lines surfaced as `disappeared` on an
+  unrelated later revision, minutes or hours away, attributed to whatever edit came next.
+
+  For the everyday sweep that was survivable, because `cleared_items` is the authoritative
+  done-record and carries the ticked lines exactly. For a whole-page wipe it was not:
+  `cleared_items` deliberately holds *finished* lines only, so a note or an undone task
+  taken by a page wipe appeared **nowhere** in `/api/history`. It existed only inside a
+  revision body, and that endpoint returns diffs and cleared rows, never bodies.
+
+  The wipe now writes the resulting state as a second sealed revision, so the lines it took
+  are the diff between the two — the way every other change in the log already works. No
+  migration; `revisions` gains rows, not columns.
+
+  Found while costing the #91 pane: the design bundle said the data problem was already
+  solved, and it was not for exactly the rows the pane exists for.
+
+
 ### Added
 
 - **`docs/planning/scale-model.html`** — a freemium economics and cost simulator on the
