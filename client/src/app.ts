@@ -2108,7 +2108,14 @@ function paintManage(): void {
   // Found by CI rather than locally (#154). `loadPages` resolves before the first
   // keystroke on a fast machine and after it on a slow one, so the failure needed a
   // slower runner to appear at all.
-  if (manageList.contains(document.activeElement)) return;
+  //
+  // 🔴 A focused **field**, not any focused element, and the difference is a second CI-only
+  // failure. WebKit on this machine does not focus a `<button>` on click and WebKit on the
+  // runner does — so a guard that said `contains(activeElement)` held the repaint after
+  // every delete and template toggle, and the list simply stopped updating. A focused
+  // button has no uncommitted work to lose; only a text field does.
+  const editing = document.activeElement;
+  if (editing instanceof HTMLInputElement && manageList.contains(editing)) return;
 
   manageList.replaceChildren(
     ...pages.map((page) => {
