@@ -19,16 +19,6 @@ const TODAY = "ring the school about Friday\n- [x] posted the form\n- [ ] book t
 const SHOP_TEMPLATE = "- [ ] milk\n- [ ] eggs";
 const SHOPPED = "- [ ] milk\n- [ ] eggs\n- [ ] birthday candles";
 
-async function newPage(knag: Knag, name: string): Promise<void> {
-  await knag.page.locator("[data-page-name]").click();
-  await knag.page.locator("[data-manage-open]").click();
-  await expect(knag.page.locator("[data-manage-pane]")).toBeVisible();
-  await knag.page.locator('[data-new-page] input[name="name"]').fill(name);
-  await knag.page.locator("[data-new-page-submit]").click();
-  await expect(knag.page.locator("[data-page-label]")).toHaveText(name);
-  await expect(knag.surface()).toBeFocused();
-}
-
 async function switchTo(knag: Knag, name: string): Promise<void> {
   await knag.page.locator("[data-page-name]").click();
   await knag.page.locator("[data-switcher-list] button", { hasText: name }).first().click();
@@ -67,7 +57,7 @@ test.describe("pages, templates and history together", () => {
   test("🔴 a template belongs to one page and does not reach another", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(TODAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
 
     await knag.setPage("shopping", SHOP_TEMPLATE);
     await knag.saveTemplate("shopping");
@@ -87,7 +77,7 @@ test.describe("pages, templates and history together", () => {
   test("🔴 history is this page's, and never the other one's lines", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(TODAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.setPage("shopping", SHOPPED);
     await wipeThePage(knag);
 
@@ -106,7 +96,7 @@ test.describe("pages, templates and history together", () => {
   test("🔴 the undo offer belongs to the page it was made on", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(TODAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.setPage("shopping", SHOPPED);
 
     await wipeThePage(knag);
@@ -123,7 +113,7 @@ test.describe("pages, templates and history together", () => {
   test("🔴 a reset on a second page counts only what did not come back", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(TODAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.setPage("shopping", SHOP_TEMPLATE);
     await knag.saveTemplate("shopping");
     await knag.setPage("shopping", SHOPPED);
@@ -140,7 +130,7 @@ test.describe("pages, templates and history together", () => {
   test("🔴 putting lines back from history lands on the page you are on", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(TODAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.setPage("shopping", SHOPPED);
     await wipeThePage(knag);
 
@@ -166,7 +156,7 @@ test.describe("pages, templates and history together", () => {
   test("a retired page's history is not another page's problem", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(TODAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.setPage("shopping", SHOPPED);
     await wipeThePage(knag);
 

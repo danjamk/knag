@@ -215,9 +215,16 @@ test.describe("history", () => {
   test("a page never wiped shows the seam and nothing else", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed("nothing has happened here");
+    // 🔴 A **new** page, not the default one. The default page has been wiped by every
+    // other test in the run — the suite shares one database and only pages and templates
+    // are reset between tests, so its history is thirteen rows deep by the time this runs.
+    // Asserting an empty record there is asserting the order the files happened to run in,
+    // which is the same mistake #185 documented and this test then made.
+    await knag.newPage("untouched");
 
     await openHistory(knag);
 
+    await expect(knag.page.locator("[data-history-page]")).toHaveText("untouched");
     await expect(knag.page.locator("[data-history-list] .wipe")).toHaveCount(0);
     await expect(knag.page.locator("[data-history-note]")).toContainText("ask your agent for older");
   });

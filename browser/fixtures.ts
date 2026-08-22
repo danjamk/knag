@@ -254,6 +254,24 @@ export class Knag {
     await expect(this.page.locator("[data-editor]")).toBeVisible();
   }
 
+  /**
+   * Make a page through the switcher, the way a person does, and land on it.
+   *
+   * 🔴 Waits for the surface to hold focus, not just for the label (#177). The submit
+   * handler closes the dialog, awaits `openPage` — which sets the label — and only then
+   * focuses the surface. Returning on the label leaves that focus in flight, and when it
+   * lands it closes the switcher under whatever the caller opened next.
+   */
+  async newPage(name: string): Promise<void> {
+    await this.page.locator("[data-page-name]").click();
+    await this.page.locator("[data-manage-open]").click();
+    await expect(this.page.locator("[data-manage-pane]")).toBeVisible();
+    await this.page.locator('[data-new-page] input[name="name"]').fill(name);
+    await this.page.locator("[data-new-page-submit]").click();
+    await expect(this.page.locator("[data-page-label]")).toHaveText(name);
+    await expect(this.surface()).toBeFocused();
+  }
+
   /** Tier 2 of the bar (#139). */
   ledge() {
     return this.page.locator("[data-ledge]");
