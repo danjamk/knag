@@ -1101,6 +1101,14 @@
          three taps deep used to buy. */
       button[data-wipe-all] {
         flex: none;
+        /* 🔴 Clear of the ledge toggle above it, which is exactly `--target` wide and
+           sits at the bar's right edge. Without this the only destructive control in the
+           app is directly under the control you tap to open and close the ledge, and a
+           quick open-close lands on it. Found on a device, 2026-08-22.
+
+           One target width, not a nudge: the number is the toggle's own footprint, so it
+           stays correct if the touch target ever changes. */
+        margin-right: var(--target);
         height: var(--target);
         padding: 0 10px;
         border: var(--hairline-width) solid var(--hairline);

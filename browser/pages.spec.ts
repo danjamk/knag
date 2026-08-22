@@ -361,7 +361,7 @@ test.describe("🔴 the template is a page's reset state", () => {
     await expect.poll(() => knag.document(), { timeout: 8000 }).toBe(STANDING);
   });
 
-  test("the control says `reset page` once a template is saved", async ({ knag }) => {
+  test("the control keeps saying `wipe page`, template or not", async ({ knag }) => {
     await knag.seed(STANDING);
     await knag.openLedge();
     // `wipe page 3` that leaves three lines behind is a lie about what the control does,
@@ -374,7 +374,12 @@ test.describe("🔴 the template is a page's reset state", () => {
     await knag.page.keyboard.press("Escape");
 
     await knag.openLedge();
-    await expect(knag.page.locator("[data-wipe-all-label]")).toHaveText("reset page");
+    // 🔴 One verb, reverted 2026-08-22 after using it. #165 made this read `reset
+    // page` because `wipe page 25` leaving twenty items behind is a lie about the
+    // control. True, but the fix was in the wrong place — wiping is the product's one
+    // gesture and a second verb for the same act costs more than the precision. The
+    // honesty lives in the count now: the recovery line says `wiped page · 5 gone`.
+    await expect(knag.page.locator("[data-wipe-all-label]")).toHaveText("wipe page");
   });
 });
 

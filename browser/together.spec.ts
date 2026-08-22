@@ -120,7 +120,7 @@ test.describe("pages, templates and history together", () => {
     await expect(knag.recovery()).toBeVisible();
   });
 
-  test("🔴 a reset on a second page reads as a reset in its own history", async ({ knag }) => {
+  test("🔴 a reset on a second page counts only what did not come back", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(TODAY);
     await newPage(knag, "shopping");
@@ -133,7 +133,7 @@ test.describe("pages, templates and history together", () => {
 
     // Two of three lines came straight back, so one went.
     await expect(knag.page.locator("[data-history-list] .wipe").first()).toContainText(
-      /reset\s*·\s*1 gone/,
+      /wiped page\s*·\s*1 gone/,
     );
   });
 

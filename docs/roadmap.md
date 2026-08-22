@@ -125,7 +125,19 @@ Set 2026-08-19. The version numbers are meant to say something:
 |---|---|---|
 | **1.0** | **One page, finished.** Everything the single-document product should be | 0–5 |
 | **1.1** | A handful of pages | 6 |
-| **1.2** | Multi-user, and the history UX | 7–8 |
+| **1.2** | **The history UX** | 7 |
+| **1.3** | Multi-user | 8 |
+
+🔴 **Split 2026-08-22: 1.2 is history, 1.3 is multi-user.** They were one release
+because they were one phase-pair, and that stopped being true when multi-user was
+decided on 2026-08-21: it is friends and family, invite-only, free-tier-bound, and it
+wants an admin view. That is its own release rather than a co-passenger, and holding a
+finished, tested history pane until it exists is the failure §12 exists to name — the
+same argument that moved #91 out of 1.1 in the first place, applied one release later.
+
+The number is not cosmetic either. A new pane is a **minor** by semver, so history could
+not ship as a 1.1.x without the version under-describing the largest interface addition
+since 1.0 — and `make info` exists precisely so a version can be trusted.
 
 🔴 **Amended 2026-08-20: 1.1 is pages, and only pages.** #91 was in 1.1 for one reason —
 so history would be designed *once, after pages exist* — and it keeps that entirely by
@@ -411,7 +423,7 @@ rather than `add 3 to the page`. The second is downstream of #173: a reset's und
 take the template off as well as put the lines back, which is a bigger operation and reads
 as one.
 
-### Phase 8 · Multi-user — #122 · **ships 1.2**
+### Phase 8 · Multi-user — #122 · **ships 1.3**
 
 Last, deliberately — and the reason is not difficulty. The spike is reading and
 measuring, and it can float earlier in any week that wants a break from

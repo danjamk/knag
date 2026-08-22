@@ -1180,8 +1180,9 @@ function paintRestore(): void {
     } else {
       // A page with a template was *reset*; one without was emptied. The post-wipe body
       // is the only thing that knows which, and it is already in the memory.
-      const verb = memory.postWipe === "" ? "wiped page" : "reset";
-      recoveryCountEl.textContent = `${verb} · ${goneCount(memory.preWipe, memory.postWipe)} gone`;
+      // 🔴 Always `wiped page`, never `reset` — the interface has one verb for this,
+      // and `gone` carries the honesty the word used to have to.
+      recoveryCountEl.textContent = `wiped page · ${goneCount(memory.preWipe, memory.postWipe)} gone`;
     }
   }
 
@@ -1471,13 +1472,22 @@ function paintWipeAll(): void {
   const label = document.querySelector<HTMLElement>("[data-wipe-all-label]");
   const count = document.querySelector<HTMLElement>("[data-wipe-all-count]");
 
-  // 🔴 `reset page` when this page has a template (#165). `wipe page 25` that leaves
-  // twenty standing items behind is a lie about what the control does, and the count
-  // beside it makes the lie specific. The word is the only thing that changes; the
-  // arming, the count and the motion are identical.
-  const resets = pages.find((page) => page.id === pageId)?.has_template === true;
-
-  if (label) label.textContent = armed ? "again to confirm" : resets ? "reset page" : "wipe page";
+  // 🔴 **The word is always `wipe`** — reverted 2026-08-22 after using it.
+  //
+  // #165 made this read `reset page` on a page with a template, on the argument that
+  // `wipe page 25` leaving twenty standing items behind is a lie about what the control
+  // does. The argument was right and the fix was in the wrong place: **wiping is the
+  // product's one gesture**, and a second verb for the same physical act costs more than
+  // the imprecision it bought. You wipe the page. What comes back afterwards is the
+  // template's business, not the verb's.
+  //
+  // The honesty moved to the count instead, where it belongs: the recovery line reads
+  // `wiped page · 5 gone`, and `gone` is what actually left. See `goneCount`.
+  //
+  // The *log* still distinguishes a reset from an emptying — `event_type` records it and
+  // `knag_history` reports it, because that is a fact about what happened. The interface
+  // simply never says the word.
+  if (label) label.textContent = armed ? "again to confirm" : "wipe page";
   if (count) {
     count.textContent = String(parse(body).length);
     count.toggleAttribute("hidden", armed);
@@ -2029,8 +2039,6 @@ async function loadPages(): Promise<void> {
   }
   paintSwitcher();
   paintManage();
-  // The wipe control reads `reset page` on a page with a template, so it follows the
-  // list rather than the document.
   paintWipeAll();
 }
 
@@ -2370,7 +2378,7 @@ newPageForm?.addEventListener("submit", (event) => {
 type Wipe = {
   id: number;
   time: string;
-  /** What the machine says happened: `wiped 6`, `wiped page · 9 gone`, `reset · 5 gone`. */
+  /** What the machine says happened: `wiped 6`, or `wiped page · 9 gone`. */
   label: string;
   /** The lines this wipe took, exactly as they left. */
   lines: string[];
@@ -2452,15 +2460,11 @@ function toDays(history: HistoryResponse, now: Date): HistoryDay[] {
         ? day.cleared.filter((item) => item.revision_id === revision.id).map((item) => item.line_text)
         : (result?.disappeared ?? []);
 
-      // 🔴 Read, never inferred. The first version of this looked at the result row's
-      // `appeared` and was wrong on the exact case the feature exists for: a template line
-      // that was already on the page never *appears*, because it never left. The server
-      // records `reset` as its own event because it is the only thing that knows.
-      const reset = revision.event_type === "reset";
-
-      const label = sweep
-        ? `wiped ${lines.length}`
-        : `${reset ? "reset" : "wiped page"} · ${lines.length} gone`;
+      // 🔴 One verb. A reset and an emptying are the same gesture from the reader's
+      // side — the page was wiped — and `gone` is what separates them, because it counts
+      // what did not come straight back. The log still knows which was which
+      // (`event_type` records `reset`); the interface does not need to say it.
+      const label = sweep ? `wiped ${lines.length}` : `wiped page · ${lines.length} gone`;
 
       wipes.push({ id: revision.id, time: revision.local_time, label, lines });
     });

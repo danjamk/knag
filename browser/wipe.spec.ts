@@ -362,7 +362,7 @@ test.describe("the recovery line says which wipe it was (#91)", () => {
     await expect(knag.recovery()).toHaveText(/wiped page\s*·\s*5 gone\s*·\s*put the page back/);
   });
 
-  test("🔴 a reset says `reset`, and counts what did not come straight back", async ({
+  test("🔴 a reset still says `wiped page`, and counts what did not come back", async ({
     knag,
   }) => {
     await knag.resetPages();
@@ -377,7 +377,7 @@ test.describe("the recovery line says which wipe it was (#91)", () => {
     // template put three back — but two of those three came back *unchecked*, so they
     // did leave. Four went and did not return; `wiped 5` would have been a true
     // statement about the operation and a false one about the outcome.
-    await expect(knag.recovery()).toHaveText(/reset\s*·\s*4 gone\s*·\s*put the page back/);
+    await expect(knag.recovery()).toHaveText(/wiped page\s*·\s*4 gone\s*·\s*put the page back/);
   });
 
   test("the label survives a reload, since the offer does", async ({ knag }) => {

@@ -85,7 +85,7 @@ test.describe("history", () => {
     );
   });
 
-  test("🔴 a reset reads as a reset, and counts only what did not come back", async ({
+  test("🔴 a reset reads as a wipe, and counts only what did not come back", async ({
     knag,
   }) => {
     await knag.resetPages();
@@ -100,7 +100,7 @@ test.describe("history", () => {
     // Two lines came straight back, so one went. `wiped 3` would be true about the
     // operation and false about the outcome.
     await expect(knag.page.locator("[data-history-list] .wipe").first()).toContainText(
-      /reset\s*·\s*1 gone/,
+      /wiped page\s*·\s*1 gone/,
     );
   });
 
