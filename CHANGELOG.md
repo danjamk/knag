@@ -13,6 +13,11 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-08-22
+
+The record. Seven days of wipes, per page — open one, see the lines exactly as they
+left, and tap back the one you want.
+
 ### Added
 
 - **History — a list of wipes, seven days deep, this page only** (#91). Reached from the
@@ -44,6 +49,37 @@ summarises the phase rather than pretending it was written as it happened.
   beats position, which is the ruling `restoredBody` already makes for a vanished anchor.
   Idempotent, so a second tap finds nothing to do.
 
+- **A reset records `reset` rather than `wipe_all`** (#91). The pane cannot tell the two
+  apart from the diff, and the grocery case is exactly where inferring it fails: a template
+  line that was already on the page never *appears*, because it never left. The server is
+  the only thing that knows a template was laid back down, so it says so. No migration —
+  `event_type` is free text.
+
+- **`docs/planning/scale-model.html`** — a freemium economics and cost simulator on the
+  target Cloudflare architecture, and the answer to a question spec §17 had only ever asked
+  architecturally. §17 established that multi-tenant would break almost nothing; this prices
+  it, and finds there is no business case to break in the first place. Infrastructure is
+  ~$0.10–0.15 per user per year and flat with scale, paid acquisition can never pay back,
+  and the honest ceiling is beer money rather than an income.
+
+  🔴 It changes no decision in §17 — every "No" stays No and auth stays the only "Yes". It
+  changes the *reason* ADR-001's revisit trigger is a second human: there is no business
+  case, so the only thing that would ever move it is somebody wanting to use the thing.
+
+  Self-contained, opens in a browser, no build step. Docs only — nothing shipped changes.
+
+- **`docs/design/history-response.md`** — the design bundle for #91 came back and is
+  recorded as the ruling. Retrieval belongs in the app and its unit is days; the
+  retrospective stays with the agent, and so does search. The surface is a `history` pane
+  whose **rows are wipes, not lines** — which is how it argues with the Out list rather than
+  around it: *a list of lines is a document; a list of wipes is chrome about actions.* One
+  wipe's lines at a time means no view ever shows a week of lines, so search never has
+  anything to be for, and the cap is structural rather than a policy.
+
+  🔴 It also answered the `wiped 25` question the brief raised: keep `wiped_count` in the
+  log, display **`gone`** — the multiset difference — so a reset reads `reset · 5 gone`
+  rather than `wiped 25`.
+
 ### Changed
 
 - 🔴 **The verb is `wipe` again, everywhere.** 1.1.1 made the whole-page control read
@@ -61,16 +97,6 @@ summarises the phase rather than pretending it was written as it happened.
   touch target — the toggle's exact footprint — because the only destructive control in
   the app was directly beneath the control you tap to open and close the ledge, and a
   quick open-close landed on it. Found on a device.
-
-
-- **A reset records `reset` rather than `wipe_all`** (#91). The pane cannot tell the two
-  apart from the diff, and the grocery case is exactly where inferring it fails: a template
-  line that was already on the page never *appears*, because it never left. The server is
-  the only thing that knows a template was laid back down, so it says so. No migration —
-  `event_type` is free text.
-
-
-### Changed
 
 - 🔴 **The recovery line says which wipe it was, and counts what actually went** (#91).
   Two operations shared one label, and it was wrong in both directions.
@@ -90,6 +116,24 @@ summarises the phase rather than pretending it was written as it happened.
   the template off before it can put anything anywhere — the operation #173 uncovered — and
   the bigger undo should read as the bigger undo.
 
+- **`carbon` is retired. The word is `history`** (#91). The settings sheet's build line
+  reads `history · 41 days`, and the route behind it moved from `GET /api/carbon` to
+  `GET /api/history/depth` — same response, same auth, same reason for being behind auth.
+
+  🔴 **It had already been declared dead once.** `docs/design/landing-page-brief.md`
+  ruled it out when the landing page was designed, named `history` as the replacement, and
+  noted the word was already the MCP tool name. The landing copy was fixed then — the
+  README has said *"Wipe it. It's in the history"* ever since — and the app quietly kept
+  the word for another five releases. The recovery-and-history design bundle found it
+  still there and asked for the same retirement a second time.
+
+  Three files still say `carbon` and are meant to: the CHANGELOG entry that shipped it,
+  the design response that specified it, and the brief that first killed it. Those are
+  records of what was true when they were written.
+
+  A client cached from before this reads `carbon · —` for one load, because `/api/carbon`
+  now 404s and the old code already treated a bad response as "say nothing rather than
+  lie". It corrects itself on the next load.
 
 ### Fixed
 
@@ -112,57 +156,6 @@ summarises the phase rather than pretending it was written as it happened.
 
   Found while costing the #91 pane: the design bundle said the data problem was already
   solved, and it was not for exactly the rows the pane exists for.
-
-
-### Added
-
-- **`docs/planning/scale-model.html`** — a freemium economics and cost simulator on the
-  target Cloudflare architecture, and the answer to a question spec §17 had only ever asked
-  architecturally. §17 established that multi-tenant would break almost nothing; this prices
-  it, and finds there is no business case to break in the first place. Infrastructure is
-  ~$0.10–0.15 per user per year and flat with scale, paid acquisition can never pay back,
-  and the honest ceiling is beer money rather than an income.
-
-  🔴 It changes no decision in §17 — every "No" stays No and auth stays the only "Yes". It
-  changes the *reason* ADR-001's revisit trigger is a second human: there is no business
-  case, so the only thing that would ever move it is somebody wanting to use the thing.
-
-  Self-contained, opens in a browser, no build step. Docs only — nothing shipped changes.
-
-### Added
-
-- **`docs/design/history-response.md`** — the design bundle for #91 came back and is
-  recorded as the ruling. Retrieval belongs in the app and its unit is days; the
-  retrospective stays with the agent, and so does search. The surface is a `history` pane
-  whose **rows are wipes, not lines** — which is how it argues with the Out list rather than
-  around it: *a list of lines is a document; a list of wipes is chrome about actions.* One
-  wipe's lines at a time means no view ever shows a week of lines, so search never has
-  anything to be for, and the cap is structural rather than a policy.
-
-  🔴 It also answered the `wiped 25` question the brief raised: keep `wiped_count` in the
-  log, display **`gone`** — the multiset difference — so a reset reads `reset · 5 gone`
-  rather than `wiped 25`.
-
-### Changed
-
-- **`carbon` is retired. The word is `history`** (#91). The settings sheet's build line
-  reads `history · 41 days`, and the route behind it moved from `GET /api/carbon` to
-  `GET /api/history/depth` — same response, same auth, same reason for being behind auth.
-
-  🔴 **It had already been declared dead once.** `docs/design/landing-page-brief.md`
-  ruled it out when the landing page was designed, named `history` as the replacement, and
-  noted the word was already the MCP tool name. The landing copy was fixed then — the
-  README has said *"Wipe it. It's in the history"* ever since — and the app quietly kept
-  the word for another five releases. The recovery-and-history design bundle found it
-  still there and asked for the same retirement a second time.
-
-  Three files still say `carbon` and are meant to: the CHANGELOG entry that shipped it,
-  the design response that specified it, and the brief that first killed it. Those are
-  records of what was true when they were written.
-
-  A client cached from before this reads `carbon · —` for one load, because `/api/carbon`
-  now 404s and the old code already treated a bad response as "say nothing rather than
-  lie". It corrects itself on the next load.
 
 ## [1.1.4] — 2026-08-21
 
@@ -1686,7 +1679,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/danjamk/knag/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/danjamk/knag/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/danjamk/knag/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/danjamk/knag/compare/v1.1.1...v1.1.2
