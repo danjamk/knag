@@ -34,11 +34,34 @@ summarises the phase rather than pretending it was written as it happened.
   rows with. The moment it lists edits it is a revision log, and a revision log of a page
   you rewrite all day is a corpus; the moment it has a field, the corpus has a search box.
 
-  Restoring from an older row uses `insertLines`, so those lines land at the end — they
-  carry no anchors, and content beats position. Today's wipe still restores in place
-  through the recovery line.
+  🔴 **Restoring is per line.** Tap the line you want; it dims and takes the tick that
+  confirms a copy. The pane's questions are singular — *I wrote a task down three days ago*,
+  *the page got wiped before I copied that number out* — and an all-or-nothing restore hands
+  back nine lines to get one. The whole-page path is the recovery line's `put the page back`,
+  which is same-day and positional; this is the other half.
+
+  A restored line lands at the end: an older row carries lines and no anchors, so content
+  beats position, which is the ruling `restoredBody` already makes for a vanished anchor.
+  Idempotent, so a second tap finds nothing to do.
 
 ### Changed
+
+- 🔴 **The verb is `wipe` again, everywhere.** 1.1.1 made the whole-page control read
+  `reset page` on a page with a template, because `wipe page 25` leaving twenty standing
+  items behind is a lie about what it does. The argument was right and the fix was in the
+  wrong place: **wiping is the product's one gesture**, and a second verb for the same
+  physical act costs more than the imprecision it bought.
+
+  The honesty moved to the count, where it belongs — the recovery line reads
+  `wiped page · 5 gone`, and `gone` is what actually left. The log still distinguishes a
+  reset from an emptying and `knag_history` still reports it; the interface simply never
+  says the word. Found by using it.
+
+- 🔴 **The whole-page wipe no longer sits under the ledge toggle.** It is offset by one
+  touch target — the toggle's exact footprint — because the only destructive control in
+  the app was directly beneath the control you tap to open and close the ledge, and a
+  quick open-close landed on it. Found on a device.
+
 
 - **A reset records `reset` rather than `wipe_all`** (#91). The pane cannot tell the two
   apart from the diff, and the grocery case is exactly where inferring it fails: a template

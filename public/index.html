@@ -1101,6 +1101,14 @@
          three taps deep used to buy. */
       button[data-wipe-all] {
         flex: none;
+        /* 🔴 Clear of the ledge toggle above it, which is exactly `--target` wide and
+           sits at the bar's right edge. Without this the only destructive control in the
+           app is directly under the control you tap to open and close the ledge, and a
+           quick open-close lands on it. Found on a device, 2026-08-22.
+
+           One target width, not a nudge: the number is the toggle's own footprint, so it
+           stays correct if the touch target ever changes. */
+        margin-right: var(--target);
         height: var(--target);
         padding: 0 10px;
         border: var(--hairline-width) solid var(--hairline);
@@ -1517,40 +1525,44 @@
 
       /* 🔴 Chalk, in row geometry, and never on the same line as a timestamp: the frame
          is above, the words are below. */
-      .history .lines li {
+      .history .lines li { display: block; }
+      /* 🔴 The line is the control. One tap, one line — a separate button per row would
+         double the chrome in the quietest surface in the product, and the thing you want
+         to tap *is* the line you are reading. */
+      .history .lines .line {
         display: flex;
         align-items: flex-start;
         gap: var(--space-2);
+        width: 100%;
         padding: var(--space-1) 0;
+        border: 0;
+        background: transparent;
         font-family: var(--font-body);
         font-size: var(--size-row);
         letter-spacing: var(--track-chalk);
         color: var(--ink);
+        text-align: left;
         overflow-wrap: anywhere;
+        cursor: pointer;
+        transition: color var(--state-duration) ease;
       }
+      .history .lines .line:active { background: var(--press-tint); }
+
+      /* Back on the page. Dim, with the tick that confirms a copy — the record is a
+         reading surface and a toast would be the app talking over it, where a line going
+         quiet is the same language a checked row already speaks. */
+      .history .lines li[data-restored] .line { color: var(--dim); cursor: default; }
+      .history .lines .mark { flex: none; color: var(--amber); }
       /* A line that left checked left checked. Dim and struck, which is also what does
          the filtering: the bright lines are the ones you came for, and that is contrast
          doing the work a search field would otherwise be asked to do. */
       .history .lines li[data-done] { color: var(--dim); text-decoration: line-through; }
       .history .lines .text { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; }
 
-      /* 🔴 Amber marks the offer, not the record. Rows are dim, the open row's head goes
-         to --ink, and only this is amber — a pane of amber rows would make the record look
-         like the machine shouting, and the record is the quietest thing here. */
-      .history .put-back {
-        margin: var(--space-2) 0 0;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        color: var(--amber);
-        font-family: var(--font-mono);
-        font-size: var(--size-machine);
-        letter-spacing: var(--track-machine);
-        text-decoration: underline;
-        cursor: pointer;
-      }
-      .history .put-back:active { opacity: 0.6; }
-      .history .put-back[disabled] { color: var(--dim); text-decoration: none; cursor: default; }
+      /* 🔴 Amber marks the offer, not the record. Rows are dim, the open row's head
+         goes to --ink, and the only amber in the pane is the tick that confirms a line is
+         back — a pane of amber rows would make the record look like the machine shouting,
+         and the record is the quietest thing here. */
 
       /* Amber and dim, like `offline` and `not saved` — never red. There is one colour
          in this interface, and a refusal is the machine talking, so it speaks in the

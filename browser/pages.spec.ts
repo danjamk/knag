@@ -21,31 +21,6 @@ test.beforeEach(async ({ knag }) => {
 });
 
 /** Make a page through the real controls, the way a person does. */
-async function newPage(knag: import("./fixtures.js").Knag, name: string) {
-  await knag.page.locator("[data-page-name]").click();
-  await knag.page.locator("[data-manage-open]").click();
-  await expect(knag.page.locator("[data-manage-pane]")).toBeVisible();
-  await knag.page.locator('[data-new-page] input[name="name"]').fill(name);
-  await knag.page.locator("[data-new-page-submit]").click();
-  await expect(knag.page.locator("[data-page-label]")).toHaveText(name);
-
-  // 🔴 **The label is not the end of the operation, and this wait is why (#177).** The
-  // submit handler closes the dialog, awaits `openPage` — which is what sets the label —
-  // and only *then* calls `surface.focus()`. Returning on the label leaves that focus in
-  // flight, and when it lands it hits the `focusin` rule in `app.ts` whose target is the
-  // editor, outside the footer: `setSwitcher(false)`.
-  //
-  // So a caller that opens the switcher immediately after this gets it opened and then
-  // silently closed a beat later, and `[data-manage-open]` stays in the DOM and never
-  // becomes visible again. That is a 30s timeout pointing at the click rather than at the
-  // race. Six tests in this file do exactly that sequence; the one that failed in CI was
-  // whichever one the machine was slowest on.
-  //
-  // Waiting for focus makes the helper's contract "the page is made **and the app has
-  // settled**" rather than "the label changed".
-  await expect(knag.surface()).toBeFocused();
-}
-
 test.describe("the switcher", () => {
   test("🔴 opens from the page's name, which is the slot the wordmark paid for", async ({
     knag,
@@ -61,7 +36,7 @@ test.describe("the switcher", () => {
 
   test("🔴 marks the current page in amber and nothing else", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
 
     await knag.page.locator("[data-page-name]").click();
     const rows = knag.page.locator("[data-switcher-list] button");
@@ -77,7 +52,7 @@ test.describe("the switcher", () => {
     knag,
   }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.page.locator("[data-page-name]").click();
 
     const row = knag.page.locator("[data-switcher-list] button").first();
@@ -113,7 +88,7 @@ test.describe("the switcher", () => {
 test.describe("switching", () => {
   test("🔴 shows the other page's document, and the bar says which", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
 
     // The new page is empty and is now the open one.
     await expect(knag.page.locator("[data-page-label]")).toHaveText("shopping");
@@ -128,7 +103,7 @@ test.describe("switching", () => {
 
   test("🔴 writes land on the page you are looking at", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
 
     await knag.surface().click();
     await knag.page.keyboard.type("milk");
@@ -142,7 +117,7 @@ test.describe("switching", () => {
 
   test("🔴 launch opens the last page you were on, never a list", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
 
     await knag.page.reload();
 
@@ -156,7 +131,7 @@ test.describe("switching", () => {
 test.describe("managing", () => {
   test("renames a page, and the bar follows", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shoping");
+    await knag.newPage("shoping");
 
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
@@ -177,7 +152,7 @@ test.describe("managing", () => {
 
   test("🔴 a list refresh does not throw away what you are typing", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shoping");
+    await knag.newPage("shoping");
 
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
@@ -204,7 +179,7 @@ test.describe("managing", () => {
 
   test("🔴 offers no delete on the default page", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
 
@@ -218,7 +193,7 @@ test.describe("managing", () => {
 
   test("🔴 deletes without asking, and lands you back on the default page", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
 
@@ -234,7 +209,7 @@ test.describe("managing", () => {
 
   test("🔴 says why, in the pane — the bar is behind the backdrop", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
 
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
@@ -258,7 +233,7 @@ test.describe("managing", () => {
     knag,
   }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
     await knag.page.locator('[data-new-page] input[name="name"]').fill("shopping");
@@ -284,7 +259,7 @@ test.describe("managing", () => {
     knag,
   }) => {
     await knag.seed(DAY);
-    await newPage(knag, "my list");
+    await knag.newPage("my list");
 
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
@@ -316,7 +291,7 @@ test.describe("managing", () => {
   test("the sheet still does not scroll with the pane in it", async ({ knag }) => {
     await knag.page.setViewportSize(PHONE);
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
     await knag.page.locator("[data-page-name]").click();
     await knag.page.locator("[data-manage-open]").click();
 
@@ -361,7 +336,7 @@ test.describe("🔴 the template is a page's reset state", () => {
     await expect.poll(() => knag.document(), { timeout: 8000 }).toBe(STANDING);
   });
 
-  test("the control says `reset page` once a template is saved", async ({ knag }) => {
+  test("the control keeps saying `wipe page`, template or not", async ({ knag }) => {
     await knag.seed(STANDING);
     await knag.openLedge();
     // `wipe page 3` that leaves three lines behind is a lie about what the control does,
@@ -374,14 +349,19 @@ test.describe("🔴 the template is a page's reset state", () => {
     await knag.page.keyboard.press("Escape");
 
     await knag.openLedge();
-    await expect(knag.page.locator("[data-wipe-all-label]")).toHaveText("reset page");
+    // 🔴 One verb, reverted 2026-08-22 after using it. #165 made this read `reset
+    // page` because `wipe page 25` leaving twenty items behind is a lie about the
+    // control. True, but the fix was in the wrong place — wiping is the product's one
+    // gesture and a second verb for the same act costs more than the precision. The
+    // honesty lives in the count now: the recovery line says `wiped page · 5 gone`.
+    await expect(knag.page.locator("[data-wipe-all-label]")).toHaveText("wipe page");
   });
 });
 
 test.describe("the undo offer", () => {
   test("🔴 belongs to the page it was taken on", async ({ knag }) => {
     await knag.seed(DAY);
-    await newPage(knag, "shopping");
+    await knag.newPage("shopping");
 
     await knag.surface().click();
     await knag.page.keyboard.type("- [x] milk");

@@ -1180,8 +1180,9 @@ function paintRestore(): void {
     } else {
       // A page with a template was *reset*; one without was emptied. The post-wipe body
       // is the only thing that knows which, and it is already in the memory.
-      const verb = memory.postWipe === "" ? "wiped page" : "reset";
-      recoveryCountEl.textContent = `${verb} · ${goneCount(memory.preWipe, memory.postWipe)} gone`;
+      // 🔴 Always `wiped page`, never `reset` — the interface has one verb for this,
+      // and `gone` carries the honesty the word used to have to.
+      recoveryCountEl.textContent = `wiped page · ${goneCount(memory.preWipe, memory.postWipe)} gone`;
     }
   }
 
@@ -1471,13 +1472,22 @@ function paintWipeAll(): void {
   const label = document.querySelector<HTMLElement>("[data-wipe-all-label]");
   const count = document.querySelector<HTMLElement>("[data-wipe-all-count]");
 
-  // 🔴 `reset page` when this page has a template (#165). `wipe page 25` that leaves
-  // twenty standing items behind is a lie about what the control does, and the count
-  // beside it makes the lie specific. The word is the only thing that changes; the
-  // arming, the count and the motion are identical.
-  const resets = pages.find((page) => page.id === pageId)?.has_template === true;
-
-  if (label) label.textContent = armed ? "again to confirm" : resets ? "reset page" : "wipe page";
+  // 🔴 **The word is always `wipe`** — reverted 2026-08-22 after using it.
+  //
+  // #165 made this read `reset page` on a page with a template, on the argument that
+  // `wipe page 25` leaving twenty standing items behind is a lie about what the control
+  // does. The argument was right and the fix was in the wrong place: **wiping is the
+  // product's one gesture**, and a second verb for the same physical act costs more than
+  // the imprecision it bought. You wipe the page. What comes back afterwards is the
+  // template's business, not the verb's.
+  //
+  // The honesty moved to the count instead, where it belongs: the recovery line reads
+  // `wiped page · 5 gone`, and `gone` is what actually left. See `goneCount`.
+  //
+  // The *log* still distinguishes a reset from an emptying — `event_type` records it and
+  // `knag_history` reports it, because that is a fact about what happened. The interface
+  // simply never says the word.
+  if (label) label.textContent = armed ? "again to confirm" : "wipe page";
   if (count) {
     count.textContent = String(parse(body).length);
     count.toggleAttribute("hidden", armed);
@@ -2029,8 +2039,6 @@ async function loadPages(): Promise<void> {
   }
   paintSwitcher();
   paintManage();
-  // The wipe control reads `reset page` on a page with a template, so it follows the
-  // list rather than the document.
   paintWipeAll();
 }
 
@@ -2370,7 +2378,7 @@ newPageForm?.addEventListener("submit", (event) => {
 type Wipe = {
   id: number;
   time: string;
-  /** What the machine says happened: `wiped 6`, `wiped page · 9 gone`, `reset · 5 gone`. */
+  /** What the machine says happened: `wiped 6`, or `wiped page · 9 gone`. */
   label: string;
   /** The lines this wipe took, exactly as they left. */
   lines: string[];
@@ -2452,15 +2460,11 @@ function toDays(history: HistoryResponse, now: Date): HistoryDay[] {
         ? day.cleared.filter((item) => item.revision_id === revision.id).map((item) => item.line_text)
         : (result?.disappeared ?? []);
 
-      // 🔴 Read, never inferred. The first version of this looked at the result row's
-      // `appeared` and was wrong on the exact case the feature exists for: a template line
-      // that was already on the page never *appears*, because it never left. The server
-      // records `reset` as its own event because it is the only thing that knows.
-      const reset = revision.event_type === "reset";
-
-      const label = sweep
-        ? `wiped ${lines.length}`
-        : `${reset ? "reset" : "wiped page"} · ${lines.length} gone`;
+      // 🔴 One verb. A reset and an emptying are the same gesture from the reader's
+      // side — the page was wiped — and `gone` is what separates them, because it counts
+      // what did not come straight back. The log still knows which was which
+      // (`event_type` records `reset`); the interface does not need to say it.
+      const label = sweep ? `wiped ${lines.length}` : `wiped page · ${lines.length} gone`;
 
       wipes.push({ id: revision.id, time: revision.local_time, label, lines });
     });
@@ -2477,20 +2481,99 @@ function toDays(history: HistoryResponse, now: Date): HistoryDay[] {
   return days;
 }
 
-/** A line the wipe took, drawn as it left — checkbox, strike and bytes intact (ADR-004). */
+/**
+ * A line the wipe took, drawn as it left — checkbox, strike and bytes intact (ADR-004) —
+ * and tappable, because putting one line back is the thing this pane is for.
+ *
+ * 🔴 **One tap, one line.** The pane's questions are singular — *I wrote a task down
+ * three days ago*, *the page got wiped before I copied that number out* — and answering
+ * them with an all-or-nothing restore hands back nine lines to get one. The whole-page
+ * path already exists and is the recovery line's `put the page back`, which is same-day
+ * and positional; this is the other half, and it is deliberately per-line.
+ */
 function historyLine(raw: string): HTMLLIElement {
   const li = document.createElement("li");
-  const done = /^\s*[-*+]\s+\[[xX]\]\s/.test(raw);
-  if (done) li.setAttribute("data-done", "");
+  if (/^\s*[-*+]\s+\[[xX]\]\s/.test(raw)) li.setAttribute("data-done", "");
+
+  const control = document.createElement("button");
+  control.type = "button";
+  control.className = "line";
+  control.setAttribute("data-put-line", "");
+  control.title = "add this line to the page";
 
   const text = document.createElement("span");
   text.className = "text";
   // 🔴 `textContent`, and never truncated. A line wraps here as it wraps on the page;
   // an ellipsis is the app editing the user's words to fit its own frame.
   text.textContent = raw;
-  li.appendChild(text);
 
+  const mark = document.createElement("span");
+  mark.className = "mark";
+  mark.setAttribute("aria-hidden", "true");
+
+  control.append(text, mark);
+  control.addEventListener("click", () => {
+    void putLineBack(raw, li, mark);
+  });
+
+  li.appendChild(control);
   return li;
+}
+
+/**
+ * Put one line back on the page.
+ *
+ * 🔴 Confirms **in place, with the tick that confirms a copy**, and dims. The record is
+ * a reading surface and a toast would be the app talking over it; the line going quiet is
+ * the same language a checked row already speaks, and it also answers the only question a
+ * second tap would ask.
+ *
+ * Idempotent by construction — `insertLines` will not add a line the page already holds as
+ * many times as the restore asked for — so a double tap is safe and the second one simply
+ * finds nothing to do.
+ */
+async function putLineBack(raw: string, row: HTMLElement, mark: HTMLElement): Promise<void> {
+  if (row.hasAttribute("data-restored")) return;
+  await saveNow();
+  showHistoryError(null);
+
+  const next = insertLines(body, [raw]);
+
+  // Already on the page. Marked the same way rather than reported as a failure: from the
+  // reader's side the line is there, which is what they asked for.
+  if (next === body) {
+    row.setAttribute("data-restored", "");
+    mark.replaceChildren(glyph(GLYPH.done, 14));
+    return;
+  }
+
+  try {
+    const res = await fetch(docUrl(), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: next, base_version: baseVersion, page: pageId }),
+    });
+
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+
+    if (!res.ok) {
+      // 409 included. The offer is idempotent and the row stays tappable, so saying so and
+      // leaving it alone is the honest answer — re-reading here would fight the poll.
+      showHistoryError("it changed elsewhere · try again");
+      return;
+    }
+
+    const doc = await load();
+    if (doc) render(doc);
+
+    row.setAttribute("data-restored", "");
+    mark.replaceChildren(glyph(GLYPH.done, 14));
+  } catch {
+    showHistoryError("not added");
+  }
 }
 
 function paintHistory(days: HistoryDay[]): void {
@@ -2558,7 +2641,6 @@ function showHistoryError(message: string | null): void {
 function toggleWipe(row: HTMLElement, wipes: Map<number, Wipe>): void {
   const open = row.hasAttribute("data-open");
   row.querySelector(".lines")?.remove();
-  row.querySelector(".put-back")?.remove();
 
   if (open) {
     row.removeAttribute("data-open");
@@ -2574,69 +2656,6 @@ function toggleWipe(row: HTMLElement, wipes: Map<number, Wipe>): void {
   list.className = "lines";
   for (const raw of wipe.lines) list.appendChild(historyLine(raw));
   row.appendChild(list);
-
-  if (wipe.lines.length === 0) return;
-
-  const back = document.createElement("button");
-  back.type = "button";
-  back.className = "put-back";
-  back.textContent = `add ${wipe.lines.length} to the page`;
-  back.addEventListener("click", () => {
-    void putLinesBack(wipe, back);
-  });
-  row.appendChild(back);
-}
-
-/**
- * Put one wipe's lines back on the page.
- *
- * 🔴 `insertLines`, not `restoredBody`. A row from history carries lines and no anchors —
- * the snapshot that makes today's offer positional lives in `localStorage` and is about
- * the most recent wipe only — so these land at the end. **Content over position**, which
- * is the ruling `restoredBody` already makes when an anchor has vanished.
- *
- * An ordinary versioned write, like the recovery line's. Undo does not get to skip the
- * concurrency rules that protect the document.
- */
-async function putLinesBack(wipe: Wipe, control: HTMLButtonElement): Promise<void> {
-  await saveNow();
-  showHistoryError(null);
-
-  const next = insertLines(body, wipe.lines);
-  if (next === body) {
-    // Already there. Say so rather than reporting a write that did nothing.
-    control.disabled = true;
-    control.textContent = "already on the page";
-    return;
-  }
-
-  try {
-    const res = await fetch(docUrl(), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: next, base_version: baseVersion, page: pageId }),
-    });
-
-    if (res.status === 401) {
-      showEditor(false);
-      return;
-    }
-
-    if (!res.ok) {
-      // 409 included: the page moved under us. Re-reading here would fight the poll, and
-      // the offer is idempotent, so saying so and leaving it standing is the honest answer.
-      showHistoryError("it changed elsewhere · try again");
-      return;
-    }
-
-    const doc = await load();
-    if (doc) render(doc);
-
-    control.disabled = true;
-    control.textContent = `added ${wipe.lines.length}`;
-  } catch {
-    showHistoryError("not added");
-  }
 }
 
 async function loadHistory(): Promise<void> {

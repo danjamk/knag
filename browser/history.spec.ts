@@ -85,7 +85,7 @@ test.describe("history", () => {
     );
   });
 
-  test("🔴 a reset reads as a reset, and counts only what did not come back", async ({
+  test("🔴 a reset reads as a wipe, and counts only what did not come back", async ({
     knag,
   }) => {
     await knag.resetPages();
@@ -100,7 +100,7 @@ test.describe("history", () => {
     // Two lines came straight back, so one went. `wiped 3` would be true about the
     // operation and false about the outcome.
     await expect(knag.page.locator("[data-history-list] .wipe").first()).toContainText(
-      /reset\s*·\s*1 gone/,
+      /wiped page\s*·\s*1 gone/,
     );
   });
 
@@ -122,34 +122,57 @@ test.describe("history", () => {
     await expect(lines.first()).toContainText("done thing");
   });
 
-  test("🔴 puts a wipe's lines back on the page, at the end", async ({ knag }) => {
+  test("🔴 puts back one line, and only the one you tapped", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(PAGE);
     await wipeThePage(knag);
     await openHistory(knag);
 
     await knag.page.locator("[data-history-list] .head").first().click();
-    await knag.page.locator("[data-history-list] .put-back").click();
+    // The note, not the whole wipe. This is the pane's actual question — *I wrote
+    // something down and the page got wiped before I copied it out*.
+    await knag.page.locator('[data-history-list] [data-put-line]', { hasText: "Kingspan" }).click();
 
-    // Content over position: an older row carries lines and no anchors, so they land at
+    // Content over position: an older row carries lines and no anchors, so it lands at
     // the end. A line you went looking for is not less useful at the bottom.
-    await expect.poll(() => knag.document()).toBe(PAGE);
+    await expect.poll(() => knag.document()).toBe("Kingspan 70mm quoted 2wks");
   });
 
-  test("the offer withdraws once taken, so a second tap cannot double the page", async ({
-    knag,
-  }) => {
+  test("🔴 confirms in place, and a second tap cannot double the line", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(PAGE);
     await wipeThePage(knag);
     await openHistory(knag);
 
     await knag.page.locator("[data-history-list] .head").first().click();
-    const back = knag.page.locator("[data-history-list] .put-back");
-    await back.click();
+    const line = knag.page.locator('[data-history-list] [data-put-line]', { hasText: "Kingspan" });
+    await line.click();
 
-    await expect(back).toBeDisabled();
-    await expect.poll(() => knag.document()).toBe(PAGE);
+    // Dims with the tick that confirms a copy, rather than a toast — the record is a
+    // reading surface and the app should not talk over it.
+    await expect(knag.page.locator("[data-history-list] li[data-restored]")).toHaveCount(1);
+    await expect(line.locator("svg")).toBeVisible();
+
+    await line.click();
+    await expect.poll(() => knag.document()).toBe("Kingspan 70mm quoted 2wks");
+  });
+
+  test("each line is its own tap, so the rest stay behind", async ({ knag }) => {
+    await knag.resetPages();
+    await knag.seed(PAGE);
+    await wipeThePage(knag);
+    await openHistory(knag);
+
+    await knag.page.locator("[data-history-list] .head").first().click();
+    const lines = knag.page.locator("[data-history-list] [data-put-line]");
+    await lines.nth(0).click();
+    await lines.nth(2).click();
+
+    // Two of three, in the order the page held them — `insertLines` appends in the order
+    // it is given and the row is in pre-wipe order.
+    await expect
+      .poll(() => knag.document())
+      .toBe("Kingspan 70mm quoted 2wks\n- [ ] undone thing");
   });
 
   test("names the page it is the record of", async ({ knag }) => {
@@ -192,9 +215,16 @@ test.describe("history", () => {
   test("a page never wiped shows the seam and nothing else", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed("nothing has happened here");
+    // 🔴 A **new** page, not the default one. The default page has been wiped by every
+    // other test in the run — the suite shares one database and only pages and templates
+    // are reset between tests, so its history is thirteen rows deep by the time this runs.
+    // Asserting an empty record there is asserting the order the files happened to run in,
+    // which is the same mistake #185 documented and this test then made.
+    await knag.newPage("untouched");
 
     await openHistory(knag);
 
+    await expect(knag.page.locator("[data-history-page]")).toHaveText("untouched");
     await expect(knag.page.locator("[data-history-list] .wipe")).toHaveCount(0);
     await expect(knag.page.locator("[data-history-note]")).toContainText("ask your agent for older");
   });
