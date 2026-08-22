@@ -2481,20 +2481,99 @@ function toDays(history: HistoryResponse, now: Date): HistoryDay[] {
   return days;
 }
 
-/** A line the wipe took, drawn as it left — checkbox, strike and bytes intact (ADR-004). */
+/**
+ * A line the wipe took, drawn as it left — checkbox, strike and bytes intact (ADR-004) —
+ * and tappable, because putting one line back is the thing this pane is for.
+ *
+ * 🔴 **One tap, one line.** The pane's questions are singular — *I wrote a task down
+ * three days ago*, *the page got wiped before I copied that number out* — and answering
+ * them with an all-or-nothing restore hands back nine lines to get one. The whole-page
+ * path already exists and is the recovery line's `put the page back`, which is same-day
+ * and positional; this is the other half, and it is deliberately per-line.
+ */
 function historyLine(raw: string): HTMLLIElement {
   const li = document.createElement("li");
-  const done = /^\s*[-*+]\s+\[[xX]\]\s/.test(raw);
-  if (done) li.setAttribute("data-done", "");
+  if (/^\s*[-*+]\s+\[[xX]\]\s/.test(raw)) li.setAttribute("data-done", "");
+
+  const control = document.createElement("button");
+  control.type = "button";
+  control.className = "line";
+  control.setAttribute("data-put-line", "");
+  control.title = "add this line to the page";
 
   const text = document.createElement("span");
   text.className = "text";
   // 🔴 `textContent`, and never truncated. A line wraps here as it wraps on the page;
   // an ellipsis is the app editing the user's words to fit its own frame.
   text.textContent = raw;
-  li.appendChild(text);
 
+  const mark = document.createElement("span");
+  mark.className = "mark";
+  mark.setAttribute("aria-hidden", "true");
+
+  control.append(text, mark);
+  control.addEventListener("click", () => {
+    void putLineBack(raw, li, mark);
+  });
+
+  li.appendChild(control);
   return li;
+}
+
+/**
+ * Put one line back on the page.
+ *
+ * 🔴 Confirms **in place, with the tick that confirms a copy**, and dims. The record is
+ * a reading surface and a toast would be the app talking over it; the line going quiet is
+ * the same language a checked row already speaks, and it also answers the only question a
+ * second tap would ask.
+ *
+ * Idempotent by construction — `insertLines` will not add a line the page already holds as
+ * many times as the restore asked for — so a double tap is safe and the second one simply
+ * finds nothing to do.
+ */
+async function putLineBack(raw: string, row: HTMLElement, mark: HTMLElement): Promise<void> {
+  if (row.hasAttribute("data-restored")) return;
+  await saveNow();
+  showHistoryError(null);
+
+  const next = insertLines(body, [raw]);
+
+  // Already on the page. Marked the same way rather than reported as a failure: from the
+  // reader's side the line is there, which is what they asked for.
+  if (next === body) {
+    row.setAttribute("data-restored", "");
+    mark.replaceChildren(glyph(GLYPH.done, 14));
+    return;
+  }
+
+  try {
+    const res = await fetch(docUrl(), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: next, base_version: baseVersion, page: pageId }),
+    });
+
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+
+    if (!res.ok) {
+      // 409 included. The offer is idempotent and the row stays tappable, so saying so and
+      // leaving it alone is the honest answer — re-reading here would fight the poll.
+      showHistoryError("it changed elsewhere · try again");
+      return;
+    }
+
+    const doc = await load();
+    if (doc) render(doc);
+
+    row.setAttribute("data-restored", "");
+    mark.replaceChildren(glyph(GLYPH.done, 14));
+  } catch {
+    showHistoryError("not added");
+  }
 }
 
 function paintHistory(days: HistoryDay[]): void {
@@ -2562,7 +2641,6 @@ function showHistoryError(message: string | null): void {
 function toggleWipe(row: HTMLElement, wipes: Map<number, Wipe>): void {
   const open = row.hasAttribute("data-open");
   row.querySelector(".lines")?.remove();
-  row.querySelector(".put-back")?.remove();
 
   if (open) {
     row.removeAttribute("data-open");
@@ -2578,69 +2656,6 @@ function toggleWipe(row: HTMLElement, wipes: Map<number, Wipe>): void {
   list.className = "lines";
   for (const raw of wipe.lines) list.appendChild(historyLine(raw));
   row.appendChild(list);
-
-  if (wipe.lines.length === 0) return;
-
-  const back = document.createElement("button");
-  back.type = "button";
-  back.className = "put-back";
-  back.textContent = `add ${wipe.lines.length} to the page`;
-  back.addEventListener("click", () => {
-    void putLinesBack(wipe, back);
-  });
-  row.appendChild(back);
-}
-
-/**
- * Put one wipe's lines back on the page.
- *
- * 🔴 `insertLines`, not `restoredBody`. A row from history carries lines and no anchors —
- * the snapshot that makes today's offer positional lives in `localStorage` and is about
- * the most recent wipe only — so these land at the end. **Content over position**, which
- * is the ruling `restoredBody` already makes when an anchor has vanished.
- *
- * An ordinary versioned write, like the recovery line's. Undo does not get to skip the
- * concurrency rules that protect the document.
- */
-async function putLinesBack(wipe: Wipe, control: HTMLButtonElement): Promise<void> {
-  await saveNow();
-  showHistoryError(null);
-
-  const next = insertLines(body, wipe.lines);
-  if (next === body) {
-    // Already there. Say so rather than reporting a write that did nothing.
-    control.disabled = true;
-    control.textContent = "already on the page";
-    return;
-  }
-
-  try {
-    const res = await fetch(docUrl(), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: next, base_version: baseVersion, page: pageId }),
-    });
-
-    if (res.status === 401) {
-      showEditor(false);
-      return;
-    }
-
-    if (!res.ok) {
-      // 409 included: the page moved under us. Re-reading here would fight the poll, and
-      // the offer is idempotent, so saying so and leaving it standing is the honest answer.
-      showHistoryError("it changed elsewhere · try again");
-      return;
-    }
-
-    const doc = await load();
-    if (doc) render(doc);
-
-    control.disabled = true;
-    control.textContent = `added ${wipe.lines.length}`;
-  } catch {
-    showHistoryError("not added");
-  }
 }
 
 async function loadHistory(): Promise<void> {

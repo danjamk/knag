@@ -34,9 +34,15 @@ summarises the phase rather than pretending it was written as it happened.
   rows with. The moment it lists edits it is a revision log, and a revision log of a page
   you rewrite all day is a corpus; the moment it has a field, the corpus has a search box.
 
-  Restoring from an older row uses `insertLines`, so those lines land at the end — they
-  carry no anchors, and content beats position. Today's wipe still restores in place
-  through the recovery line.
+  🔴 **Restoring is per line.** Tap the line you want; it dims and takes the tick that
+  confirms a copy. The pane's questions are singular — *I wrote a task down three days ago*,
+  *the page got wiped before I copied that number out* — and an all-or-nothing restore hands
+  back nine lines to get one. The whole-page path is the recovery line's `put the page back`,
+  which is same-day and positional; this is the other half.
+
+  A restored line lands at the end: an older row carries lines and no anchors, so content
+  beats position, which is the ruling `restoredBody` already makes for a vanished anchor.
+  Idempotent, so a second tap finds nothing to do.
 
 ### Changed
 

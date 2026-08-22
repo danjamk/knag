@@ -146,9 +146,12 @@ test.describe("pages, templates and history together", () => {
 
     await openHistory(knag);
     await knag.page.locator("[data-history-list] .head").first().click();
-    await knag.page.locator("[data-history-list] .put-back").click();
+    // One line, tapped — the pane restores per line since 2026-08-22.
+    await knag.page
+      .locator("[data-history-list] [data-put-line]", { hasText: "birthday candles" })
+      .click();
 
-    await expect.poll(() => knag.documentOn("shopping")).toBe(SHOPPED);
+    await expect.poll(() => knag.documentOn("shopping")).toBe("- [ ] birthday candles");
 
     // And today is untouched. A whole-page write to the wrong page destroys a document
     // while preserving every byte of it (#153). Asserted through the API rather than by
