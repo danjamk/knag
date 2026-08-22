@@ -1460,10 +1460,6 @@
          be the third thing that went wrong. */
       .manage button[data-delete-page] { color: var(--amber); }
 
-      /* A ledge item carrying only a word, because its glyph has not been designed yet.
-         Centred the same way, so it sits on the row rather than beside it. */
-      .ledge-item.ledge-wordy { gap: 0; }
-
       /* History — the record, and the quietest thing in the product.
 
          🔴 Two voices, stacked, and no element is ever both. The machine gets the frame:
@@ -1847,13 +1843,16 @@
             <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M2.5 4.5 H13.5"/><path d="M2.5 8 H13.5"/><path d="M2.5 11.5 H13.5"/><rect x="9" y="3" width="3" height="3" fill="currentColor" stroke="none"/><rect x="4" y="6.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="7.5" y="10" width="3" height="3" fill="currentColor" stroke="none"/></svg>
             <span>settings</span>
           </button>
-          <!-- 🔴 Text-only, and that is a gap rather than a decision. The design bundle
-               specifies the pane and says it is reached from the ledge, but ships no icon
-               for it — and icons are not ours to invent (they come from the design
-               session). The whole-page wipe below is already text-only, so this is not
-               without precedent in the same bar. Ask for the glyph and give this the same
-               `.ledge-item` treatment as copy, arrange and settings. -->
-          <button type="button" class="ledge-item ledge-wordy" data-history-open title="history">
+          <!-- The block cursor out of the mark, and behind it two marks receding left —
+               the direction a wiped row leaves in. It is the only glyph in the ledge with
+               a solid vertical block, and the only one whose weight sits right of centre,
+               which is what keeps it apart from copy, arrange and settings at 18px.
+
+               🔴 The two marks are the same size on purpose. A taper would draw a bar
+               chart, and a chart implies there is something here to query — which is the
+               one thing this pane must never suggest. -->
+          <button type="button" class="ledge-item" data-history-open title="history">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><rect x="10" y="3.5" width="3.5" height="9" fill="currentColor" stroke="none"/><path d="M7.5 7.25v1.5"/><path d="M4.5 7.25v1.5"/></svg>
             <span>history</span>
           </button>
           <span class="ledge-sep" aria-hidden="true"></span>

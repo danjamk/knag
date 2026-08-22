@@ -44,6 +44,18 @@ summarises the phase rather than pretending it was written as it happened.
   beats position, which is the ruling `restoredBody` already makes for a vanished anchor.
   Idempotent, so a second tap finds nothing to do.
 
+- **The history ledge item has a glyph** (#91). It shipped as a bare word — the pane was
+  specified but no icon came with it, and icons are not ours to invent. It has one now:
+  the block cursor out of the mark, with two marks receding left, the direction a wiped
+  row leaves in. It reads as *things stood here on earlier days and the record is still
+  on the board.*
+
+  🔴 The two marks are the same size on purpose. A taper would draw a bar chart, and a
+  chart implies there is something here to query — the one thing this pane must never
+  suggest. The four shapes it is deliberately **not** are recorded in
+  `docs/design/history-glyph.md`, because each has an argument behind it and all four are
+  the obvious thing to reach for.
+
 ### Changed
 
 - 🔴 **The verb is `wipe` again, everywhere.** 1.1.1 made the whole-page control read
