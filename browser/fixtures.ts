@@ -94,9 +94,28 @@ export class Knag {
   // left it. That trap belongs to the platform, not to the row model, and
   // `caretAtEndOfLine` below avoids it the same way, by never pressing `Home`.
 
-  /** What the server actually holds — the only source of truth worth asserting on. */
+  /**
+   * What the server holds for the **default page** — the source of truth worth asserting
+   * on, for that page.
+   *
+   * 🔴 It reads `/api/doc` with no `page`, which is the default page by definition and
+   * **not the page the browser is showing**. That is right for asserting the seeded
+   * document was left alone, which is what every caller wants it for; it is wrong, and
+   * quietly wrong, for asserting what a *second* page holds. Use `documentOn` for that.
+   *
+   * The name predates pages and the trap is the name: "the document" stopped being a thing
+   * in 1.1.0.
+   */
   async document(): Promise<string> {
     const res = await this.page.request.get("/api/doc", {
+      headers: { Authorization: `Bearer ${TEST_BEARER}` },
+    });
+    return ((await res.json()) as { body: string }).body;
+  }
+
+  /** What the server holds for a **named** page. */
+  async documentOn(name: string): Promise<string> {
+    const res = await this.page.request.get(`/api/doc?page=${await this.pageId(name)}`, {
       headers: { Authorization: `Bearer ${TEST_BEARER}` },
     });
     return ((await res.json()) as { body: string }).body;
@@ -186,12 +205,53 @@ export class Knag {
    * test fails with the previous test's groceries in it. `resetPages` clears it; call it
    * in an `afterEach`.
    */
-  async saveTemplate(): Promise<void> {
-    const res = await this.page.request.patch("/api/pages/1", {
+  async saveTemplate(name = "today"): Promise<void> {
+    const res = await this.page.request.patch(`/api/pages/${await this.pageId(name)}`, {
       headers: { Authorization: `Bearer ${TEST_BEARER}`, "Content-Type": "application/json" },
       data: { template: "save" },
     });
     expect(res.ok()).toBe(true);
+  }
+
+  /**
+   * A page's id, by name.
+   *
+   * 🔴 Never a literal. Page ids autoincrement and `resetPages` **retires** rather than
+   * removes, so the second page of the third run is id 7 — a test that hardcodes `2` passes
+   * on a fresh database and fails on a real one, which is the same trap the backfill
+   * assertion in `pages-migration.test.ts` was built to avoid.
+   */
+  async pageId(name: string): Promise<number> {
+    const res = await this.page.request.get("/api/pages", {
+      headers: { Authorization: `Bearer ${TEST_BEARER}` },
+    });
+    const { pages } = (await res.json()) as { pages: Array<{ id: number; name: string }> };
+    const found = pages.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
+    expect(found, `no page called ${name}`).toBeTruthy();
+    return found?.id ?? 1;
+  }
+
+  /**
+   * Replace a **named page's** document through the API, without reloading.
+   *
+   * 🔴 `seed` cannot do this: it PUTs `/api/doc` with no `page`, which is the *default*
+   * page by definition, and it reloads. Setting up a second page's body needs the id and
+   * needs the tab to stay where it is.
+   */
+  async setPage(name: string, body: string): Promise<void> {
+    const headers = { Authorization: `Bearer ${TEST_BEARER}`, "Content-Type": "application/json" };
+    const pageId = await this.pageId(name);
+    const current = await this.page.request.get(`/api/doc?page=${pageId}`, { headers });
+    const { version } = (await current.json()) as { version: number };
+
+    const wrote = await this.page.request.put(`/api/doc?page=${pageId}`, {
+      headers,
+      data: { body, base_version: version, page: pageId },
+    });
+    expect(wrote.ok()).toBe(true);
+
+    await this.page.reload();
+    await expect(this.page.locator("[data-editor]")).toBeVisible();
   }
 
   /** Tier 2 of the bar (#139). */
