@@ -48,8 +48,12 @@ describe("byte preservation depends on these (spec §8)", () => {
     });
   }
 
-  it("has exactly one textarea — the document is one field, not a form", () => {
-    expect(shell().match(/<textarea/g)).toHaveLength(1);
+  it("has exactly one textarea for the document — one field, not a form", () => {
+    // The agent's instructions (#190) are the other textarea in the shell, and they are
+    // not the document: no byte rule binds them, and they live in a settings pane. Every
+    // textarea that is not that one is the document, and there is one of those.
+    expect(shell().match(/<textarea(?![^>]*data-agent-text)/g)).toHaveLength(1);
+    expect(shell().match(/<textarea[^>]*data-agent-text/g)).toHaveLength(1);
   });
 });
 

@@ -1293,13 +1293,18 @@
         color: var(--amber-field-ink);
       }
 
-      /* 🔴 The one row that is a destination rather than a choice, and it is marked as
-         one — a count and the sheet's **only** chevron. Devices is the first thing in the
-         product whose length the design does not control, and a modal has no navigation
-         and no scroll that means anything, so the unbounded list is a screen and this
-         points at it. */
-      .pref[data-devices-open] { cursor: pointer; }
-      .pref[data-devices-open]:active { background: var(--press-tint); }
+      /* 🔴 A row that is a destination rather than a choice, and it is marked as one — a
+         value and a chevron. Devices is the first thing in the product whose length the
+         design does not control, and a modal has no navigation and no scroll that means
+         anything, so the unbounded list is a screen and this points at it.
+
+         🔴 Two of them since 2026-08-25 (#190), both in `you`. §7e said "the only
+         chevron", and what it loses is the clause, not the rule: a chevron means a
+         destination and destinations are rare. The agent's instructions are 4000
+         characters of a person's writing, which is text-shaped the way the device list
+         is list-shaped — a row can honestly hold `set` or `not set` and nothing more. */
+      .pref[data-devices-open], .pref[data-agent-open] { cursor: pointer; }
+      .pref[data-devices-open]:active, .pref[data-agent-open]:active { background: var(--press-tint); }
       .pref .count {
         font-family: var(--font-mono);
         font-size: var(--size-machine);
@@ -1387,6 +1392,49 @@
            Capped so that fifteen devices cannot push the back control off the top. */
         max-height: min(72vh, 560px);
       }
+      /* The agent's instructions (#190) — the second pane reached from `you`, and the
+         only surface in the sheet a person *writes* on. */
+      [data-agent-pane] {
+        display: flex;
+        flex-direction: column;
+        max-height: min(72vh, 560px);
+      }
+      /* 🔴 The body face at 16px, not mono. A person wrote this, and the two-voice rule
+         puts the machine's voice only on the status line below it and on the heading
+         the server quotes it under. 16 is also the iOS floor: below it the viewport
+         zooms on focus and never comes back, the same rule the document and the login
+         field already obey. First thing under the head, so the keyboard never covers
+         it; no save button, because the product has one save model — it saves on blur
+         and on back — and a button here would invent a second. */
+      .agent-text {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 9em;
+        padding: var(--space-3);
+        border: var(--hairline-width) solid var(--hairline);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: var(--size-control);
+        line-height: 1.45;
+        resize: vertical;
+      }
+      .agent-text:focus { outline: none; border-color: var(--dim); }
+      /* `saving` · `saved` · `not saved` — the bar's words, in the bar's voice. The count
+         is absent until 3600, where it turns amber and counts down: a character count on
+         an empty field is the app asking to be filled. */
+      .agent-status {
+        margin: var(--space-3) 0 0;
+        min-height: 1.45em;
+        font-family: var(--font-mono);
+        font-size: var(--size-machine);
+        letter-spacing: var(--track-machine);
+        line-height: 1.45;
+        color: var(--dim);
+      }
+      .agent-status [data-agent-count] { color: var(--amber); }
       .pane-head {
         flex: none;
         display: flex;
@@ -1476,6 +1524,20 @@
         align-items: center;
         gap: var(--space-2);
       }
+      /* 🔴 Arrange's grip, on a different list (#195, ruled 2026-08-25). Long-press dies on
+         the text field — a long press inside an input is the platform's selection gesture
+         — and up/down controls cost two 44px targets a row, leaving the name ~110px of a
+         390px phone. A grip is the one affordance that does not compete for the touch it
+         needs: a separate 36px target with a handle SortableJS already binds this way.
+         Same glyph, same size, dim at rest and ink under the finger — it is the same verb,
+         and a second glyph would imply a second kind of reordering. The name field
+         absorbs the 40px; if the row proves too tight, the control to reconsider is
+         `template`, not the grip and not the name. */
+      .manage .grip {
+        width: var(--target-arrange);
+        height: var(--target-arrange);
+      }
+      .manage li.dragging .grip { color: var(--ink); }
       .manage input {
         flex: 1 1 auto;
         min-width: 0;
@@ -2020,6 +2082,19 @@
           <button type="button" data-logout>log out</button>
         </div>
 
+        <!-- 🔴 The operator's instructions (#190): account-wide, held by the server,
+             appended to every agent conversation under `The operator adds:`. In `you`
+             and not in manage-pages, because a global setting reached through a pane
+             about pages reads as per-page — the one thing it must not say, since the
+             agent acts on it across all nine. #194 drew the `this device` boundary for
+             exactly this arrival; the far side of it is where a server-held setting
+             belongs. -->
+        <div class="pref" data-agent-open>
+          <span class="pref-label">agent</span>
+          <span class="count" data-agent-state>&#8212;</span>
+          <span class="chev" aria-hidden="true">&#8250;</span>
+        </div>
+
         <div class="pref" data-devices-open>
           <span class="pref-label">devices</span>
           <span class="count" data-devices-count>&#8212;</span>
@@ -2072,6 +2147,28 @@
 
         <div class="pane-actions">
           <button type="button" data-revoke-others>sign out everywhere else</button>
+        </div>
+      </div>
+
+      <!-- The agent's instructions (#190). Textarea first, so the keyboard never covers
+           it; the status line speaks the bar's words; the note says where the text goes.
+           No save button — it saves on blur and on back. -->
+      <div data-agent-pane hidden>
+        <div class="sheet-head pane-head">
+          <button type="button" class="pane-back" data-agent-back title="back" aria-label="back">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M10 3 L5 8 L10 13"/></svg>
+          </button>
+          <span>agent</span>
+        </div>
+
+        <div class="pane-body">
+          <textarea class="agent-text" data-agent-text rows="7" spellcheck="false" aria-label="instructions for the agent"></textarea>
+          <p class="agent-status"><span data-agent-status></span> <span data-agent-count hidden></span></p>
+          <p class="note">
+            Every agent conversation on this account starts with this, under the heading
+            <em>The operator adds:</em> &#8212; page purposes, house style, standing rules.
+            4000 characters.
+          </p>
         </div>
       </div>
 

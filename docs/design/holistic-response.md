@@ -392,6 +392,16 @@ right, because this is the one screen where someone is about to add to it.
 per-page verbs live, so shipping the selector without it means new · rename ·
 delete land in the sheet first and move later.
 
+🔴 **Amended 2026-08-25 (#195): the rows take Arrange's grip.** Order became a
+server-side fact in 1.4.0 and needed a control on rows that already carry a text field.
+Long-press is the platform's selection gesture inside an input; up/down costs two 44px
+targets a row and leaves the name ~110px of a 390px phone. The grip is the one affordance
+that does not compete for the touch it needs — `⠿` at `--target-arrange`, dim at rest and
+ink under the finger, the same handle SortableJS already binds in Arrange
+([phase-8-response.md §5](phase-8-response.md#5--195--the-drag-affordance)). Same verb on
+a different list; a second glyph would imply a second kind of reordering. The order
+commits on drop through the route; a refusal goes to the pane's error line.
+
 ### Login and profile — #122
 
 **The surface should not change shape at all:** one field, one optional device
@@ -470,6 +480,17 @@ setting is currently set to. Three or fewer options each, so they fit the row at
 
 `devices` is the one row that is a destination rather than a choice, and it is
 marked as one — a count and a chevron, **the only chevron in the sheet.**
+
+🔴 **Amended 2026-08-25 (#190): there are two, and both are in `you`.** The operator's
+instructions — 4000 characters the server holds and appends to every agent conversation —
+needed a surface, and a textarea collided with this section twice: a preference has a
+current value, and devices was the only chevron. The ruling
+([phase-8-response.md §4](phase-8-response.md#4--190--the-operators-instructions)) is an
+`agent` row under `you`, showing `set` or `not set`, opening a pane whose textarea is the
+first thing under the head and saves on blur and on back with no button. What §7e loses
+is the clause, not the rule: a chevron means a destination and destinations are rare.
+Not manage-pages, because a global setting reached through a pane about pages reads as
+per-page — the one thing it must not say.
 
 The build line stays at the bottom, unlabelled, and gains one clause:
 `carbon · 41 days`. How far back the record goes is the one fact about knag a
