@@ -15,6 +15,13 @@ summarises the phase rather than pretending it was written as it happened.
 
 ### Fixed
 
+- 🔴 **Two quick per-line restores no longer race, and the second no longer blames
+  another device** (#205). A tap on a history line during the previous tap's round trip
+  computed from the pre-tap document and sent a version the server had already moved
+  past, so it got a 409 and the pane said *it changed elsewhere · try again* about the
+  reader's own last tap — the line was dropped and had to be tapped again. Restores now
+  run one at a time in tap order, each from the document the one before it left. The 409
+  branch stays for what it was written for: another device really did save.
 - 🔴 **The wipe's "fades before it collapses" tests no longer sample on the runner's
   clock** (#201). Both `wipe-editor.spec.ts` and `wipe-motion.spec.ts` read `max-height`
   once from outside the page after `.cm-wiping` appeared, inside a window the fade's

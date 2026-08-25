@@ -2513,7 +2513,7 @@ function historyLine(raw: string): HTMLLIElement {
 
   control.append(text, mark);
   control.addEventListener("click", () => {
-    void putLineBack(raw, li, mark);
+    queueLineBack(raw, li, mark);
   });
 
   li.appendChild(control);
@@ -2521,7 +2521,33 @@ function historyLine(raw: string): HTMLLIElement {
 }
 
 /**
- * Put one line back on the page.
+ * Restores run one at a time, in tap order (#205).
+ *
+ * 🔴 Two quick taps used to race. `putLineBack` computes from `body` and sends
+ * `baseVersion`, and neither moves until its own `load()` has landed — so a second tap
+ * arriving inside the first one's round trip computed from the pre-first-tap document,
+ * carried the version the server had already moved past, and got a 409. The pane then
+ * said *it changed elsewhere* about the reader's own previous tap and dropped the line.
+ * Nothing was lost; the message was wrong and the second tap had to be repeated.
+ *
+ * A promise chain rather than a flag: a tap during an in-flight restore *waits* and then
+ * runs against the document that restore left, which is what makes the idempotence
+ * argument below hold — it needs the taps in order, not merely one at a time. The chain
+ * never carries a rejection forward, or one network failure would silence every tap
+ * after it.
+ */
+let restoreQueue: Promise<void> = Promise.resolve();
+
+function queueLineBack(raw: string, row: HTMLElement, mark: HTMLElement): void {
+  restoreQueue = restoreQueue
+    .then(() => putLineBack(raw, row, mark))
+    .catch(() => showHistoryError("not added"));
+}
+
+/**
+ * Put one line back on the page. Call `queueLineBack`, never this directly — it is the
+ * unserialised half, and the 409 branch below assumes the only way to reach it is another
+ * device's save.
  *
  * 🔴 Confirms **in place, with the tick that confirms a copy**, and dims. The record is
  * a reading surface and a toast would be the app talking over it; the line going quiet is

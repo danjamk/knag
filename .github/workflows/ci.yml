@@ -90,8 +90,8 @@ jobs:
   # named after a matrix entry blocks every docs-only PR forever, because a skipped job
   # never reports. `browser-ok` runs `always()`, passes when the shards passed *or* were
   # skipped for a docs-only diff, and fails otherwise — so it is the one name to put in
-  # the ruleset. As of 2026-08-25 the ruleset requires `check` only; making `browser-ok`
-  # required is a settings change and the recommended one.
+  # the ruleset — and it is: `protect-default` has required `check` and `browser-ok`
+  # since 2026-08-25.
 
   # Classifies the diff so the shards can be skipped for docs. Asked of the API rather
   # than `git diff`, because a PR checkout is shallow and the base SHA is not in it.
