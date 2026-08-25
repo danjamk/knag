@@ -13,6 +13,11 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-08-25
+
+Two fixes from a few days of use, no design input: the connector gets the mark, and
+Settings says which preferences stay on this device. The first half of Phase 8.
+
 ### Fixed
 
 - 🔴 **Claude's connector list showed danjamkuhn.com's favicon next to knag** (#191).
@@ -1723,7 +1728,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/danjamk/knag/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/danjamk/knag/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/danjamk/knag/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/danjamk/knag/compare/v1.1.2...v1.1.3
