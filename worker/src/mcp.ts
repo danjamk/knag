@@ -8,10 +8,12 @@ import { loadHistory, reportingZone, resolveRange } from "./history.js";
 import {
   type PageRow,
   type WipeScope,
+  AGENT_INSTRUCTIONS,
   findPageByName,
   listPages,
   pageTemplate,
   readDefaultPage,
+  readSetting,
   wipe,
   writePage,
 } from "./store.js";
@@ -138,7 +140,14 @@ export async function handleMcp(
   // response into another's, and the SDK added a guard against exactly this (mcp.md
   // §2). knag has one operator today, which makes the blast radius small and the habit
   // no less wrong — §17's multi-user branch would turn it into an incident.
-  const server = buildServer(env, new URL(request.url).origin);
+  // The operator's text is read per request too (#190): instructions are handed over at
+  // `initialize`, so an edit in Settings reaches the next session that connects, and
+  // never a stale copy hoisted at module scope.
+  const server = buildServer(
+    env,
+    new URL(request.url).origin,
+    await readSetting(env, AGENT_INSTRUCTIONS.key),
+  );
   const transport = new WebStandardStreamableHTTPServerTransport({
     // Stateless, and **omitting `sessionIdGenerator` is how you say so** — the SDK
     // treats its absence as "session management disabled". The documented spelling is
@@ -217,7 +226,22 @@ function serverIcons(origin: string) {
   ];
 }
 
-function buildServer(env: Env, origin: string): McpServer {
+/**
+ * The heading the operator's own text sits under (#190). Fixed, so the model can tell
+ * the product's contract from the operator's preferences — and so a test can find it.
+ */
+const OPERATOR_HEADING = "The operator adds:";
+
+/**
+ * The contract, then the operator's text if there is any. Blank appends nothing at all,
+ * not an empty heading.
+ */
+function withOperator(operator: string | null): string {
+  const text = operator?.trim() ?? "";
+  return text ? `${INSTRUCTIONS}\n\n${OPERATOR_HEADING}\n\n${text}` : INSTRUCTIONS;
+}
+
+function buildServer(env: Env, origin: string, operator: string | null): McpServer {
   const server = new McpServer(
     {
       name: "knag",
@@ -225,7 +249,7 @@ function buildServer(env: Env, origin: string): McpServer {
       version: env.KNAG_VERSION || "0.0.0-dev",
       icons: serverIcons(origin),
     },
-    { instructions: INSTRUCTIONS },
+    { instructions: withOperator(operator) },
   );
 
   registerRead(server, env);

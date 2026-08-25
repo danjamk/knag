@@ -1,7 +1,13 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SESSION_COOKIE } from "../src/auth.js";
-import { DEFAULT_PAGE_ID, readDefaultPage, writePage } from "../src/store.js";
+import {
+  AGENT_INSTRUCTIONS,
+  DEFAULT_PAGE_ID,
+  readDefaultPage,
+  writePage,
+  writeSetting,
+} from "../src/store.js";
 
 /**
  * The MCP server (spec §10, §14.6), driven over real JSON-RPC through `SELF.fetch`.
@@ -211,6 +217,38 @@ describe("initialize", () => {
     expect(instructions).toContain("wiped 6");
     expect(instructions).toContain("exclamation marks");
     expect(instructions).toContain("Successfully cleared 6 completed items!");
+  });
+
+  it("🔴 appends the operator's text under a fixed heading, and nothing when blank", async () => {
+    // #190. What the contract cannot know — what each page is for, the house style,
+    // standing rules — is the operator's to write, and it rides in the same string so
+    // every client sees it. Read per request: an edit reaches the next `initialize`.
+    const init = {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "test", version: "1.0.0" },
+    };
+    const instructionsOf = (r: JsonRpc) =>
+      (r.result as { instructions?: string }).instructions ?? "";
+
+    // Blank: the contract and nothing else — no empty heading.
+    expect(instructionsOf(await rpc("initialize", init))).not.toContain("The operator adds:");
+
+    await writeSetting(
+      env,
+      AGENT_INSTRUCTIONS.key,
+      "`today` is the daily list; `shopping` is groceries. Never add to today unasked.",
+    );
+    const instructions = instructionsOf(await rpc("initialize", init));
+
+    // After the contract, not before it or inside it.
+    const heading = instructions.indexOf("The operator adds:");
+    expect(heading).toBeGreaterThan(instructions.indexOf("REPORT THE DIFF"));
+    expect(instructions.slice(heading)).toContain("Never add to today unasked.");
+
+    // Whitespace-only is blank.
+    await writeSetting(env, AGENT_INSTRUCTIONS.key, "   \n  ");
+    expect(instructionsOf(await rpc("initialize", init))).not.toContain("The operator adds:");
   });
 
   it("🔴 advertises the mark at an absolute URL on this origin", async () => {
