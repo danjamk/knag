@@ -174,6 +174,43 @@ if [ ${#SPECS[@]} -eq 0 ]; then
   exit 1
 fi
 
+# 🔴 Sharded across runners in CI (#202). `KNAG_SHARD=n/m` keeps every m-th file by
+# sorted index, starting at n — round-robin, so a file changes shard only when another
+# is added ahead of it, never because a slow one got rebalanced by hand. Unset locally:
+# one machine, every file, exactly as before.
+#
+# Each shard is still one server per file. The parallelism is across VMs and never
+# inside one: #107 is per-server and traffic-shaped, and the probe below reads one
+# server at a time. Four lanes on a 4-core box sharing one `.wrangler/state` would be
+# a new investigation, not a faster version of this one.
+#
+# The suite was ~10 minutes serial, of which ~2.5 was twenty server starts and the rest
+# deliberate waiting (poll tiers, wipe timings). Four shards land near three.
+if [ -n "${KNAG_SHARD:-}" ]; then
+  case "$KNAG_SHARD" in
+    [0-9]*/[0-9]*) ;;
+    *) echo "✗ KNAG_SHARD must be n/m (e.g. 2/4), got '${KNAG_SHARD}'" >&2; exit 1 ;;
+  esac
+  SHARD_N="${KNAG_SHARD%/*}"
+  SHARD_M="${KNAG_SHARD#*/}"
+  if [ "$SHARD_N" -lt 1 ] || [ "$SHARD_N" -gt "$SHARD_M" ]; then
+    echo "✗ KNAG_SHARD ${KNAG_SHARD} is out of range" >&2
+    exit 1
+  fi
+  MINE=()
+  for i in "${!SPECS[@]}"; do
+    if [ $(( i % SHARD_M )) -eq $(( SHARD_N - 1 )) ]; then
+      MINE+=("${SPECS[$i]}")
+    fi
+  done
+  # The `+` expansion keeps `set -u` quiet on an empty array under bash 3.2 (macOS).
+  SPECS=("${MINE[@]+"${MINE[@]}"}")
+  if [ ${#SPECS[@]} -eq 0 ]; then
+    echo "✓ shard ${KNAG_SHARD} holds no spec files — nothing to run"
+    exit 0
+  fi
+fi
+
 # 🔴 Cleared before the run, not between files. `observability.enabled` is true in
 # worker/wrangler.jsonc, so every `wrangler dev` writes request traces here and nothing
 # ever removes them: one suite adds about 8MB and it had reached 66MB on the machine
@@ -191,7 +228,8 @@ if [ -d "$TRACE_STORE" ]; then
   rm -rf "$TRACE_STORE"
 fi
 
-echo "Running ${#SPECS[@]} spec file(s), each against its own dev server."
+echo "Running ${#SPECS[@]} spec file(s)${KNAG_SHARD:+ — shard ${KNAG_SHARD}}, each against its own dev server."
+printf '    %s\n' "${SPECS[@]}"
 echo ""
 
 probe "baseline"
