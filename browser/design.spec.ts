@@ -202,6 +202,36 @@ test.describe("the checkbox", () => {
       .first();
     expect(Number.parseFloat(await css(unchecked, "height", "::after")) || 0).toBe(0);
   });
+
+  test("🔴 the target is 44px and reaches the edge, and the ink did not move", async ({
+    knag,
+  }) => {
+    // An 18px box was the whole hit area, in a product whose own rule is 44 (#193). The
+    // span around it is the target; the box is the ink. Two things have to hold at once:
+    // a tap well outside the ink toggles, and nothing on the line moved to pay for it.
+    await knag.seed(["plain", "- [ ] tap me", ""].join("\n"));
+    await knag.useEditor();
+
+    const lines = knag.page.locator("[data-surface] .cm-line");
+    const plain = await lines.nth(0).boundingBox();
+    const line = lines.nth(1);
+    const row = await line.boundingBox();
+    const ink = await line.locator("input.cm-box").boundingBox();
+    if (!plain || !row || !ink) throw new Error("no geometry");
+
+    // The ink: 18px, at --row-pad-left from the line's edge, on a line no taller than a
+    // plain one. If the target had widened the flow, either number moves.
+    expect(ink.width).toBe(18);
+    expect(ink.x - row.x).toBe(14);
+    expect(row.height).toBe(plain.height);
+
+    // The target: 12px left of the ink is inside the row padding, 20px below its top is
+    // past the ink's bottom edge — neither point is on the box, both are on the target.
+    await knag.page.mouse.click(ink.x - 12, ink.y + 20);
+    await expect(line).toHaveClass(/cm-done/);
+    // Polled: the save behind the toggle is debounced, and the byte is the product.
+    await expect.poll(() => knag.document()).toBe(["plain", "- [x] tap me", ""].join("\n"));
+  });
 });
 
 test.describe("the wipe, the only animation in the product", () => {

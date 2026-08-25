@@ -231,6 +231,9 @@
         --target-arrange: 36px; /* grip and delete in Arrange, where they are the aim */
         --arrange-row-min: 44px;
         --checkbox-size: 18px;
+        /* The touch target around the 18px box in the editing surface (#193): 44 tall,
+           and wide enough to reach the screen edge. Target, not ink — see above. */
+        --checkbox-target: 44px;
 
         --radius-sm: 3px; /* controls, checkboxes */
         --radius-md: 6px; /* fields, dialog buttons */
@@ -631,13 +634,32 @@
          `accent-color` can only tint a control the platform still owns, so the fix is
          to stop letting it own one. Every declaration below mirrors `li.checkbox
          input[type="checkbox"]`, deliberately. */
+      /* 🔴 The target around the box (#193). The span is 44px tall and spans the row
+         padding, the box and the gap after it; negative margins pull its margin box back
+         to exactly the 18px the box occupied, so the ink and the text after it do not
+         move by a pixel — the test asserts the box still sits at --row-pad-left and a
+         checkbox line is no taller than a plain one. Neighbouring rows' targets overlap
+         by a few px at 34px row pitch, which is how every dense list on iOS works. */
+      .cm-box-hit {
+        display: inline-flex;
+        align-items: center;
+        box-sizing: border-box;
+        width: calc(var(--row-pad-left) + var(--checkbox-size) + var(--row-gap));
+        height: var(--checkbox-target);
+        margin: calc((var(--checkbox-size) - var(--checkbox-target)) / 2) 0
+          calc((var(--checkbox-size) - var(--checkbox-target)) / 2)
+          calc(-1 * var(--row-pad-left));
+        padding: 0 var(--row-gap) 0 var(--row-pad-left);
+        vertical-align: -3px;
+        cursor: pointer;
+      }
       input.cm-box {
         appearance: none;
         -webkit-appearance: none;
         flex: none;
         width: var(--checkbox-size);
         height: var(--checkbox-size);
-        margin: 0 var(--row-gap) 0 0;
+        margin: 0;
         padding: 0;
         border: var(--hairline-width) solid var(--checkbox-rest);
         border-radius: var(--radius-sm);
