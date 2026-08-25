@@ -13,6 +13,11 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-08-25
+
+One fix, found by the production gate rather than a person: the manage-pages drag no
+longer goes through the browser's native drag-and-drop on a mouse.
+
 ### Fixed
 
 - **The manage-pages drag is pointer-driven on every input** (#195). With a mouse,
@@ -1921,7 +1926,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/danjamk/knag/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/danjamk/knag/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/danjamk/knag/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/danjamk/knag/compare/v1.3.0...v1.4.0
