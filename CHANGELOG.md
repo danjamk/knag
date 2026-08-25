@@ -13,6 +13,12 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-08-25
+
+The phone pass. The ledge opens the way the chevron points, the checkbox is as easy to
+hit as the rule says, dev says its own name, and CI takes four minutes instead of ten.
+Phase 8b, less the two numbers and one mark still to come from the design session.
+
 ### Changed
 
 - **The browser suite is sharded four ways in CI, and skipped when only docs changed**
@@ -1799,7 +1805,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/danjamk/knag/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/danjamk/knag/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/danjamk/knag/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/danjamk/knag/compare/v1.1.3...v1.1.4
