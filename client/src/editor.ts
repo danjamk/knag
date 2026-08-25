@@ -189,17 +189,29 @@ class Box extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
+    // 🔴 The target is the span; the ink is the input (#193). An 18px box was the whole
+    // hit area, in a product whose own rule is 44 — "a 44px target is 44px of touchable
+    // area; it is not 44px of ink" — and on a phone it missed often enough to be a habit.
+    // The span is sized in CSS to the target and hangs into the row padding with negative
+    // margins, so neither the box nor the text after it moves.
+    const hit = document.createElement("span");
+    hit.className = "cm-box-hit";
+
     const input = document.createElement("input");
     input.type = "checkbox";
     input.className = "cm-box";
     input.checked = this.checked;
     input.setAttribute("aria-label", this.checked ? "completed" : "not completed");
+    hit.append(input);
 
     // 🔴 `pointerdown`, not `click`. With the editor focused and the keyboard up, iOS
     // routes the first touch to caret placement and the synthesized click never reaches
     // the widget — so the box goes dead exactly while you are typing, which is the one
     // moment ADR-003's premise depends on it. Found on a phone, not by a test.
-    input.addEventListener("pointerdown", (event) => {
+    //
+    // On the span rather than the input, so a touch anywhere in the target toggles; the
+    // input's own pointerdown bubbles here.
+    hit.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (view.state.readOnly) return;
@@ -207,8 +219,8 @@ class Box extends WidgetType {
       const next = this.checked ? " " : this.box === "X" ? "X" : "x";
       view.dispatch({ changes: { from: this.at, to: this.at + 1, insert: next } });
     });
-    input.addEventListener("click", (event) => event.preventDefault());
-    return input;
+    hit.addEventListener("click", (event) => event.preventDefault());
+    return hit;
   }
 
   override ignoreEvent(): boolean {
