@@ -28,6 +28,17 @@ summarises the phase rather than pretending it was written as it happened.
   the client swaps, the shell the service worker precaches — and a test now reads all
   three against the files on disk, because a file missing from any one renders wrong
   without failing.
+- **The agent's instructions have a surface** (#190) — an `agent` row under `you` in
+  Settings, showing `set` or `not set`, opening a pane whose textarea is the first thing
+  under the head. It saves on blur and on back with no button, the status line speaks
+  the bar's words, there is no counter until 3600 characters, and past 4000 it refuses
+  and keeps what was saved. The text is what 1.4.0 started appending to every agent
+  conversation under `The operator adds:`. Under `you` and not in manage-pages, because
+  a global setting reached through a pane about pages would read as per-page.
+- **Pages can be dragged into order** (#195). Every manage-pages row carries Arrange's
+  grip — same glyph, same 36px, dim at rest and ink under the finger — and a drop commits
+  through the order route 1.4.0 shipped, then re-reads the list from the server. A
+  refusal (the set changed on another device) goes to the pane's own error line.
 
 ## [1.4.1] — 2026-08-25
 
