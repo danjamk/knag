@@ -54,7 +54,7 @@ test.describe("the shape of the sheet", () => {
     expect(overflow.scroll).toBeLessThanOrEqual(overflow.client);
   });
 
-  test("holds one boundary and six rows", async ({ knag }) => {
+  test("holds one boundary and seven rows", async ({ knag }) => {
     await knag.seed(DAY);
     await knag.openSettings();
 
@@ -65,8 +65,11 @@ test.describe("the shape of the sheet", () => {
     // `you` is localStorage and the iPad will not follow. Same test, the other answer.
     // The boundary is still in the same place and still the whole information
     // architecture; it is the order that is pinned here, not the count.
+    //
+    // Seven since #190: `agent` joined `you`, on the far side of the boundary, because
+    // the server holds it. The count is pinned so an eighth has to say what it is.
     await expect(knag.page.locator("[data-settings] .group")).toHaveText(["this device", "you"]);
-    await expect(knag.page.locator("[data-settings] .pref")).toHaveCount(6);
+    await expect(knag.page.locator("[data-settings] .pref")).toHaveCount(7);
   });
 
   test("🔴 the head says what this is and how to leave, legibly", async ({ knag }) => {
@@ -116,15 +119,29 @@ test.describe("the shape of the sheet", () => {
     }
   });
 
-  test("🔴 devices is the only destination, and the only chevron", async ({ knag }) => {
+  test("🔴 two destinations, both in `you`, and a chevron means exactly that", async ({
+    knag,
+  }) => {
     await knag.seed(DAY);
     await knag.openSettings();
 
-    // The one row that is a destination rather than a choice, and it is marked as one.
-    // A second chevron would mean a second unbounded thing had been let in.
-    await expect(knag.page.locator("[data-settings] .chev")).toHaveCount(1);
+    // This pinned "the only chevron" until #190. What §7e loses is the clause, not the
+    // rule: a chevron means a destination and destinations are rare — the device list,
+    // whose length nobody controls, and the agent's 4000 characters, which a row can
+    // only summarise. Both sit under `you`, because both are the server's and not this
+    // device's. A third chevron would mean a third unbounded thing had been let in, and
+    // one anywhere above `you` would mean a per-device preference had grown a screen.
+    await expect(knag.page.locator("[data-settings] .chev")).toHaveCount(2);
+    await expect(knag.page.locator("[data-agent-open] .chev")).toHaveCount(1);
     await expect(knag.page.locator("[data-devices-open] .chev")).toHaveCount(1);
+    const you = await knag.page.locator("[data-settings] .group", { hasText: "you" }).boundingBox();
+    for (const row of ["[data-agent-open]", "[data-devices-open]"]) {
+      expect((await knag.page.locator(row).boundingBox())?.y ?? 0, row).toBeGreaterThan(
+        you?.y ?? 0,
+      );
+    }
     await expect(knag.page.locator("[data-devices-count]")).not.toHaveText("—");
+    await expect(knag.page.locator("[data-agent-state]")).toHaveText(/^(set|not set)$/);
   });
 
   test("says how far back the record goes", async ({ knag }) => {

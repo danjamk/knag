@@ -1,4 +1,5 @@
 import type { Locator } from "@playwright/test";
+import { TEST_BEARER } from "../playwright.config.js";
 import { type Knag, expect, test } from "./fixtures.js";
 
 /**
@@ -204,5 +205,92 @@ test.describe("the sheet says what is per device (#194)", () => {
     const pane = knag.page.locator("[data-settings-pane]");
     const first = await pane.locator(".group, .pref").first().textContent();
     expect(first?.trim()).toBe("this device");
+  });
+});
+
+test.describe("the agent's instructions (#190)", () => {
+  const route = "/api/settings/agent-instructions";
+  const headers = { Authorization: `Bearer ${TEST_BEARER}`, "Content-Type": "application/json" };
+
+  async function clear(knag: Knag): Promise<void> {
+    await knag.page.request.put(route, { headers, data: { text: "" } });
+  }
+  async function held(knag: Knag): Promise<string> {
+    const res = await knag.page.request.get(route, { headers });
+    return ((await res.json()) as { text: string }).text;
+  }
+
+  test.afterEach(async ({ knag }) => {
+    await clear(knag);
+  });
+
+  test("is a second destination in `you`, showing its value like every other row", async ({
+    knag,
+  }) => {
+    await clear(knag);
+    await knag.seed(DAY);
+    await knag.openSettings();
+
+    // A row, not a textarea in the sheet: a preference has a current value, and `set`
+    // or `not set` is as much of 4000 characters as a row can honestly hold. Under
+    // `you`, on the far side of the `this device` boundary #194 drew — the server holds
+    // this, and a pane about pages would have read as per-page.
+    const row = knag.page.locator("[data-settings-pane] [data-agent-open]");
+    await expect(row).toBeVisible();
+    await expect(row.locator("[data-agent-state]")).toHaveText("not set");
+    const you = knag.page.locator("[data-settings-pane] .group", { hasText: "you" });
+    expect((await you.boundingBox())?.y ?? 0).toBeLessThan((await row.boundingBox())?.y ?? 0);
+  });
+
+  test("🔴 saves on back with no button, and the row says so", async ({ knag }) => {
+    await clear(knag);
+    await knag.seed(DAY);
+    await knag.openSettings();
+    await knag.page.locator("[data-agent-open]").click();
+
+    const pane = knag.page.locator("[data-agent-pane]");
+    await expect(pane).toBeVisible();
+    // The textarea is the first thing under the head, so a keyboard never covers it —
+    // and it is the body face, because a person wrote it.
+    const text = pane.locator("[data-agent-text]");
+    await expect(text).toBeVisible();
+    await text.fill("work is the standing page — never wipe it without asking.");
+    await pane.locator("[data-agent-back]").click();
+
+    await expect(knag.page.locator("[data-agent-state]")).toHaveText("set");
+    await expect
+      .poll(() => held(knag))
+      .toBe("work is the standing page — never wipe it without asking.");
+
+    // And it comes back on the next visit, from the server, not from the DOM.
+    await knag.page.keyboard.press("Escape");
+    await knag.openSettings();
+    await knag.page.locator("[data-agent-open]").click();
+    await expect(text).toHaveValue("work is the standing page — never wipe it without asking.");
+  });
+
+  test("🔴 counts down from 3600 and refuses past 4000, keeping what was saved", async ({
+    knag,
+  }) => {
+    await clear(knag);
+    await knag.seed(DAY);
+    await knag.openSettings();
+    await knag.page.locator("[data-agent-open]").click();
+
+    const pane = knag.page.locator("[data-agent-pane]");
+    const text = pane.locator("[data-agent-text]");
+    const count = pane.locator("[data-agent-count]");
+
+    // No counter on an empty field — that is the app asking to be filled.
+    await expect(count).toBeHidden();
+    await text.fill("x".repeat(3700));
+    await expect(count).toHaveText("300 left");
+
+    await text.fill("y".repeat(4001));
+    await expect(pane.locator("[data-agent-status]")).toHaveText("too long · 4000");
+    await pane.locator("[data-agent-back]").click();
+    // Refused on the way out, not truncated: the server never saw it.
+    expect(await held(knag)).toBe("");
+    await expect(knag.page.locator("[data-agent-state]")).toHaveText("not set");
   });
 });

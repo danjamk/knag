@@ -87,6 +87,13 @@ const devicesPane = document.querySelector<HTMLElement>("[data-devices-pane]");
 const devicesOpen = document.querySelector<HTMLElement>("[data-devices-open]");
 const devicesBack = document.querySelector<HTMLButtonElement>("[data-devices-back]");
 const devicesCount = document.querySelector<HTMLElement>("[data-devices-count]");
+const agentPane = document.querySelector<HTMLElement>("[data-agent-pane]");
+const agentOpen = document.querySelector<HTMLElement>("[data-agent-open]");
+const agentBack = document.querySelector<HTMLButtonElement>("[data-agent-back]");
+const agentText = document.querySelector<HTMLTextAreaElement>("[data-agent-text]");
+const agentState = document.querySelector<HTMLElement>("[data-agent-state]");
+const agentStatus = document.querySelector<HTMLElement>("[data-agent-status]");
+const agentCount = document.querySelector<HTMLElement>("[data-agent-count]");
 const historyDepthLine = document.querySelector<HTMLElement>("[data-history-depth]");
 const logoutButton = document.querySelector<HTMLButtonElement>("[data-logout]");
 const revokeOthersButton = document.querySelector<HTMLButtonElement>("[data-revoke-others]");
@@ -2152,6 +2159,7 @@ function showManage(on: boolean): void {
 manageOpen?.addEventListener("click", () => {
   setSwitcher(false);
   devicesPane?.setAttribute("hidden", "");
+  agentPane?.setAttribute("hidden", "");
   showManage(true);
   settingsDialog?.showModal();
 });
@@ -2196,6 +2204,10 @@ function paintManage(): void {
     ...pages.map((page) => {
       const li = document.createElement("li");
       if (page.id === pageId) li.setAttribute("data-current", "");
+
+      // Arrange's grip, on this list too (#195). The drag is bound once to the list
+      // below; the row only has to carry the handle.
+      li.append(gripElement());
 
       const name = document.createElement("input");
       name.type = "text";
@@ -2286,6 +2298,62 @@ async function mutatePages(url: string, method: string, payload?: unknown): Prom
     showManageError("offline — that did not save");
     return false;
   }
+}
+
+/**
+ * Pages in the order you put them (#195). The server half shipped in 1.4.0 — `position`
+ * on `pages`, `PUT /api/pages/order` taking the whole live set — and this is the drag.
+ *
+ * 🔴 Bound once to the list, like Arrange's, so it survives every `paintManage`. The
+ * handle is the grip and nothing else: a drag that could start on the name field would
+ * compete with typing a name, which is the thing ADR-003 §5 removed from the document.
+ * No new motion — the row moving under the finger is SortableJS, and the wipe is still
+ * the only animation.
+ *
+ * 🔴 The order commits on drop through the route, and the list is then re-read from the
+ * server rather than trusted from the DOM — the same rule Arrange applies to the block
+ * array. A refusal (the set changed on another device: a page made or deleted since the
+ * list was painted) goes to `data-manage-error`, which is already the pane's voice, and
+ * the re-read puts the rows where the server has them.
+ */
+if (manageList) {
+  Sortable.create(manageList, {
+    handle: ".grip",
+    animation: 120,
+    delay: 120,
+    delayOnTouchOnly: true,
+    ghostClass: "dragging",
+    onEnd: (event) => {
+      if (event.oldIndex === undefined || event.newIndex === undefined) return;
+      if (event.oldIndex === event.newIndex) return;
+      const ids = [...manageList.querySelectorAll<HTMLInputElement>("input[data-rename-id]")].map(
+        (field) => Number(field.dataset.renameId),
+      );
+      void commitPageOrder(ids);
+    },
+  });
+}
+
+async function commitPageOrder(ids: number[]): Promise<void> {
+  showManageError(null);
+  try {
+    const res = await fetch("/api/pages/order", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+    if (!res.ok) showManageError("the pages changed elsewhere — this is the current list");
+  } catch {
+    showManageError("offline — that did not save");
+  }
+  // Either way the server's order is the order. Online, this is the drop landing in the
+  // switcher too; offline, it fails quietly and the rows stay where the finger left them
+  // until the next successful read.
+  await loadPages();
 }
 
 manageList?.addEventListener("click", (event) => {
@@ -2730,6 +2798,7 @@ function openHistory(): void {
   setSwitcher(false);
   setLedge(false);
   devicesPane?.setAttribute("hidden", "");
+  agentPane?.setAttribute("hidden", "");
   managePane?.setAttribute("hidden", "");
   showHistory(true);
   settingsDialog?.showModal();
@@ -2892,11 +2961,124 @@ function showDevices(on: boolean): void {
 devicesOpen?.addEventListener("click", () => showDevices(true));
 devicesBack?.addEventListener("click", () => showDevices(false));
 
+/**
+ * The operator's instructions (#190) — the first setting the server holds, and the
+ * second destination in `you`. The text is appended to every agent conversation under
+ * `The operator adds:` (spec §10); the route shipped in 1.4.0 and this is its surface.
+ *
+ * 🔴 No save button. It saves on blur and on back, because the product has one save
+ * model and a button here would invent a second. The status line speaks the bar's words
+ * — `saving`, `saved`, `not saved` — and the refusal names the cap. The count is absent
+ * until 3600, where it turns amber and counts down: a character count on an empty field
+ * is the app asking to be filled.
+ *
+ * 🔴 Never repainted under a live field, for the reason `paintManage` gives: a read that
+ * lands mid-sentence would put the server's copy back over what is being typed.
+ */
+const AGENT_MAX = 4000;
+const AGENT_COUNT_FROM = 3600;
+let agentSaved = "";
+
+function paintAgentState(text: string | null): void {
+  if (!agentState) return;
+  agentState.textContent = text === null ? "—" : text.trim() ? "set" : "not set";
+}
+
+function setAgentStatus(message: string): void {
+  if (agentStatus) agentStatus.textContent = message;
+}
+
+function paintAgentCount(): void {
+  if (!agentCount || !agentText) return;
+  const length = agentText.value.length;
+  if (length >= AGENT_COUNT_FROM) {
+    agentCount.textContent = `${AGENT_MAX - length} left`;
+    agentCount.removeAttribute("hidden");
+  } else {
+    agentCount.setAttribute("hidden", "");
+  }
+}
+
+async function loadAgent(): Promise<void> {
+  try {
+    const res = await fetch("/api/settings/agent-instructions", { credentials: "same-origin" });
+    if (!res.ok) {
+      paintAgentState(null);
+      return;
+    }
+    const { text } = (await res.json()) as { text: string };
+    agentSaved = text;
+    if (agentText && document.activeElement !== agentText) agentText.value = text;
+    paintAgentState(text);
+    paintAgentCount();
+  } catch {
+    paintAgentState(null);
+  }
+}
+
+async function saveAgent(): Promise<void> {
+  if (!agentText) return;
+  const text = agentText.value;
+  if (text === agentSaved) return;
+  if (text.length > AGENT_MAX) {
+    setAgentStatus(`too long · ${AGENT_MAX}`);
+    return;
+  }
+  setAgentStatus("saving");
+  try {
+    const res = await fetch("/api/settings/agent-instructions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (res.status === 401) {
+      showEditor(false);
+      return;
+    }
+    if (res.status === 413) {
+      setAgentStatus(`too long · ${AGENT_MAX}`);
+      return;
+    }
+    if (!res.ok) {
+      setAgentStatus("not saved");
+      return;
+    }
+    agentSaved = text;
+    paintAgentState(text);
+    setAgentStatus("saved");
+  } catch {
+    setAgentStatus("not saved");
+  }
+}
+
+function showAgent(on: boolean): void {
+  settingsPane?.toggleAttribute("hidden", on);
+  agentPane?.toggleAttribute("hidden", !on);
+  if (on) {
+    setAgentStatus("");
+    void loadAgent();
+  }
+}
+
+agentOpen?.addEventListener("click", () => showAgent(true));
+agentBack?.addEventListener("click", () => {
+  void saveAgent();
+  showAgent(false);
+});
+agentText?.addEventListener("blur", () => void saveAgent());
+agentText?.addEventListener("input", () => {
+  paintAgentCount();
+  // The refusal is live, so the cap is never a surprise on the way out; anything else
+  // waits for the save to say so.
+  setAgentStatus(agentText.value.length > AGENT_MAX ? `too long · ${AGENT_MAX}` : "");
+});
+
 // 🔴 Escape and the backdrop close the dialog from whichever pane is showing, and the
 // platform tells nobody which one that was. Reset on the way out, or the next tap on
 // `settings` opens a sheet that is still showing the device list.
 settingsDialog?.addEventListener("close", () => {
   showDevices(false);
+  showAgent(false);
   managePane?.setAttribute("hidden", "");
   settingsPane?.removeAttribute("hidden");
 });
@@ -2907,6 +3089,10 @@ settingsOpen?.addEventListener("click", () => {
   markChoices("[data-font-size]", "fontSize", String(fontSize));
   markChoices("[data-sound]", "sound", sound ? "on" : "off");
   showDevices(false);
+  showAgent(false);
+  // The row shows a value like every other row — `set` or `not set` — so it is read on
+  // the way in rather than on the way into the pane.
+  void loadAgent();
   settingsDialog?.showModal();
   // The count on the devices row, and the age of the record on the build line. Both are
   // read here rather than cached: the sheet is opened rarely and a stale number on a row
