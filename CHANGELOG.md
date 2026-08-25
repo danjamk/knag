@@ -13,6 +13,16 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The manage-pages drag is pointer-driven on every input** (#195). With a mouse,
+  SortableJS handed the drag to the browser's native drag-and-drop, and a WebKit under
+  test does not deliver a synthetic pointer through it reliably — the one test of the
+  control landed one swap short on the serial gate in front of the first production
+  deploy of 1.5.0, and two times in eight at home. `forceFallback` puts a mouse on the
+  path touch already takes, so a phone sees no change and the test stages the drag one
+  awaited swap at a time; 12/12 over six repeats.
+
 ## [1.5.0] — 2026-08-25
 
 The four design rulings from a week on a phone, built the evening they came back. The

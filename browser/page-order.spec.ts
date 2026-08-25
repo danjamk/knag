@@ -52,31 +52,41 @@ test.describe("the grip in manage pages", () => {
     await knag.newPage("reading");
     await openManage(knag);
 
-    const rows = knag.page.locator("[data-manage-list] li");
+    // `:not(.sortable-fallback)` — in pointer-fallback mode SortableJS appends a clone of
+    // the dragged row to the list to follow the pointer, and a reader that counts it sees
+    // four rows mid-drag. The clone is the drag image, not a page.
+    const rows = knag.page.locator("[data-manage-list] li:not(.sortable-fallback)");
     await expect(rows).toHaveCount(3);
     type Field = { value: string };
     const names = () =>
       rows.locator("input").evaluateAll((els: Field[]) => els.map((el) => el.value));
     await expect.poll(names).toEqual(["today", "work", "reading"]);
 
-    // The last row's grip to the first row. SortableJS listens for pointer events on the
-    // handle and moves the row under it; the drop is what commits, through the route,
-    // and the list is then re-read from the server rather than trusted from the DOM.
-    const from = await rows.nth(2).locator(".grip").boundingBox();
-    const to = await rows.nth(0).boundingBox();
-    if (!from || !to) throw new Error("rows did not lay out");
-    // 🔴 Two swaps, with a pause between. The rows animate for 120ms when one passes
-    // another, and a pointer that crosses both midpoints inside that window lands one
-    // swap, not two — the drop then reads as `today · reading · work`, which is a real
-    // order and a wrong one. A thumb does not move that fast; this waits like one.
-    await knag.page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    // The last row's grip to the first row, one row at a time, each swap awaited before
+    // the pointer moves on. SortableJS ignores a dragover on a row that is still
+    // animating (120ms), so a pointer that crosses two midpoints inside that window
+    // lands one swap and not two — which is `today · reading · work`, a real order and
+    // a wrong one. It did exactly that on the serial gate in front of the first prod
+    // deploy of 1.5.0, after passing three times over locally with a fixed pause. So
+    // there is no pause: the DOM is what says the swap happened, and the next move waits
+    // for it. A thumb does the same thing, slower.
+    const [first, middle, last] = await Promise.all([
+      rows.nth(0).boundingBox(),
+      rows.nth(1).boundingBox(),
+      rows.nth(2).locator(".grip").boundingBox(),
+    ]);
+    if (!first || !middle || !last) throw new Error("rows did not lay out");
+    const x = last.x + last.width / 2;
+    await knag.page.mouse.move(x, last.y + last.height / 2);
     await knag.page.mouse.down();
-    await knag.page.mouse.move(from.x + from.width / 2, to.y + to.height / 2, { steps: 12 });
-    await knag.page.waitForTimeout(200);
-    await knag.page.mouse.move(from.x + from.width / 2, to.y + 4, { steps: 6 });
-    await knag.page.waitForTimeout(200);
+    await knag.page.mouse.move(x, middle.y + middle.height / 2 - 4, { steps: 8 });
+    await expect.poll(names).toEqual(["today", "reading", "work"]);
+    await knag.page.mouse.move(x, first.y + first.height / 2 - 4, { steps: 8 });
+    await expect.poll(names).toEqual(["reading", "today", "work"]);
     await knag.page.mouse.up();
 
+    // The drop commits through the route and the list is re-read from the server — so
+    // the order holding after a repaint is the server agreeing, not the DOM remembering.
     await expect.poll(names).toEqual(["reading", "today", "work"]);
 
     // The order is the server's: the switcher, painted from the same read, agrees, and a
