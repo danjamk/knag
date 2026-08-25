@@ -63,6 +63,19 @@ run_all() {
     check "/health responds"            200 "$(status "${BASE}/health")"
   check "PWA shell served"            200 "$(status "${BASE}/")"
   check "manifest served"             200 "$(status "${BASE}/manifest.json")"
+
+  # 🔴 The manifest names its environment (#196). Prod serves the static file, `knag`;
+  # anything else is rewritten by the Worker to `knag <env>`, so two installs on one
+  # home screen are not twins. The environment is read from /health rather than passed
+  # in, so this check cannot be told the wrong answer — and if `/manifest.json` ever
+  # drops out of `run_worker_first`, dev answers `knag` and this goes red.
+  #
+  # `sed -n … p`, not a bare substitution: the static manifest is pretty-printed, and a
+  # sed that prints every line hands back `{` as the name.
+  env_name="$(curl -sS --max-time 10 "${BASE}/health" 2>/dev/null | sed -n -E 's/.*"environment":"([^"]*)".*/\1/p' | head -1)"
+  if [ "$env_name" = "prod" ]; then expected_name="knag"; else expected_name="knag ${env_name}"; fi
+  check "manifest names the environment" "$expected_name" \
+    "$(curl -sS --max-time 10 "${BASE}/manifest.json" 2>/dev/null | sed -n -E 's/.*"name": ?"([^"]*)".*/\1/p' | head -1)"
   check "/api/doc rejects anonymous"  401 "$(status "${BASE}/api/doc")"
   check "/mcp rejects anonymous"      401 "$(status "${BASE}/mcp")"
 

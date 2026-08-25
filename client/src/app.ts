@@ -3129,6 +3129,10 @@ if (doc) {
   if (info.environment !== "prod" && envBadge) {
     envBadge.textContent = info.environment;
     envBadge.removeAttribute("hidden");
+    // The tab too (#196). A badge is inside the page; a title is what a row of tabs
+    // shows, and two tabs both called `knag` is the same twin problem the home screen
+    // had. Same separator the build line uses. Prod keeps the bare name.
+    document.title = `knag · ${info.environment}`;
   }
 }
 

@@ -70,6 +70,20 @@ summarises the phase rather than pretending it was written as it happened.
   Left padding is unchanged at 14px. The target reaches the edge, which is what a thumb
   needs; whether the ink should sit further in is a design number, not a hit-area one.
 
+- **Dev says its own name — on the home screen and in the tab** (part of #196). Two
+  installs of the same app on one iPad — dev is the ITP test subject, prod the dogfood —
+  were identical tiles both called `knag`, and opening the wrong one restarts a seven-day
+  clock. `/manifest.json` now goes through the Worker (`run_worker_first`, both env
+  blocks): prod passes the static file through untouched, and anything else has `name`
+  and `short_name` rewritten to `knag <env>`. The tab title follows the badge the same
+  way, `knag · dev`. `scripts/verify.sh` reads the environment from `/health` and asserts
+  the manifest's name against it, so the route dropping out of `run_worker_first` goes
+  red on the next deploy rather than quietly serving twins again.
+
+  🔴 **The icons are unchanged, on purpose.** A dev mark comes from the design session or
+  not at all. When it arrives it goes into `devManifest`, `sw.js`'s `SHELL` and the
+  client's icon links together, and #196 closes then — not before.
+
 ## [1.2.1] — 2026-08-25
 
 Two fixes from a few days of use, no design input: the connector gets the mark, and
