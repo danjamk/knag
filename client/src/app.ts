@@ -3159,7 +3159,33 @@ if (doc) {
     // shows, and two tabs both called `knag` is the same twin problem the home screen
     // had. Same separator the build line uses. Prod keeps the bare name.
     document.title = `knag · ${info.environment}`;
+    wearDevMark();
   }
+}
+
+/**
+ * Off prod, the tab and the home screen wear the dev mark (#196): the same block,
+ * unfilled. Swapped at runtime rather than in the shell because there is one
+ * `index.html` for both environments and the service worker caches it; the manifest is
+ * rewritten by the Worker for the same reason, and `sw.js` precaches both sets.
+ *
+ * 🔴 Safari reads `apple-touch-icon` at the moment of Add to Home Screen, from the DOM
+ * as it is then — which is after this ran, on any page that has loaded `/health`. That
+ * is the whole reason the swap can live here rather than in a per-environment shell.
+ * Safari also ignores SVG favicons, so the `.ico` link becomes the 32px PNG rather than
+ * being left to fall back to prod's mark.
+ */
+function wearDevMark(): void {
+  const swap = (selector: string, href: string, type?: string) => {
+    const link = document.querySelector<HTMLLinkElement>(selector);
+    if (!link) return;
+    link.href = href;
+    if (type) link.type = type;
+  };
+  swap('link[rel="apple-touch-icon"]', "/icons/knag-icon-dev-192.png");
+  swap('link[rel="icon"][href="/favicon.ico"]', "/icons/favicon-dev-32.png", "image/png");
+  swap('link[rel="icon"][type="image/svg+xml"]', "/icons/favicon-dev.svg");
+  swap('link[rel="icon"][type="image/png"][sizes="192x192"]', "/icons/knag-icon-dev-192.png");
 }
 
 // Caches the shell and never a document response — a stale body is worse than an

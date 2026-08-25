@@ -196,6 +196,23 @@ test.describe("the dev badge", () => {
     // never have to go looking to find out which one you are typing into.
     await expect(knag.page.locator("footer .env")).toBeVisible();
   });
+
+  test("🔴 and the tab and home screen wear the dev mark — the same block, unfilled", async ({
+    knag,
+  }) => {
+    // Two installs on one iPad were identical tiles both called `knag` (#196). The name
+    // was fixed in 1.3.0; the artwork arrived 2026-08-25. Swapped at runtime because
+    // there is one shell for both environments and the service worker caches it — so
+    // this is the assertion that the swap happened, on the tags iOS and the tab read.
+    type Link = { getAttribute: (name: string) => string | null };
+    const hrefs = await knag.page
+      .locator('link[rel="icon"], link[rel="apple-touch-icon"]')
+      .evaluateAll((els: Link[]) => els.map((el) => el.getAttribute("href")));
+    expect(hrefs.length).toBeGreaterThanOrEqual(4);
+    for (const href of hrefs) expect(href, "an icon link still points at prod's mark").toContain("-dev");
+    expect(hrefs).toContain("/icons/knag-icon-dev-192.png");
+    expect(await knag.page.title()).toBe("knag · local");
+  });
 });
 
 test("logs in over plain http, where the cookie must drop Secure", async ({ page }) => {
