@@ -13,6 +13,29 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **The operator's own instructions, appended to the MCP server's** (#190, server half).
+  What the contract cannot know — what each page is for, the house style, standing rules
+  like "never add to `today` without asking" — used to live in a Claude project
+  instruction, one per client, drifting. It now lives in D1: a `settings` table
+  (migration 0007, additive, key/value, one key today), read and written through
+  `store.ts`, exposed at `GET`/`PUT /api/settings/agent-instructions` behind the same
+  principal gate as every route, and appended to the MCP `instructions` string under a
+  fixed heading, `The operator adds:`. Blank appends nothing. Read per request, so an edit
+  reaches the next session that connects. Capped at 4000 characters, because it rides in
+  every conversation's prompt.
+
+  🔴 **Never a tool.** An agent editing its own instructions is not a feature, and no test
+  should ever find one. It is also **not an index**: the operator naming their pages in a
+  sentence is what they would tell a person, and the error on a wrong name is still the
+  discovery path (spec §10).
+
+  It is the first setting the server holds rather than the browser — the far side of the
+  boundary Settings' `this device` label draws. The editing surface in the app waits on
+  the design session; until then the route is the way in, and a `curl` with the bearer
+  sets it.
+
 ## [1.3.0] — 2026-08-25
 
 The phone pass. The ledge opens the way the chevron points, the checkbox is as easy to

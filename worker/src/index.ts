@@ -32,6 +32,9 @@ import {
   readPage,
   wipe,
   writePage,
+  AGENT_INSTRUCTIONS,
+  readSetting,
+  writeSetting,
 } from "./store.js";
 
 /**
@@ -185,6 +188,46 @@ const router = {
 
       if (request.method === "GET") return getDoc(request, env, url);
       if (request.method === "PUT") return putDoc(request, env, principal);
+
+      return Response.json(
+        { error: "Method not allowed" },
+        { status: 405, headers: { Allow: "GET, PUT" } },
+      );
+    }
+
+    // 🔴 The one setting the server holds (#190): free text the operator writes, which
+    // the MCP server appends to its `instructions` under a fixed heading. Every other
+    // preference is localStorage; this one is about the account and has to reach a bearer
+    // caller with no browser, so it lives in D1. Session or bearer, like every route —
+    // and never a tool, because an agent editing its own instructions is not a feature.
+    if (url.pathname === "/api/settings/agent-instructions") {
+      const principal = await authenticate(request, env);
+      if (!principal) return unauthorized();
+
+      if (request.method === "GET") {
+        return Response.json({ text: (await readSetting(env, AGENT_INSTRUCTIONS.key)) ?? "" });
+      }
+
+      if (request.method === "PUT") {
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return Response.json({ error: "body must be JSON" }, { status: 400 });
+        }
+        const text = (body as { text?: unknown } | null)?.text;
+        if (typeof text !== "string") {
+          return Response.json({ error: "text must be a string" }, { status: 400 });
+        }
+        if (text.length > AGENT_INSTRUCTIONS.max) {
+          return Response.json(
+            { error: `text must be at most ${AGENT_INSTRUCTIONS.max} characters` },
+            { status: 413 },
+          );
+        }
+        await writeSetting(env, AGENT_INSTRUCTIONS.key, text);
+        return Response.json({ text });
+      }
 
       return Response.json(
         { error: "Method not allowed" },
