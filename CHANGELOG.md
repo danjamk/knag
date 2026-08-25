@@ -13,6 +13,11 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Changed
+
+- The `agent` row in Settings is labelled **`agent prompt`**, and so is its pane. One word
+  said what the thing was for; two say what it is.
+
 ## [1.5.1] — 2026-08-25
 
 One fix, found by the production gate rather than a person: the manage-pages drag no

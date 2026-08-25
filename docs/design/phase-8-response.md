@@ -113,8 +113,8 @@ you
 
 | | |
 |---|---|
-| row | `agent` · value `set` / `not set` · chevron |
-| pane head | `agent` |
+| row | `agent prompt` · value `set` / `not set` · chevron — the ruling said `agent`; renamed by the operator after a day on the phone, 2026-08-25 (1.5.2) |
+| pane head | `agent prompt` |
 | status | `saving` / `saved` / `not saved` — the bar's words, no button |
 | refusal | `too long · 4000` |
 | note | *Every agent conversation on this account starts with this, under the heading **The operator adds:** — page purposes, house style, standing rules. 4000 characters.* |
