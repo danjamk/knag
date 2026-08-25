@@ -32,6 +32,19 @@ summarises the phase rather than pretending it was written as it happened.
   after a reconnect, the remaining cause is Claude ignoring `icons`, and that gets noted
   above `serverIcons` in `mcp.ts` rather than worked around.
 
+### Changed
+
+- **Settings says which preferences are per device** (#194). Board, view, text size and
+  sound are localStorage — set on the phone, the iPad does not follow — and the sheet
+  never said so; the question "does this apply everywhere?" came up after a few days of
+  use. The first group is labelled `this device` again, one line, the same word the
+  `log out` row already uses.
+
+  #149 cut the first group label because `the page` named nothing the reader could not
+  already see. This one names the one thing they cannot, which is the same test giving
+  the other answer. It is also the boundary #190 will sit on the far side of, as the
+  first setting the server holds rather than the browser.
+
 ## [1.2.0] — 2026-08-22
 
 The record. Seven days of wipes, per page — open one, see the lines exactly as they

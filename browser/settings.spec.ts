@@ -186,3 +186,23 @@ test.describe("what About left behind", () => {
     await expect(knag.page.locator("[data-settings]")).not.toContainText("MIT");
   });
 });
+
+test.describe("the sheet says what is per device (#194)", () => {
+  test("labels the preferences `this device`, above `you`", async ({ knag }) => {
+    await knag.seed(DAY);
+    await knag.openSettings();
+
+    // Board, view, text size and sound are localStorage: set on the phone, the iPad
+    // does not follow. The sheet did not say so and the question came up after a few
+    // days of use. #149 cut the first group label because `the page` named nothing the
+    // reader could not see; this one names the one thing they cannot, and the two labels
+    // are the whole information architecture — the order is the boundary.
+    const groups = knag.page.locator("[data-settings-pane] .group");
+    await expect(groups).toHaveText(["this device", "you"]);
+
+    // The preferences sit between the two labels, not above the first one.
+    const pane = knag.page.locator("[data-settings-pane]");
+    const first = await pane.locator(".group, .pref").first().textContent();
+    expect(first?.trim()).toBe("this device");
+  });
+});

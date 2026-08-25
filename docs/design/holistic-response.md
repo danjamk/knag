@@ -432,6 +432,13 @@ above four rows visibly about the page, and named nothing the reader could not a
 see. `you` earns its line precisely because what follows it *is* a change of subject. The
 boundary is the information; the second label was the only one carrying any.
 
+🔴 **Amended 2026-08-24 (#194).** The first label is back, with a different job. After a
+few days of use the question was "do these apply to every device?" — and they do not:
+every row above `you` is localStorage. `this device` names the one thing the reader cannot
+see, which is the same test #149 applied, returning the other answer. Same word the
+`log out` row already uses, so the sheet says it twice and means it both times. It also
+draws the boundary the first server-held setting (#190) will arrive on the far side of.
+
 **Every choice is its options laid out flat, current one filled in amber.** No
 toggles, no switches, no disclosure rows that make you tap to find out what a
 setting is currently set to. Three or fewer options each, so they fit the row at
