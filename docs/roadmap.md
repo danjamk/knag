@@ -18,6 +18,15 @@ clears, promote the next one.** Nothing else decides what to pick up.
 This replaces the MVP plan's `#2 → #3 → #4 → #8`, which was true until it was
 not and stayed written down for a while afterwards.
 
+**Where it stands, 2026-08-24.** 1.2.0 is merged (#189) and **Phase 7 is done** — the
+history pane, the glyph, and the `bring back` verb all shipped. A few days of using it on
+a phone and through the connector produced eight issues, #190–#197, none from the suite —
+the same pattern 1.0.1 recorded below. They are grouped as **Phase 8** in three
+releases, and **multi-user moves back one slot to Phase 9**. The reasoning is in the
+phase; the short version is that every one of them is a daily friction and the biggest
+of them (#190) hands the multi-user spike a real per-account setting to reason about
+instead of a hypothetical one.
+
 **Where it stands, 2026-08-20.** Phases 0 through 5 have shipped and so has Phase 3 —
 0.9.0 through 1.0.1, prod and dev on the same build, and the landing page live. **#114 is
 settled** (a device test, not a branch), **#113 is done — the row list is deleted**, and
@@ -126,7 +135,23 @@ Set 2026-08-19. The version numbers are meant to say something:
 | **1.0** | **One page, finished.** Everything the single-document product should be | 0–5 |
 | **1.1** | A handful of pages | 6 |
 | **1.2** | **The history UX** | 7 |
-| **1.3** | Multi-user | 8 |
+| **1.2.1** | Two fixes from use, no design input | 8a |
+| **1.3** | **The phone pass** — the ledge, the checkbox, dev's own icon | 8b |
+| **1.4** | The first server-side setting, and pages in an order | 8c |
+| **1.5** | Multi-user | 9 |
+
+🔴 **Amended 2026-08-24: three releases of use-findings before multi-user.** A week of
+real use produced #190–#197, and holding them behind a spike-and-ADR phase would be the
+§12 failure one more time — the same argument that moved #91 out of 1.1 and then history
+out of 1.3. The split into three follows one line: **what needs no design ships as a
+patch; what needs one design brief ships together; what adds to the schema ships last.**
+Six of the eight need a design answer, and sent as one brief that is one round trip
+rather than six — which is the whole reason 8b is a group and not a queue.
+
+The numbers say what they should. 1.2.1 is fixes only. 1.3 and 1.4 each add to the
+interface — a ledge that opens the other way is a change to the bar, and a setting the
+agent reads is new surface — so they are minors, per the rule `make info` exists to
+enforce.
 
 🔴 **Split 2026-08-22: 1.2 is history, 1.3 is multi-user.** They were one release
 because they were one phase-pair, and that stopped being true when multi-user was
@@ -376,7 +401,7 @@ implies a namespace, then a home screen because a namespace needs a root; all
 three are on [§12](spec.md)'s Out list, and the cap is the one decision that keeps
 them unnecessary rather than merely forbidden.
 
-### Phase 7 · Recovery and history — #91 · **ships 1.2**
+### Phase 7 · Recovery and history — ~~#91~~ · ✅ **done, 1.2.0**
 
 Designed per-page, **once** — which is why it sits here rather than in 1.0. See
 the release shape above: the bring-back and the agent-readable history already
@@ -423,11 +448,70 @@ rather than `add 3 to the page`. The second is downstream of #173: a reset's und
 take the template off as well as put the lines back, which is a bigger operation and reads
 as one.
 
-### Phase 8 · Multi-user — #122 · **ships 1.3**
+### Phase 8 · What a week of use found — #190–#197 · **ships 1.2.1, 1.3, 1.4**
+
+Eight issues from a few days of using 1.2 on a phone, an iPad and through the connector.
+None came from the suite, which is the finding 1.0.1 already recorded and which this
+phase confirms rather than repeats. What is new is the *shape* of the list: six of the
+eight need a design answer, and every answer is small — a number, a copy line, a yes/no,
+one artwork variant. That shape is what sets the order.
+
+**The sequencing lever is the design session.** Sent one issue at a time, six design
+questions are six round trips. Sent as one brief they are one. So the phase is cut into
+what can go *before* the brief, what waits *on* it, and what is bigger than it.
+
+#### 8a · Patch — #191, #194, with #107 · **1.2.1**
+
+No feature, no schema, no design. #191 is a bug visible in every Claude session — the
+connector shows the wrong icon because `/favicon.ico` answers with the PWA shell and a
+200, the same SPA-fallback failure ADR-005 §4 documents. #194 is an hour of copy: every
+preference is per device and the sheet does not say so. #107 was already Prioritized and
+is still the only thing making CI lie; it rides along rather than blocking.
+
+#### 8b · The phone pass — #192 → #197, #193, #196 · **1.3**
+
+One design brief, then four issues, in this order:
+
+1. **#192, the ledge opens above the bar.** Fixes a hazard — the wipe control landing
+   under the pointer that just opened the ledge — and, in the same PR, the jammed labels
+   on a phone: they overlap because of a 44px margin that was standing in for this fix.
+2. **#197, the ledge is too small on a phone.** After #192, by the rule this page already
+   records: *work on a bar that is about to change composition gets done twice.* Measure
+   the row once the dead margin is gone.
+3. **#193, the checkbox gets a 44px target.** The daily one. The hit-area half needs no
+   design; it ships in the same PR as the left-padding number.
+4. **#196, dev gets its own icon and manifest name.** Artwork from the same brief. The
+   code can merge any time; 🔴 **the iPad reinstall waits until after 2026-08-27** or
+   the ITP test (#4) ends with a self-inflicted result that reads as a cookie failure.
+
+The brief asks for exactly: ledge opens upward (yes/no), ledge label and glyph size (two
+numbers), editor left padding (one number), the dev mark (one variant) — and, for 8c, the
+`agent ›` surface and the drag affordance in manage-pages. One bundle; nothing after it is
+blocked.
+
+#### 8c · The schema — #190, then #195 · **1.4**
+
+Both add to D1, both additive, so the ITP rule on dev does not bind them.
+
+**#190 first.** Operator instructions appended to the MCP server's `instructions` string
+— the highest-value item on the list, because it improves every agent conversation, and
+the **first server-side setting** the product has had. Build it so #122 can add an owner
+column later; do not wait on the multi-user decision to build it.
+
+**#195 last.** Pages in a manual, server-side order. Lowest urgency on the list — nine
+pages max, creation order is tolerable — and the biggest cost: a migration, a route and a
+drag surface in a pane that is not Arrange.
+
+### Phase 9 · Multi-user — #122 · **ships 1.5**
 
 Last, deliberately — and the reason is not difficulty. The spike is reading and
 measuring, and it can float earlier in any week that wants a break from
 building.
+
+🔴 **Moved back one slot on 2026-08-24, from Phase 8.** Not because it lost priority but
+because #190 lands first: the spike will have to decide where a per-account setting lives,
+and it is better to decide that against a real one than a hypothetical one. Everything
+below is unchanged.
 
 🔴 **A pilot spends invitations, and you only get to invite someone for the first
 time once.** Inviting friends to a product whose wipe does not animate and which
