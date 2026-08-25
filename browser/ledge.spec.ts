@@ -133,6 +133,40 @@ test.describe("opening and closing", () => {
       );
     });
   });
+
+  test("🔴 the glyphs are 24px and the labels are still 11px", async ({ knag }) => {
+    // The ledge read like a footnote on a phone at text size 20 (#197). The proposal
+    // was 13px labels; the ruling was that the constraint is width — four 13px mono
+    // labels beside `wipe page` overrun a 390px phone by 3px and a 375px one by 18, the
+    // overlap #192 just removed — so the glyph grew instead, 18 → 24, and the label
+    // holds at `--size-micro`. Both numbers are pinned because either drifting is
+    // silent: a smaller glyph is the footnote back, a larger label is the overlap back.
+    await knag.page.setViewportSize({ width: 390, height: 844 });
+    await knag.seed(DAY);
+    await knag.openLedge();
+
+    type Measured = {
+      getBoundingClientRect: () => { width: number; height: number };
+      ownerDocument: { defaultView: { getComputedStyle: (el: unknown) => { fontSize: string } } };
+    };
+    const glyphs = await knag.page
+      .locator(".ledge-item svg")
+      .evaluateAll((els: Measured[]) =>
+        els.map((el) => el.getBoundingClientRect()).map((r) => [r.width, r.height]),
+      );
+    expect(glyphs).toHaveLength(4);
+    for (const [width, height] of glyphs) {
+      expect(width).toBe(24);
+      expect(height).toBe(24);
+    }
+
+    const labels = await knag.page
+      .locator(".ledge-item")
+      .evaluateAll((els: Measured[]) =>
+        els.map((el) => el.ownerDocument.defaultView.getComputedStyle(el).fontSize),
+      );
+    expect(labels).toEqual(["11px", "11px", "11px", "11px"]);
+  });
 });
 
 test.describe("the rule that makes it free", () => {

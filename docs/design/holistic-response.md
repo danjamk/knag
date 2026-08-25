@@ -86,12 +86,24 @@ switcher already rose above the bar; the ledge now does the same, the bar never 
 the chevron that opened it closes it at the same coordinates. The chevron points up
 because that is the direction it opens.
 
+🔴 **Amended 2026-08-25 (#197): the glyph is 24px; the label stays at 11.** The ledge
+read like a footnote on a phone at text size 20, and the build proposed 13px labels over
+20px glyphs. The ruling — [phase-8-response.md §2](phase-8-response.md#2--197--two-numbers)
+— is that the constraint on the ledge is width, not height: four 13px mono labels beside
+`wipe page` overrun a 390px phone by 3px and a 375px one by 18, which is the overlap #192
+had just removed. So the loudness comes out of the free axis — glyph 18 → 24, a third
+larger and the part of the item you aim at — and the label goes on disambiguating a
+glyph rather than being read across a room. §3b is *not* amended: nothing on the ledge
+follows the reading preference. If it still reads small after a week, the next move is
+`--ledge-height` 56 → 64 with the glyph at 26, not the label.
+
 ### New tokens
 
 ```css
 --ledge-height: 56px;
 --ledge-duration: 90ms;              /* = --state-duration */
 --ledge-ease: var(--wipe-ease);
+--ledge-glyph: 24px;                 /* 2026-08-25, #197 — was an 18 attribute on the SVGs */
 ```
 
 ---

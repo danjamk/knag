@@ -63,6 +63,13 @@ const fontDigests = JSON.stringify({
   site: digests("./site/fonts"),
 });
 
+// The service worker and the icon directory listing (#196). The dev mark lives in three
+// places — the manifest the Worker rewrites, the link tags the client swaps and the
+// SHELL the service worker precaches — and a file named in one and missing from another
+// renders wrong without failing anything. The test reads all three against the disk.
+const sw = readFileSync(fileURLToPath(new URL("./public/sw.js", import.meta.url)), "utf8");
+const icons = JSON.stringify(readdirSync(fileURLToPath(new URL("./public/icons", import.meta.url))));
+
 // vitest-pool-workers 0.18 (the Vitest 4 line) exposes this as a Vite plugin.
 // `defineWorkersConfig` from ".../config" is the Vitest 3 API and is gone.
 export default defineConfig({
@@ -90,6 +97,8 @@ export default defineConfig({
           TEST_SITE: site,
           TEST_FONT_DIGESTS: fontDigests,
           TEST_FAVICON: favicon,
+          TEST_SW: sw,
+          TEST_ICONS: icons,
         },
       },
     }),

@@ -476,7 +476,13 @@ browser job is the whole ten minutes and it is serial by design (#69), so #202 s
 across runners and skips it for docs-only changes; every phase after this one pays the
 same ten minutes on every push until it lands.
 
-#### 8b · The phone pass — #192 → #197, #193, #196 · **1.3**
+#### 8b · The phone pass — #192 → #197, #193, #196 · **1.3, and the design halves in 1.5**
+
+✅ **#192 and #193 shipped in 1.3.0 on 2026-08-25, with #196's name half.** The two that
+needed a ruling — #197's numbers and #196's artwork — came back the same evening in
+[design/phase-8-response.md](design/phase-8-response.md) and ship together in **1.5.0**,
+one PR, per the grouping rule below. 🔴 The iPad reinstall for the dev tile still waits
+until after 2026-08-27.
 
 One design brief, then four issues, in this order:
 
@@ -497,7 +503,13 @@ numbers), editor left padding (one number), the dev mark (one variant) — and, 
 `agent ›` surface and the drag affordance in manage-pages. One bundle; nothing after it is
 blocked.
 
-#### 8c · The schema — #190, then #195 · **1.4**
+#### 8c · The schema — #190, then #195 · **1.4, and the surfaces in 1.5**
+
+✅ **Both server halves shipped in 1.4.0 on 2026-08-25** — the setting and its route, the
+order column and its route — with no UI, because both surfaces waited on the ruling. It
+came the same evening: an `agent ›` row in `you` with its own pane, and Arrange's grip
+in manage-pages ([design/phase-8-response.md](design/phase-8-response.md) §4, §5). They
+ship as one PR in **1.5.0**, after 8b's design halves.
 
 Both add to D1, both additive, so the ITP rule on dev does not bind them.
 
@@ -510,7 +522,10 @@ column later; do not wait on the multi-user decision to build it.
 pages max, creation order is tolerable — and the biggest cost: a migration, a route and a
 drag surface in a pane that is not Arrange.
 
-### Phase 9 · Multi-user — #122 · **ships 1.5**
+### Phase 9 · Multi-user — #122 · **ships 1.6**
+
+🔴 **Renumbered from 1.5 on 2026-08-25.** Phase 8's design halves landed a release later
+than their server halves, and they are features, so 1.5 is theirs.
 
 Last, deliberately — and the reason is not difficulty. The spike is reading and
 measuring, and it can float earlier in any week that wants a break from

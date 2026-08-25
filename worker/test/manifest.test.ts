@@ -1,6 +1,6 @@
-import { SELF } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { devManifest } from "../src/index.js";
+import { DEV_ICONS, devManifest } from "../src/index.js";
 
 /**
  * `/manifest.json` through the Worker (#196).
@@ -25,17 +25,40 @@ const STATIC = {
 };
 
 describe("devManifest", () => {
-  it("names the environment, and changes nothing else", () => {
+  it("names the environment and wears the dev mark, and changes nothing else", () => {
     const dev = devManifest(STATIC, "dev");
 
     expect(dev.name).toBe("knag dev");
     expect(dev.short_name).toBe("knag dev");
+    // The tile is the dev mark — the same block, unfilled (#196, ruled 2026-08-25). It
+    // shipped as the name alone while the artwork waited on the design session.
+    expect(dev.icons).toEqual(DEV_ICONS);
+    for (const icon of DEV_ICONS) expect(icon.src).toContain("-dev");
 
-    // Everything else byte-identical — the icons in particular. A dev mark is a design
-    // decision, and until one arrives the tile keeps the real one.
-    const { name: _n, short_name: _s, ...rest } = dev;
-    const { name: _n2, short_name: _s2, ...staticRest } = STATIC;
+    const { name: _n, short_name: _s, icons: _i, ...rest } = dev;
+    const { name: _n2, short_name: _s2, icons: _i2, ...staticRest } = STATIC;
     expect(rest).toEqual(staticRest);
+  });
+
+  it("🔴 every dev icon exists on disk and is in the service worker's SHELL", () => {
+    // Three places have to agree — this array, the link tags the client swaps and the
+    // SHELL — and a file missing from any of them renders wrong rather than failing.
+    // `cache.addAll` on a missing file fails the whole install, which is the loud one;
+    // an icon absent from SHELL is the quiet one: a cold offline start on dev wears
+    // prod's tile.
+    const onDisk = JSON.parse(env.TEST_ICONS) as string[];
+    const shell = /const SHELL = \[([\s\S]*?)\];/.exec(env.TEST_SW)?.[1] ?? "";
+
+    for (const icon of DEV_ICONS) {
+      const file = icon.src.replace("/icons/", "");
+      expect(onDisk, `${file} is not in public/icons/`).toContain(file);
+      expect(shell, `${icon.src} is not in sw.js SHELL`).toContain(`"${icon.src}"`);
+    }
+    // The tab's two, which the client swaps rather than the manifest naming.
+    for (const file of ["favicon-dev.svg", "favicon-dev-32.png"]) {
+      expect(onDisk, `${file} is not in public/icons/`).toContain(file);
+      expect(shell, `/icons/${file} is not in sw.js SHELL`).toContain(`"/icons/${file}"`);
+    }
   });
 
   it("does not mutate the static manifest it was given", () => {

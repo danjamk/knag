@@ -48,8 +48,29 @@ export function devManifest(
   environment: string,
 ): Record<string, unknown> {
   const name = `knag ${environment}`;
-  return { ...manifest, name, short_name: name };
+  return { ...manifest, name, short_name: name, icons: DEV_ICONS };
 }
+
+/**
+ * The dev mark (#196): prod's block, unfilled — the cursor before it has anything to
+ * say. Same outer bounds, same amber, the middle is board. Ruled 2026-08-25; the files
+ * are the design session's and drop into `public/icons/` beside the prod set.
+ *
+ * 🔴 Three places have to agree or a dev install comes up wrong somewhere: this array
+ * (the tile, Android and desktop), the link tags the client swaps off prod (the tab and
+ * iOS's home screen), and `sw.js`'s SHELL (a cold offline start). A test pins the first
+ * and third against the files on disk.
+ */
+export const DEV_ICONS = [
+  { src: "/icons/knag-icon-dev-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+  { src: "/icons/knag-icon-dev-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+  {
+    src: "/icons/knag-icon-dev-512-maskable.png",
+    sizes: "512x512",
+    type: "image/png",
+    purpose: "maskable",
+  },
+];
 
 /**
  * knag — one plain-text document, always live.
@@ -92,8 +113,7 @@ const router = {
     // the wrong one restarts a seven-day clock. Prod passes the static file through
     // untouched; anything else gets `name` and `short_name` rewritten to `knag <env>`.
     //
-    // Icons are deliberately NOT swapped here yet. A dev mark comes from the design
-    // session or not at all; when it arrives it goes in `devManifest`, `sw.js`'s SHELL
+    // The icons swap too, since 2026-08-25 (#196) — in `devManifest`, `sw.js`'s SHELL
     // and the client's icon links together, or a cold offline start on dev renders the
     // prod tile.
     if (url.pathname === "/manifest.json") {

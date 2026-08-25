@@ -25,7 +25,7 @@
 
 // Only has to change if the *set* of cached paths changes. Correctness no longer
 // depends on it, which is the point of the rewrite above.
-const CACHE = "knag-shell-v4";
+const CACHE = "knag-shell-v5";
 
 // 🔴 The PWA icons only. The MCP connector icons live in `public/icons/` too and are
 // deliberately absent: they are fetched by Claude's connector UI, never by this
@@ -45,6 +45,17 @@ const SHELL = [
   "/icons/knag-icon-192.png",
   "/icons/knag-icon-512.png",
   "/icons/knag-icon-512-maskable.png",
+  // 🔴 The dev mark too (#196) — the same block, unfilled. Prod never references these
+  // and precaching four small files there is the cost of a dev install that comes up
+  // offline wearing its own tile rather than prod's. The manifest swaps to them off
+  // prod; the client swaps the link tags; this is the third place, and forgetting it
+  // is the failure that renders silently.
+  "/icons/knag-icon-dev.svg",
+  "/icons/knag-icon-dev-192.png",
+  "/icons/knag-icon-dev-512.png",
+  "/icons/knag-icon-dev-512-maskable.png",
+  "/icons/favicon-dev.svg",
+  "/icons/favicon-dev-32.png",
   "/fonts/familjen-grotesk-latin-var.woff2",
   "/fonts/dm-mono-latin-400.woff2",
   "/fonts/dm-mono-latin-300.woff2",

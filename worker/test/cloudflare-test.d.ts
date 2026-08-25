@@ -19,6 +19,8 @@ declare global {
       TEST_FONT_DIGESTS: string;
       /** `{ present, magic, frames }` of `public/favicon.ico`, read at config time (#191). */
       TEST_FAVICON: string;
+      TEST_SW: string;
+      TEST_ICONS: string;
     }
   }
 }
