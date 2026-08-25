@@ -13,6 +13,13 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-08-25
+
+The first setting the server holds, and pages in an order — both as their server halves.
+The operator's own text reaches every agent conversation, and the switcher's order is the
+same on every device. The editing surfaces for both wait on the design session and ship
+with it; until then the two routes are the way in.
+
 ### Added
 
 - **The operator's own instructions, appended to the MCP server's** (#190, server half).
@@ -1844,7 +1851,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/danjamk/knag/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/danjamk/knag/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/danjamk/knag/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/danjamk/knag/compare/v1.1.4...v1.2.0
