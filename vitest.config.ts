@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
@@ -30,6 +30,20 @@ const shell = readFileSync(fileURLToPath(new URL("./public/index.html", import.m
 // it — and every constraint on it is the kind that fails silently. A CDN reference, a
 // second board, a word off the kill list: all of them render.
 const site = readFileSync(fileURLToPath(new URL("./site/index.html", import.meta.url)), "utf8");
+
+// `/favicon.ico` (#191), summarised rather than handed over whole: the test only needs
+// to know it exists and is an ICO. `not_found_handling: "single-page-application"`
+// answers a missing one with index.html and a 200, so its absence broke nothing and
+// showed up as Claude's connector list wearing danjamkuhn.com's icon.
+const faviconPath = fileURLToPath(new URL("./public/favicon.ico", import.meta.url));
+const favicon = JSON.stringify(
+  existsSync(faviconPath)
+    ? (() => {
+        const bytes = readFileSync(faviconPath);
+        return { present: true, magic: [...bytes.subarray(0, 4)], frames: bytes.readUInt16LE(4) };
+      })()
+    : { present: false, magic: [], frames: 0 },
+);
 
 // 🔴 `site/fonts/` is a copy of `public/fonts/`, because Pages gets a folder and the
 // brief forbids a build step and a CDN. A copy can drift, and when it does the page
@@ -75,6 +89,7 @@ export default defineConfig({
           TEST_SHELL: shell,
           TEST_SITE: site,
           TEST_FONT_DIGESTS: fontDigests,
+          TEST_FAVICON: favicon,
         },
       },
     }),
