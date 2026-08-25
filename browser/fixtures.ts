@@ -21,6 +21,20 @@ export const test = base.extend<{ knag: Knag }>({
 
 export { expect };
 
+// Structural types for what `armWipeSampler` touches inside the page — browser/tsconfig
+// has no DOM lib, on purpose, and these name exactly the surface used.
+type WipeSample = { maxHeight: string; opacity: string };
+type WipeNode = { classList?: { contains: (name: string) => boolean } };
+type WipeRecord = { type: string; target: unknown; addedNodes: ArrayLike<unknown> };
+type WipeWindow = {
+  MutationObserver: new (callback: (records: WipeRecord[]) => void) => {
+    observe: (target: unknown, options: Record<string, unknown>) => void;
+    disconnect: () => void;
+  };
+  getComputedStyle: (el: unknown) => { getPropertyValue: (name: string) => string };
+};
+type WipeRoot = { ownerDocument: { defaultView: WipeWindow }; __wipe?: WipeSample | null };
+
 export class Knag {
   constructor(readonly page: Page) {}
 
@@ -351,6 +365,57 @@ export class Knag {
   /** Every checkbox control drawn over the bytes. */
   boxes() {
     return this.page.locator("[data-surface] input.cm-box");
+  }
+
+  /**
+   * Arm a sampler that records the first wiping line's computed `max-height` and
+   * `opacity` **at the instant `.cm-wiping` lands**, from inside the page (#201).
+   *
+   * 🔴 Why not sample from the test: the fade is 260ms and Playwright polls from
+   * outside it. On a loaded runner the first sample landed after the collapse had
+   * begun, and "fades in place before it collapses" went red twice in one day — the
+   * second time in front of a production deploy. A MutationObserver callback runs in the
+   * same task as the class change, before the collapse timer can possibly fire, so what
+   * it records is the first stage whatever the runner's clock is doing.
+   *
+   * Watches both an attribute change and a node being added with the class already on
+   * it, because CodeMirror may do either when a line decoration arrives.
+   */
+  async armWipeSampler(): Promise<void> {
+    await this.page.locator("[data-surface]").evaluate((root: WipeRoot) => {
+      root.__wipe = null;
+      const win = root.ownerDocument.defaultView;
+      const take = (target: WipeNode) => {
+        if (root.__wipe || !target.classList?.contains("cm-wiping")) return;
+        const style = win.getComputedStyle(target);
+        root.__wipe = {
+          maxHeight: style.getPropertyValue("max-height"),
+          opacity: style.getPropertyValue("opacity"),
+        };
+      };
+      const observer = new win.MutationObserver((records) => {
+        for (const record of records) {
+          if (record.type === "attributes") take(record.target as WipeNode);
+          for (const node of Array.from(record.addedNodes)) take(node as WipeNode);
+        }
+        if (root.__wipe) observer.disconnect();
+      });
+      observer.observe(root, {
+        attributes: true,
+        attributeFilter: ["class"],
+        childList: true,
+        subtree: true,
+      });
+    });
+  }
+
+  /** What the sampler armed above recorded; waits for the wipe to have started. */
+  async wipeSample(): Promise<WipeSample> {
+    const root = this.page.locator("[data-surface]");
+    await expect
+      .poll(() => root.evaluate((el: WipeRoot) => el.__wipe !== null), { timeout: 2000 })
+      .toBe(true);
+    return (await root.evaluate((el: WipeRoot) => el.__wipe)) as WipeSample;
   }
 
   /**

@@ -1,4 +1,3 @@
-import type { Locator } from "@playwright/test";
 import { expect, test } from "./fixtures.js";
 
 /**
@@ -23,18 +22,6 @@ const DAY = [
   "",
 ].join("\n");
 
-/** Computed style, via `ownerDocument.defaultView` — browser/tsconfig has no DOM lib. */
-type Styled = { ownerDocument: { defaultView: unknown } };
-type View = { getComputedStyle: (e: unknown) => { getPropertyValue: (p: string) => string } };
-
-async function css(locator: Locator, property: string): Promise<string> {
-  return locator.evaluate(
-    (el: Styled, prop: string) =>
-      (el.ownerDocument.defaultView as View).getComputedStyle(el).getPropertyValue(prop),
-    property,
-  );
-}
-
 test.describe("wiping from the editing surface", () => {
   test("🔴 marks the leaving lines, which it did not do at all before", async ({ knag }) => {
     await knag.seed(DAY);
@@ -52,15 +39,19 @@ test.describe("wiping from the editing surface", () => {
     await knag.seed(DAY);
     await knag.useEditor();
 
-    void knag.page.locator("[data-clear]").click();
-
-    const wiping = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
-    await expect(wiping).toHaveCount(1, { timeout: 2000 });
+    // 🔴 Sampled inside the page at the instant the class lands (#201), not from out
+    // here on the runner's clock. The fade is 260ms; polled from outside, the first
+    // sample landed after the collapse had begun on a loaded runner, and this went red
+    // twice in one day — the second time in front of a production deploy.
+    await knag.armWipeSampler();
+    await knag.page.locator("[data-clear]").click();
+    const first = await knag.wipeSample();
 
     // The two stages are the design decision, not an implementation detail: fading and
     // collapsing together makes the page jump under the thumb that just tapped, and the
     // release stops feeling like a release. So the first stage must not be collapsing.
-    expect(await css(wiping, "max-height")).not.toBe("0px");
+    expect(first.maxHeight).not.toBe("0px");
+    expect(Number.parseFloat(first.opacity)).toBeGreaterThan(0);
   });
 
   test("🔴 leaves the document byte-exact, and no line stranded invisible", async ({ knag }) => {
