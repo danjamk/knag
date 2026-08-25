@@ -231,6 +231,9 @@
         --target-arrange: 36px; /* grip and delete in Arrange, where they are the aim */
         --arrange-row-min: 44px;
         --checkbox-size: 18px;
+        /* The touch target around the 18px box in the editing surface (#193): 44 tall,
+           and wide enough to reach the screen edge. Target, not ink — see above. */
+        --checkbox-target: 44px;
 
         --radius-sm: 3px; /* controls, checkboxes */
         --radius-md: 6px; /* fields, dialog buttons */
@@ -631,13 +634,32 @@
          `accent-color` can only tint a control the platform still owns, so the fix is
          to stop letting it own one. Every declaration below mirrors `li.checkbox
          input[type="checkbox"]`, deliberately. */
+      /* 🔴 The target around the box (#193). The span is 44px tall and spans the row
+         padding, the box and the gap after it; negative margins pull its margin box back
+         to exactly the 18px the box occupied, so the ink and the text after it do not
+         move by a pixel — the test asserts the box still sits at --row-pad-left and a
+         checkbox line is no taller than a plain one. Neighbouring rows' targets overlap
+         by a few px at 34px row pitch, which is how every dense list on iOS works. */
+      .cm-box-hit {
+        display: inline-flex;
+        align-items: center;
+        box-sizing: border-box;
+        width: calc(var(--row-pad-left) + var(--checkbox-size) + var(--row-gap));
+        height: var(--checkbox-target);
+        margin: calc((var(--checkbox-size) - var(--checkbox-target)) / 2) 0
+          calc((var(--checkbox-size) - var(--checkbox-target)) / 2)
+          calc(-1 * var(--row-pad-left));
+        padding: 0 var(--row-gap) 0 var(--row-pad-left);
+        vertical-align: -3px;
+        cursor: pointer;
+      }
       input.cm-box {
         appearance: none;
         -webkit-appearance: none;
         flex: none;
         width: var(--checkbox-size);
         height: var(--checkbox-size);
-        margin: 0 var(--row-gap) 0 0;
+        margin: 0;
         padding: 0;
         border: var(--hairline-width) solid var(--checkbox-rest);
         border-radius: var(--radius-sm);
@@ -1055,16 +1077,27 @@
         padding: 0 var(--space-4) 0 var(--space-3);
         transition: height var(--ledge-duration) var(--ledge-ease);
       }
+      /* 🔴 `border-bottom`, because the ledge sits ABOVE the bar (#192). It shipped
+         below it: the footer is pinned to the bottom, so opening pushed the bar up 56px
+         and put the ledge — `wipe page` at its far end — under the pointer that had just
+         tapped the chevron. The switcher already rose above the bar; the ledge now does
+         the same, the bar never moves, and the chevron that opened it is the chevron
+         that closes it, at the same coordinates. */
       .ledge[data-open] {
         height: var(--ledge-height);
-        border-top: var(--hairline-width) solid var(--hairline);
+        border-bottom: var(--hairline-width) solid var(--hairline);
       }
 
       /* Glyph over label, because at 11px the label is the thing that makes a glyph
          unambiguous and neither is enough alone. They flex from the 44px floor rather
-         than being sized: three or four of them share whatever the phone has. */
+         than being sized: three or four of them share whatever the phone has.
+
+         🔴 `auto`, not `var(--target)`, as the flex basis (#192). With a 44px basis and
+         a 44px dead margin on `wipe page`, a 390px phone gave each item ~47px and
+         `settings` at 11px mono is ~56px — nothing clips, so the labels overlapped. A
+         label now sets its own width and the floor is still the target. */
       .ledge-item {
-        flex: 1 1 var(--target);
+        flex: 1 1 auto;
         min-width: var(--target);
         height: 48px;
         display: flex;
@@ -1107,14 +1140,12 @@
          three taps deep used to buy. */
       button[data-wipe-all] {
         flex: none;
-        /* 🔴 Clear of the ledge toggle above it, which is exactly `--target` wide and
-           sits at the bar's right edge. Without this the only destructive control in the
-           app is directly under the control you tap to open and close the ledge, and a
-           quick open-close lands on it. Found on a device, 2026-08-22.
-
-           One target width, not a nudge: the number is the toggle's own footprint, so it
-           stays correct if the touch target ever changes. */
-        margin-right: var(--target);
+        /* 🔴 No `margin-right` any more (#192). 1.2.0 gave this a 44px dead margin so
+           the only destructive control in the app was not directly under the chevron
+           when the bar jumped up on open — a nudge standing in for the fix. The ledge
+           now opens above the bar and the chevron never moves, so a quick open-close
+           lands on the chevron both times; and the margin was the reason four labels
+           overlapped on a phone. */
         height: var(--target);
         padding: 0 10px;
         border: var(--hairline-width) solid var(--hairline);
@@ -1805,35 +1836,14 @@
           </button>
         </div>
 
-        <div class="bar">
-          <!-- 🔴 A control now, and §7's "not until there is a second page" was scoping
-               the state *before* pages existed (#154). It is how the second page gets
-               made, so it cannot wait for one. The caret is the disclosure, and the
-               drop-up is the whole feature. -->
-          <button type="button" class="page-name" data-page-name aria-expanded="false" aria-haspopup="true">
-            <span data-page-label>today</span>
-            <svg class="page-caret" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M4 10 L8 6 L12 10"/></svg>
-          </button>
-          <span class="env" data-env hidden></span>
-          <span data-save-status data-rest>—</span>
-          <span class="bar-right">
-            <button type="button" data-clear hidden>
-              wipe <span data-clear-count>0</span>
-            </button>
-            <button
-              type="button"
-              class="bar-glyph"
-              data-ledge-toggle
-              aria-expanded="false"
-              aria-controls="ledge"
-              title="open the ledge"
-            >
-              <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M3 10.5 L8 5.5 L13 10.5"/></svg>
-            </button>
-          </span>
-        </div>
+        <!-- 🔴 ABOVE the bar in the DOM, deliberately (#192). The footer is pinned to the
+             bottom, so whatever comes after the bar pushes the bar up when it appears —
+             which is how the ledge shipped, and why opening it put `wipe page` under the
+             pointer that had just tapped the chevron. Up here it rises the way the
+             switcher does: the bar never moves, and the chevron that opened it is the
+             chevron that closes it, at the same coordinates.
 
-        <!-- `inert` and `data-open` are set together by `app.ts`: the attribute drives
+             `inert` and `data-open` are set together by `app.ts`: the attribute drives
              the 90ms height, `inert` is what keeps a zero-height button out of the tab
              order. Both, or the ledge is either a snap or a trap. -->
         <div class="ledge" id="ledge" data-ledge inert>
@@ -1866,6 +1876,34 @@
             <span data-wipe-all-label>wipe page</span>
             <span data-wipe-all-count>0</span>
           </button>
+        </div>
+
+        <div class="bar">
+          <!-- 🔴 A control now, and §7's "not until there is a second page" was scoping
+               the state *before* pages existed (#154). It is how the second page gets
+               made, so it cannot wait for one. The caret is the disclosure, and the
+               drop-up is the whole feature. -->
+          <button type="button" class="page-name" data-page-name aria-expanded="false" aria-haspopup="true">
+            <span data-page-label>today</span>
+            <svg class="page-caret" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M4 10 L8 6 L12 10"/></svg>
+          </button>
+          <span class="env" data-env hidden></span>
+          <span data-save-status data-rest>—</span>
+          <span class="bar-right">
+            <button type="button" data-clear hidden>
+              wipe <span data-clear-count>0</span>
+            </button>
+            <button
+              type="button"
+              class="bar-glyph"
+              data-ledge-toggle
+              aria-expanded="false"
+              aria-controls="ledge"
+              title="open the ledge"
+            >
+              <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M3 10.5 L8 5.5 L13 10.5"/></svg>
+            </button>
+          </span>
         </div>
       </footer>
     </div>

@@ -34,6 +34,56 @@ summarises the phase rather than pretending it was written as it happened.
   week and is the last thing before the only copy of the document. Recorded in
   `docs/deployment.md`'s divergence table.
 
+### Fixed
+
+- 🔴 **The ledge opens above the bar, and its labels have their room** (#192). It shipped
+  below the bar: the footer is pinned to the bottom, so opening pushed the bar up 56px and
+  put the ledge — `wipe page` at its far end — under the pointer that had just tapped the
+  chevron. Closing meant moving the mouse; a second click where it sat armed the wipe.
+  1.2.0 nudged the wipe control 44px clear of the chevron, which was a workaround for
+  this and the reason four labels ran together on a phone: with a 44px flex basis and
+  the dead margin, each item got ~47px on a 390px screen and `settings` at 11px mono is
+  ~56px. Nothing clipped, so nothing failed.
+
+  The ledge now sits above the bar in the DOM and rises the way the switcher does. The
+  bar never moves, the chevron that opened it closes it at the same coordinates, the
+  margin is gone, and a label sets its own width from the 44px floor. Two browser tests
+  pin it by geometry rather than DOM order: the chevron's box is identical before and
+  after opening and a click at the same point closes it; at 390px no two controls on the
+  ledge overlap. `docs/design/holistic-response.md` §4 carries the amendment — its list
+  was reachability order and had been read as layout.
+
+- 🔴 **The checkbox in the editing surface has a 44px target** (#193). On a phone,
+  checking a box missed often enough to become a habit, and it was aim, not the handler:
+  the 18px box was the whole hit area, in a product whose own rule is 44 — *a 44px target
+  is 44px of touchable area; it is not 44px of ink.* Raising the text size helped only
+  because the line got taller.
+
+  The widget is now a span around the box: 44px tall, reaching from the screen edge
+  through the box to the gap after it, pulled back with negative margins so the ink and
+  the text after it do not move by a pixel. The `pointerdown` handling that keeps the box
+  alive with the keyboard up moves to the span unchanged. The browser test asserts both
+  halves — a tap 12px left of and 20px below the ink toggles the line, and the box still
+  sits at `--row-pad-left` on a line no taller than a plain one. `--checkbox-target` is
+  the token; `--checkbox-size` stays 18.
+
+  Left padding is unchanged at 14px. The target reaches the edge, which is what a thumb
+  needs; whether the ink should sit further in is a design number, not a hit-area one.
+
+- **Dev says its own name — on the home screen and in the tab** (part of #196). Two
+  installs of the same app on one iPad — dev is the ITP test subject, prod the dogfood —
+  were identical tiles both called `knag`, and opening the wrong one restarts a seven-day
+  clock. `/manifest.json` now goes through the Worker (`run_worker_first`, both env
+  blocks): prod passes the static file through untouched, and anything else has `name`
+  and `short_name` rewritten to `knag <env>`. The tab title follows the badge the same
+  way, `knag · dev`. `scripts/verify.sh` reads the environment from `/health` and asserts
+  the manifest's name against it, so the route dropping out of `run_worker_first` goes
+  red on the next deploy rather than quietly serving twins again.
+
+  🔴 **The icons are unchanged, on purpose.** A dev mark comes from the design session or
+  not at all. When it arrives it goes into `devManifest`, `sw.js`'s `SHELL` and the
+  client's icon links together, and #196 closes then — not before.
+
 ## [1.2.1] — 2026-08-25
 
 Two fixes from a few days of use, no design input: the connector gets the mark, and
