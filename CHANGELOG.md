@@ -13,6 +13,13 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-08-25
+
+Two fixes the suite found and a person did not. Quick taps on history lines land in
+order instead of the second one blaming another device, and the wipe-motion tests
+measure inside the page rather than on the runner's clock — the flake that blocked the
+first production deploy of 1.4.0.
+
 ### Fixed
 
 - 🔴 **Two quick per-line restores no longer race, and the second no longer blames
@@ -1871,7 +1878,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/danjamk/knag/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/danjamk/knag/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/danjamk/knag/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/danjamk/knag/compare/v1.2.0...v1.2.1
