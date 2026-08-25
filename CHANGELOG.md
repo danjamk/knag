@@ -13,6 +13,27 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Changed
+
+- **The browser suite is sharded four ways in CI, and skipped when only docs changed**
+  (#202). Serial it was ten minutes — twenty spec files, one `wrangler dev` each, one
+  worker, most of it deliberate waiting — and every push paid it, including a roadmap
+  edit. `scripts/browser-tests.sh` takes `KNAG_SHARD=n/m` and keeps every m-th file by
+  sorted index; `ci.yml` runs four of those on four runners and lands near three minutes.
+  One server per file (#69) is untouched: the parallelism is across VMs and never inside
+  one, because #107 is per-server.
+
+  🔴 **The required check should be `browser-ok`, not the shards.** A required check named
+  after a matrix entry blocks every docs-only PR forever, because a skipped job never
+  reports. `browser-ok` runs `always()`, passes when the shards passed or were skipped for
+  a docs-only diff, and fails otherwise. Found while scoping this: the ruleset on `main`
+  requires `check` only, so a red browser job has never blocked a merge — the gate was a
+  person reading the checks. Making `browser-ok` required is the settings change to make.
+
+  The prod gate in `deploy-prod.yml` stays serial, deliberately: it runs a few times a
+  week and is the last thing before the only copy of the document. Recorded in
+  `docs/deployment.md`'s divergence table.
+
 ## [1.2.1] — 2026-08-25
 
 Two fixes from a few days of use, no design input: the connector gets the mark, and

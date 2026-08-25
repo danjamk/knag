@@ -220,7 +220,8 @@ decision rather than drift.
 
 | | dev | prod | Why |
 |---|---|---|---|
-| **Browser suite gates the deploy** | no | **yes** | `pnpm check` is a typecheck and a unit suite. Three bugs are on record that 263 unit tests could not see, all three found by a human on an iPhone. Dev is the rehearsal and self-corrects on the next merge; a bad prod deploy is what this pipeline exists to prevent, and prod is manual so you can wait four minutes |
+| **Browser suite gates the deploy** | no | **yes** | `pnpm check` is a typecheck and a unit suite. Three bugs are on record that 263 unit tests could not see, all three found by a human on an iPhone. Dev is the rehearsal and self-corrects on the next merge; a bad prod deploy is what this pipeline exists to prevent, and prod is manual so you can wait ten minutes |
+| Browser suite runs **serial** in the prod gate, **sharded** in `ci.yml` | — | serial | `ci.yml` runs on every push and shards four ways to land near three minutes (#202). The prod gate runs a few times a week and is the last thing before the only copy of the document: one runner, every file, in order, is the strongest form of the check |
 | Trigger | `push` to `main` | `workflow_dispatch` | Dev tracking `main` is the point. A release names code; deploying prod is a decision to adopt it |
 | Required reviewer | none | yes (optional but intended) | Dev is not a decision |
 | `skip_migrations` input | **absent** | present | Dev is where the migration path gets exercised. An input that lets you skip it defeats the rehearsal |

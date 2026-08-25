@@ -77,9 +77,64 @@ jobs:
   #
   # So "CI is green on main" now means typecheck and unit tests. If that stops being
   # enough, put this back rather than inventing something cleverer.
-  browser:
+  #
+  # 🔴 **Sharded four ways, and skipped when only docs changed** (#202). Serial it was
+  # ten minutes — twenty spec files, one `wrangler dev` each, one worker, most of it
+  # deliberate waiting — and every push paid it, including a roadmap edit. Each shard
+  # runs `scripts/browser-tests.sh` over a quarter of the files by sorted index; the
+  # script's one-server-per-file rule (#69) is untouched, because the parallelism is
+  # across VMs and never inside one (#107 is per-server). `fail-fast` is off so one red
+  # shard does not cancel the evidence the other three are collecting.
+  #
+  # 🔴 **The required check is `browser-ok`, below, not the shards.** A required check
+  # named after a matrix entry blocks every docs-only PR forever, because a skipped job
+  # never reports. `browser-ok` runs `always()`, passes when the shards passed *or* were
+  # skipped for a docs-only diff, and fails otherwise — so it is the one name to put in
+  # the ruleset. As of 2026-08-25 the ruleset requires `check` only; making `browser-ok`
+  # required is a settings change and the recommended one.
+
+  # Classifies the diff so the shards can be skipped for docs. Asked of the API rather
+  # than `git diff`, because a PR checkout is shallow and the base SHA is not in it.
+  # A manual `workflow_dispatch` run has no PR and always runs the suite.
+  changes:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "manual run — the browser suite runs"
+            exit 0
+          fi
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --paginate --jq '.[].filename')"
+          # `site/` is safe to skip only because site.test.ts in the unit suite is what
+          # checks the landing page; nothing in browser/ touches it.
+          code=false
+          while IFS= read -r f; do
+            case "$f" in
+              docs/*|site/*|*.md) ;;
+              *) code=true ;;
+            esac
+          done <<< "$files"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "changed:"
+          printf '  %s\n' $files
+          echo "code=$code"
+
+  browser:
+    needs: changes
+    if: github.event_name != 'push' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     # 🔴 The official Playwright image, which ships WebKit **and** its system libraries
     # already installed. What it replaces is `playwright install --with-deps webkit`,
     # which downloaded ~80MB and then ran `apt-get` against Ubuntu mirrors on a fresh VM
@@ -95,6 +150,8 @@ jobs:
     env:
       # The version this image ships. Bump alongside the tag above.
       PLAYWRIGHT_IMAGE_VERSION: "1.62.1"
+      # Which quarter of browser/*.spec.ts this runner takes (scripts/browser-tests.sh).
+      KNAG_SHARD: ${{ matrix.shard }}/4
     steps:
       - uses: actions/checkout@v5
         with:
@@ -144,10 +201,11 @@ jobs:
       # The cost is an artifact on green runs. `scripts/browser-tests.sh` only writes
       # `test-results/dead-server/` when a server actually died, and playwright keeps
       # traces on failure only — so a clean run uploads almost nothing.
+      # Named per shard, or the last upload wins and three shards' evidence is lost.
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: playwright-trace
+          name: playwright-trace-${{ matrix.shard }}
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
@@ -163,9 +221,30 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: wrangler-crash-logs
+          name: wrangler-crash-logs-${{ matrix.shard }}
           path: |
             /github/home/.config/.wrangler/logs/
             ~/.config/.wrangler/logs/
           if-no-files-found: ignore
           retention-days: 7
+
+  # 🔴 The one name for the ruleset. Green when every shard passed, or when the shards
+  # were skipped because the diff was docs-only; red on anything else, including a
+  # `changes` job that failed to classify. `always()` is what lets a skipped matrix
+  # still produce a verdict — a plain `needs` would skip this too, and a required check
+  # that never reports blocks the PR forever.
+  browser-ok:
+    needs: [changes, browser]
+    if: always() && github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULT: ${{ needs.browser.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+        run: |
+          echo "browser: ${RESULT} (code changed: ${CODE:-unknown})"
+          case "$RESULT" in
+            success) exit 0 ;;
+            skipped) [ "$CODE" = "false" ] && exit 0 || exit 1 ;;
+            *) exit 1 ;;
+          esac

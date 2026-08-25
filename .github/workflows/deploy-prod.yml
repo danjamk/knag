@@ -75,6 +75,12 @@ jobs:
       # WebKit only. iOS mandates it, so Safari's engine is the one that has to be
       # right; testing Chromium would report on a browser knag never runs on. No install
       # step — the image already has it.
+      #
+      # 🔴 Serial here, sharded in ci.yml (#202) — a deliberate divergence. This gate
+      # runs a few times a week at most and it is the last thing before the only copy of
+      # the document; one runner, every file, in order, is the strongest form of the
+      # check and ten minutes is the right price for it. Sharding is for the run that
+      # happens on every push.
       - run: pnpm test:browser
 
       # The trace is worth most on the run that blocked a production deploy.
