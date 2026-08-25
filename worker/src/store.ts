@@ -131,11 +131,15 @@ export async function findPageByName(env: Env, name: string): Promise<PageRow | 
 }
 
 /**
- * Every page, oldest first — the switcher's list (#154) and nothing more.
+ * Every page, in the operator's order — the switcher's list (#154) and nothing more.
  *
  * 🔴 No counts, no last-modified, no body. §7's rule for the selector is that
  * *anything else you add is a column, and a column is a file manager*, and the cheapest
  * place to hold that line is the query that cannot return the data in the first place.
+ *
+ * The order is `position` (#195), backfilled to `id` by migration 0008 so an untouched
+ * list is still creation order. `position` itself is not returned: the order is the
+ * array's, and a number the client could display would be a column.
  */
 export async function listPages(
   env: Env,
@@ -145,10 +149,38 @@ export async function listPages(
     // fact the switcher's last row needs, and the body of it is not something any list
     // should be carrying around.
     `SELECT id, name, template IS NOT NULL AS has_template FROM pages
-      WHERE deleted_at IS NULL ORDER BY id`,
+      WHERE deleted_at IS NULL ORDER BY COALESCE(position, id), id`,
   ).all<{ id: number; name: string; has_template: number }>();
 
   return results.map((row) => ({ id: row.id, name: row.name, has_template: row.has_template === 1 }));
+}
+
+/**
+ * Put the live pages in the given order (#195). `ids` must be exactly the set of live
+ * page ids — every one, once, and nothing retired or unknown — or nothing changes and
+ * this returns `false`. A partial list would leave the rest with stale positions that
+ * happen to sort somewhere, and "happen to" is not an order.
+ *
+ * One statement per page inside a batch, so a reorder is atomic and a device polling
+ * `listPages` mid-way never sees half of one.
+ */
+export async function reorderPages(env: Env, ids: number[]): Promise<boolean> {
+  const live = (await listPages(env)).map((page) => page.id);
+  const wanted = [...ids];
+  if (wanted.length !== live.length) return false;
+  if (new Set(wanted).size !== wanted.length) return false;
+  const liveSet = new Set(live);
+  if (!wanted.every((id) => liveSet.has(id))) return false;
+
+  await env.DB.batch(
+    wanted.map((id, index) =>
+      env.DB.prepare("UPDATE pages SET position = ? WHERE id = ? AND deleted_at IS NULL").bind(
+        index + 1,
+        id,
+      ),
+    ),
+  );
+  return true;
 }
 
 /**
@@ -848,9 +880,13 @@ export async function createPage(
   const timestamp = now.toISOString();
   const body = input.body ?? "";
 
+  // Appended: one past the highest position among live pages (#195). Retired pages keep
+  // theirs, so the subquery excludes them or a long-dead page could leave a gap the
+  // switcher would never show but a reorder would have to reason about.
   const row = await env.DB.prepare(
-    `INSERT INTO pages (name, body, version, updated_at, source, template, created_at)
-     VALUES (?, ?, 1, ?, ?, NULL, ?)
+    `INSERT INTO pages (name, body, version, updated_at, source, template, created_at, position)
+     VALUES (?, ?, 1, ?, ?, NULL, ?,
+       (SELECT COALESCE(MAX(COALESCE(position, id)), 0) + 1 FROM pages WHERE deleted_at IS NULL))
      RETURNING id, name`,
   )
     .bind(input.name, body, timestamp, input.source, timestamp)
