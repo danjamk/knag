@@ -331,6 +331,26 @@ describe("PWA shell (spec §9)", () => {
     expect(tag).not.toContain("maskable");
   });
 
+  it("🔴 ships a real /favicon.ico, so an icon resolver does not walk up to the apex", () => {
+    // `not_found_handling: "single-page-application"` answers a missing `/favicon.ico`
+    // with index.html and a 200. Nothing broke — Claude's connector list simply showed
+    // danjamkuhn.com's favicon next to knag, because a resolver that finds HTML on the
+    // host falls back to the registrable domain (#191). The MCP `icons` in serverInfo
+    // were correct the whole time and were not what the client used.
+    const favicon = JSON.parse(env.TEST_FAVICON) as {
+      present: boolean;
+      magic: number[];
+      frames: number;
+    };
+    expect(favicon.present, "public/favicon.ico is missing").toBe(true);
+    // ICONDIR: reserved 0, type 1. Anything else is a renamed PNG or the shell.
+    expect(favicon.magic, "not an ICO").toEqual([0, 0, 1, 0]);
+    expect(favicon.frames, "16, 32 and 48").toBeGreaterThanOrEqual(3);
+
+    const tag = /<link[^>]*href="\/favicon\.ico"[^>]*>/.exec(shell())?.[0] ?? "";
+    expect(tag, "index.html must link it, not just leave it to be guessed").toContain('rel="icon"');
+  });
+
   it("sets viewport-fit=cover so safe-area insets resolve", () => {
     expect(shell()).toContain("viewport-fit=cover");
   });

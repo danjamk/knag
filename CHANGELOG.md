@@ -13,6 +13,25 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- 🔴 **Claude's connector list showed danjamkuhn.com's favicon next to knag** (#191).
+  `serverInfo.icons` pointed at the right files the whole time. The client resolves an
+  icon by host first, and the host answered `/favicon.ico` with the PWA shell and a 200 —
+  `not_found_handling: "single-page-application"` doing to a favicon exactly what
+  ADR-005 §4 records it doing to OAuth metadata. A resolver that finds HTML walks up to
+  the registrable domain, and that is the icon it found.
+
+  `public/favicon.ico` now exists — the mark at 16, 32 and 48, drawn from the same two
+  rectangles as `knag-icon.svg` — and `index.html` links it. `scripts/verify.sh` checks
+  that the path serves an image, by content type rather than status, for the same reason
+  the fonts are checked that way: the fallback makes a missing file look like a served
+  one. The suite pins the file's existence and its ICO header.
+
+  Whether the connector *then* shows the mark is the client's business. If it does not
+  after a reconnect, the remaining cause is Claude ignoring `icons`, and that gets noted
+  above `serverIcons` in `mcp.ts` rather than worked around.
+
 ## [1.2.0] — 2026-08-22
 
 The record. Seven days of wipes, per page — open one, see the lines exactly as they

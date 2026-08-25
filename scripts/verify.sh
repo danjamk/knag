@@ -90,6 +90,12 @@ run_all() {
   check "app icon served"   "image/png" "$(served_as "${BASE}/icons/knag-icon-192.png")"
   check "MCP icon served"   "image/png" "$(served_as "${BASE}/icons/mcp-icon-slate-256.png")"
 
+  # 🔴 By *prefix*: the exact type of an .ico varies by server (`image/x-icon`,
+  # `image/vnd.microsoft.icon`) and the only thing asserted is that it is not
+  # `text/html` — the SPA fallback answering for a file that is not there, which is what
+  # sent Claude's connector list up to the apex domain for knag's icon (#191).
+  check "favicon.ico is an image" "image" "$(served_as "${BASE}/favicon.ico" | cut -d/ -f1)"
+
   # 🔴 The only place any of this is observable. `not_found_handling:
   # "single-page-application"` answers an unrouted path with the PWA shell and a 200, so a
   # missing `run_worker_first` entry does not 404 — it serves HTML where a connector

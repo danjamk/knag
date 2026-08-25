@@ -12,6 +12,12 @@
          80% for Android's circle — double-pads it, and the block cursor arrives on the
          home screen looking small and off-centre next to every other icon. -->
     <link rel="apple-touch-icon" href="/icons/knag-icon-192.png" />
+    <!-- 🔴 A real .ico at the root, because something fetches it whether or not it is
+         linked. Claude's connector list resolved knag's icon by host, found the SPA
+         shell answering /favicon.ico with a 200, and fell back to danjamkuhn.com's
+         (#191). The MCP `icons` in serverInfo were right the whole time and were not
+         what it used. -->
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
     <link rel="icon" type="image/svg+xml" href="/icons/knag-icon.svg" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/knag-icon-192.png" />
     <title>knag</title>
