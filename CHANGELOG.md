@@ -13,6 +13,22 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **The ledge's glyphs are 24px** (#197). It read like a footnote on a phone at text
+  size 20. The proposal was 13px labels; the ruling
+  ([design/phase-8-response.md](docs/design/phase-8-response.md) §2) is that the
+  constraint on the ledge is width, not height — four 13px mono labels beside `wipe page`
+  overrun a 390px phone by 3px and a 375px one by 18, the overlap 1.3.0 had just removed —
+  so the glyph grew instead, 18 → 24 as one token, and the label holds at 11. Nothing on
+  the ledge follows the reading preference.
+- **Dev wears its own mark** (#196) — the same block, unfilled: the cursor before it has
+  anything to say. Off prod the tile, the tab and the home screen carry it; prod is
+  unchanged. Three places had to agree — the manifest the Worker rewrites, the link tags
+  the client swaps, the shell the service worker precaches — and a test now reads all
+  three against the files on disk, because a file missing from any one renders wrong
+  without failing.
+
 ## [1.4.1] — 2026-08-25
 
 Two fixes the suite found and a person did not. Quick taps on history lines land in
