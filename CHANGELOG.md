@@ -13,6 +13,12 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-08-25
+
+The four design rulings from a week on a phone, built the evening they came back. The
+ledge's glyphs are a third larger, dev wears its own mark, the agent's instructions have
+a pane, and pages drag into order — the two surfaces 1.4.0 shipped the server halves of.
+
 ### Added
 
 - **The ledge's glyphs are 24px** (#197). It read like a footnote on a phone at text
@@ -1905,7 +1911,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/danjamk/knag/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/danjamk/knag/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/danjamk/knag/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/danjamk/knag/compare/v1.2.1...v1.3.0
