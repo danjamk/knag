@@ -52,15 +52,19 @@ test.describe("the daily sweep", () => {
   test("🔴 fades in place first, and only then closes the gap", async ({ knag }) => {
     await knag.seed(MIXED);
     await knag.useEditor();
+
+    // 🔴 Sampled inside the page at the instant the class lands (#201) — the same shape
+    // wipe-editor.spec.ts had, and the same 260ms window a runner's clock can miss.
+    await knag.armWipeSampler();
     await knag.page.locator("[data-clear]").click();
+    const first = await knag.wipeSample();
 
     // The property the whole sequence was built around, and the one a retune could
     // quietly lose: the rows go transparent **holding their height**, and one collapse
     // closes the gap afterwards. Fading and collapsing together makes the page jump
     // under the thumb that just tapped, and the release starts feeling like a mis-tap.
-    const row = knag.page.locator("[data-surface] .cm-line.cm-wiping").first();
-    await expect(row).toBeVisible();
-    expect(await css(row, "max-height")).not.toBe("0px");
+    expect(first.maxHeight).not.toBe("0px");
+    expect(Number.parseFloat(first.opacity)).toBeGreaterThan(0);
 
     await expect(knag.page.locator("[data-surface] .cm-line.cm-closing").first()).toBeAttached();
   });

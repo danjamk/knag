@@ -37,6 +37,8 @@
 #
 #   sync.spec.ts    died twice, while it was the slowest file of 7 and then of 8
 #   wipe.spec.ts    failed once on an assertion, server alive — a different mode
+#                   (that mode is closed: it was a 260ms sampling window, #201, and the
+#                   sample now happens inside the page; #205 was the other one, a bug)
 #   editor.spec.ts  died twice, while it was the slowest of 13 at 71-124 seconds
 #
 # Every dead-server failure landed in whichever file was **slowest at the time**. It looked

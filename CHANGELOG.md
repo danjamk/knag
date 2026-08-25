@@ -13,6 +13,19 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- 🔴 **The wipe's "fades before it collapses" tests no longer sample on the runner's
+  clock** (#201). Both `wipe-editor.spec.ts` and `wipe-motion.spec.ts` read `max-height`
+  once from outside the page after `.cm-wiping` appeared, inside a window the fade's
+  260ms defines; on a loaded runner the first sample landed after the collapse had
+  begun, and the assertion went red twice in one day — the second time as the gate in
+  front of a production deploy, which it blocked. The fixture now arms a
+  `MutationObserver` inside the page that records the line's computed `max-height` and
+  `opacity` in the same task the class lands in, so what is asserted is the first stage
+  whatever the runner is doing. The shipped tokens are still what run; nothing is slowed
+  down under test.
+
 ## [1.4.0] — 2026-08-25
 
 The first setting the server holds, and pages in an order — both as their server halves.
