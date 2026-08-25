@@ -36,6 +36,22 @@ summarises the phase rather than pretending it was written as it happened.
   the design session; until then the route is the way in, and a `curl` with the bearer
   sets it.
 
+- **Pages hold an order, server-side** (#195, server half). The switcher and manage-pages
+  listed pages by `id` — creation order — and nothing could change it. Order is a property
+  of the pages rather than of a device, so it lives in D1 and every device sees the same
+  one: `position` (migration 0008, additive, backfilled to `id` so an untouched list is
+  what it always was), `listPages` ordered by it, `createPage` appending one past the
+  highest live position, and `PUT /api/pages/order` taking the full list of live ids.
+  Whole-list, for the same reason the document is whole-page: there is one order and
+  this is all of it. A list that is not exactly the live set — one missing, one twice,
+  one retired — is refused as a 409 carrying the current list.
+
+  🔴 **Not a column.** `listPages` returns no position; the order is the array's. A number
+  the client could display would be a column, and §7 says a column is a file manager.
+
+  The drag surface in manage-pages waits on the design session. Until it exists the
+  route is the way in.
+
 ## [1.3.0] — 2026-08-25
 
 The phone pass. The ledge opens the way the chevron points, the checkbox is as easy to
