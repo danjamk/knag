@@ -2323,6 +2323,14 @@ if (manageList) {
     delay: 120,
     delayOnTouchOnly: true,
     ghostClass: "dragging",
+    // 🔴 Pointer-driven on every input, never the browser's native drag. Touch already
+    // takes this path; a mouse got HTML5 drag-and-drop, which hands the drag image and
+    // the drop to the platform — and a WebKit under test does not deliver a synthetic
+    // pointer through it reliably, so the one test of this control was red on the
+    // production gate for 1.5.0 and flaky at home. One code path on every device is
+    // also the honest version of "the same verb on a different list".
+    forceFallback: true,
+    fallbackTolerance: 3,
     onEnd: (event) => {
       if (event.oldIndex === undefined || event.newIndex === undefined) return;
       if (event.oldIndex === event.newIndex) return;
