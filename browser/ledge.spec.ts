@@ -69,6 +69,70 @@ test.describe("opening and closing", () => {
     expect((open?.height ?? 0) - (closed?.height ?? 0)).toBeGreaterThanOrEqual(56);
     expect((open?.height ?? 0) - (closed?.height ?? 0)).toBeLessThan(60);
   });
+
+  test("🔴 opens above the bar, so the chevron that opened it is under the pointer to close it", async ({
+    knag,
+  }) => {
+    await knag.seed(DAY);
+
+    // It shipped below the bar. The footer is pinned to the bottom, so opening pushed
+    // the bar up 56px and put the ledge — `wipe page` at its far end — under the
+    // pointer that had just tapped the chevron (#192). The switcher already rose above
+    // the bar; the ledge does the same now, and this pins it by geometry rather than by
+    // DOM order, because order is the implementation and "the bar did not move" is the
+    // promise.
+    const toggle = knag.page.locator("[data-ledge-toggle]");
+    const before = await toggle.boundingBox();
+    await knag.openLedge();
+    const after = await toggle.boundingBox();
+    expect(after?.y).toBe(before?.y);
+    expect(after?.x).toBe(before?.x);
+
+    const ledge = await knag.ledge().boundingBox();
+    const bar = await knag.page.locator(".bar").boundingBox();
+    expect((ledge?.y ?? 0) + (ledge?.height ?? 0)).toBeLessThanOrEqual((bar?.y ?? 0) + 1);
+
+    // A second click at the exact coordinates of the first closes it. Not `.click()` on
+    // the locator, which would re-resolve the element wherever it went; the point is
+    // that the pointer did not have to go anywhere.
+    await knag.page.mouse.click(
+      (before?.x ?? 0) + (before?.width ?? 0) / 2,
+      (before?.y ?? 0) + (before?.height ?? 0) / 2,
+    );
+    await expect(knag.ledge()).not.toBeVisible();
+  });
+
+  test("🔴 no two controls on it overlap at phone width", async ({ knag }) => {
+    // Four labels ran together on an iPhone — `arrange` into `settings` into `history`
+    // — because a 44px flex basis plus a 44px dead margin on `wipe page` left each item
+    // ~47px on a 390px screen, and `settings` at 11px mono is ~56px. Nothing clipped, so
+    // nothing failed. This does.
+    await knag.page.setViewportSize({ width: 390, height: 844 });
+    await knag.seed(DAY);
+    await knag.openLedge();
+
+    // Structural types rather than `Element`: browser/tsconfig has no DOM lib, the same
+    // reason settings.spec.ts reads computed style through `ownerDocument.defaultView`.
+    type Measured = { getBoundingClientRect: () => { x: number; right: number } };
+    const boxes: Array<{ x: number; right: number }> = [];
+    for (const control of [".ledge-item", "[data-wipe-all]"]) {
+      const measured = await knag.page
+        .locator(control)
+        .evaluateAll((els: Measured[]) =>
+          els.map((el) => el.getBoundingClientRect()).map((r) => ({ x: r.x, right: r.right })),
+        );
+      boxes.push(...measured);
+    }
+    boxes.sort((a, b) => a.x - b.x);
+    expect(boxes.length).toBe(5);
+    boxes.forEach((box, i) => {
+      const previous = boxes[i - 1];
+      if (!previous) return;
+      expect(box.x, `control ${i} overlaps the one before it`).toBeGreaterThanOrEqual(
+        previous.right - 0.5,
+      );
+    });
+  });
 });
 
 test.describe("the rule that makes it free", () => {

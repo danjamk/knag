@@ -33,7 +33,23 @@ import {
   readPage,
   wipe,
   writePage,
+  AGENT_INSTRUCTIONS,
+  readSetting,
+  writeSetting,
 } from "./store.js";
+
+/**
+ * The manifest a non-production environment serves (#196): the static one with its
+ * name and short name naming the environment, everything else byte-identical. Pure, so
+ * the suite can pin it without Miniflare serving the asset it is derived from.
+ */
+export function devManifest(
+  manifest: Record<string, unknown>,
+  environment: string,
+): Record<string, unknown> {
+  const name = `knag ${environment}`;
+  return { ...manifest, name, short_name: name };
+}
 
 /**
  * knag — one plain-text document, always live.
@@ -68,6 +84,33 @@ const router = {
     // catches "deployed from the wrong branch."
     if (url.pathname === "/health") {
       return Response.json(buildInfo(env));
+    }
+
+    // 🔴 The manifest goes through the Worker so dev can say its own name (#196). Two
+    // installs of the same app on one home screen — dev is the ITP test subject, prod
+    // is the dogfood — were identical tiles both called `knag`, and on that iPad opening
+    // the wrong one restarts a seven-day clock. Prod passes the static file through
+    // untouched; anything else gets `name` and `short_name` rewritten to `knag <env>`.
+    //
+    // Icons are deliberately NOT swapped here yet. A dev mark comes from the design
+    // session or not at all; when it arrives it goes in `devManifest`, `sw.js`'s SHELL
+    // and the client's icon links together, or a cold offline start on dev renders the
+    // prod tile.
+    if (url.pathname === "/manifest.json") {
+      // 🔴 Fetched as a GET whatever the request was. The rewrite needs the body, and a
+      // HEAD asset response has none to parse — found as a 500 on `curl -I` against a
+      // local Worker. HEAD gets the finished response's status and headers, no body.
+      const asset = env.ASSETS ? await env.ASSETS.fetch(new Request(request.url)) : null;
+      if (!asset?.ok) return asset ?? Response.json({ error: "Not found" }, { status: 404 });
+      const environment = buildInfo(env).environment;
+      const response =
+        environment === "prod"
+          ? asset
+          : Response.json(
+              devManifest((await asset.json()) as Record<string, unknown>, environment),
+              { headers: { "Cache-Control": asset.headers.get("Cache-Control") ?? "no-cache" } },
+            );
+      return request.method === "HEAD" ? new Response(null, response) : response;
     }
 
     // The one unauthenticated /api/* route, necessarily — it is how a principal comes
@@ -146,6 +189,46 @@ const router = {
 
       if (request.method === "GET") return getDoc(request, env, url);
       if (request.method === "PUT") return putDoc(request, env, principal);
+
+      return Response.json(
+        { error: "Method not allowed" },
+        { status: 405, headers: { Allow: "GET, PUT" } },
+      );
+    }
+
+    // 🔴 The one setting the server holds (#190): free text the operator writes, which
+    // the MCP server appends to its `instructions` under a fixed heading. Every other
+    // preference is localStorage; this one is about the account and has to reach a bearer
+    // caller with no browser, so it lives in D1. Session or bearer, like every route —
+    // and never a tool, because an agent editing its own instructions is not a feature.
+    if (url.pathname === "/api/settings/agent-instructions") {
+      const principal = await authenticate(request, env);
+      if (!principal) return unauthorized();
+
+      if (request.method === "GET") {
+        return Response.json({ text: (await readSetting(env, AGENT_INSTRUCTIONS.key)) ?? "" });
+      }
+
+      if (request.method === "PUT") {
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return Response.json({ error: "body must be JSON" }, { status: 400 });
+        }
+        const text = (body as { text?: unknown } | null)?.text;
+        if (typeof text !== "string") {
+          return Response.json({ error: "text must be a string" }, { status: 400 });
+        }
+        if (text.length > AGENT_INSTRUCTIONS.max) {
+          return Response.json(
+            { error: `text must be at most ${AGENT_INSTRUCTIONS.max} characters` },
+            { status: 413 },
+          );
+        }
+        await writeSetting(env, AGENT_INSTRUCTIONS.key, text);
+        return Response.json({ text });
+      }
 
       return Response.json(
         { error: "Method not allowed" },

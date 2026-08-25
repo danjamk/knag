@@ -1028,3 +1028,32 @@ export async function deleteOtherSessions(
 
   return result.meta.changes ?? 0;
 }
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+/**
+ * The one setting the server holds (#190): free text the operator writes, appended to
+ * the MCP server's `instructions` under a fixed heading. Global rather than per page —
+ * a page's purpose is one line inside it — and capped, because it rides in every
+ * agent conversation's system prompt.
+ *
+ * 🔴 Never exposed as a tool. An agent editing its own instructions is not a feature.
+ */
+export const AGENT_INSTRUCTIONS = { key: "agent_instructions", max: 4000 } as const;
+
+export async function readSetting(env: Env, key: string): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?")
+    .bind(key)
+    .first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+/** Upsert. An empty value is stored as empty rather than deleted — absent and blank read the same. */
+export async function writeSetting(env: Env, key: string, value: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  )
+    .bind(key, value, new Date().toISOString())
+    .run();
+}

@@ -77,6 +77,15 @@ the sheet · preferences, set once
   board · view · text size · sound · you
 ```
 
+🔴 **Amended 2026-08-25 (#192): the ledge opens *above* the bar.** The list above is
+reachability order, not layout, and it was read as layout — the ledge shipped below the
+bar, so with the footer pinned to the bottom, opening pushed the bar up 56px and put
+`wipe page` under the pointer that had just tapped the chevron. 1.2.0 nudged the wipe
+control 44px clear of the chevron, which cost the four labels their room on a phone. The
+switcher already rose above the bar; the ledge now does the same, the bar never moves, and
+the chevron that opened it closes it at the same coordinates. The chevron points up
+because that is the direction it opens.
+
 ### New tokens
 
 ```css

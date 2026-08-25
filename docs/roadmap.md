@@ -460,13 +460,21 @@ one artwork variant. That shape is what sets the order.
 questions are six round trips. Sent as one brief they are one. So the phase is cut into
 what can go *before* the brief, what waits *on* it, and what is bigger than it.
 
-#### 8a · Patch — #191, #194, with #107 · **1.2.1**
+#### 8a · Patch — ~~#191~~, #194, #202, with #107 · **1.2.1**
 
 No feature, no schema, no design. #191 is a bug visible in every Claude session — the
 connector shows the wrong icon because `/favicon.ico` answers with the PWA shell and a
 200, the same SPA-fallback failure ADR-005 §4 documents. #194 is an hour of copy: every
 preference is per device and the sheet does not say so. #107 was already Prioritized and
 is still the only thing making CI lie; it rides along rather than blocking.
+
+🔴 **#202 joined on 2026-08-25, and 8a is where the PR-grouping rule below comes from.**
+#191 and #194 shipped as two PRs sharing one version bump and one CHANGELOG block. That
+cost two ten-minute browser runs, a stacked branch, and a merge conflict when the first
+squash rewrote the lines the second was sitting on — three CI cycles for 120 lines. The
+browser job is the whole ten minutes and it is serial by design (#69), so #202 shards it
+across runners and skips it for docs-only changes; every phase after this one pays the
+same ten minutes on every push until it lands.
 
 #### 8b · The phone pass — #192 → #197, #193, #196 · **1.3**
 
@@ -557,3 +565,11 @@ A roadmap that goes stale is the thing this one replaced, so:
 - **If it has not been touched in two releases, it is probably wrong.**
   `make info` answers "what shipped"; nothing answers "is this still the plan"
   except reading it.
+- **A release group ships as one PR when its items are each under half a day and
+  none needs its own review.** CHANGELOG bullets stay separate; the bump lands once;
+  CI runs once. Two small PRs sharing a version bump is how 8a produced a stacked
+  branch, a merge conflict and three browser runs for 120 lines (2026-08-25). The
+  house rule against giant PRs still holds — it is about what can be *reviewed*,
+  and two hour-long changes in one diff can be. Applied ahead: 8b ships #192 and
+  #197 together (both are the ledge, and #197 measures after #192 anyway), #193 and
+  #196 on their own; 8c ships #190 and #195 separately, because each adds schema.
