@@ -58,12 +58,14 @@ test.describe("the shape of the sheet", () => {
     await knag.seed(DAY);
     await knag.openSettings();
 
-    // 🔴 One label, not two (#149). The boundary is still in the same place and still
-    // the whole information architecture — but `the page` sat under a head that says
-    // `settings`, above four rows that are visibly about the page, and named nothing the
-    // reader could not already see. `you` earns its line because what follows it *is* a
-    // change of subject, and it keeps the slot the account rows arrive above in 1.2.
-    await expect(knag.page.locator("[data-settings] .group")).toHaveText(["you"]);
+    // 🔴 Two labels, one boundary (#149 → #194). #149 cut the first label because
+    // `the page` sat under a head that says `settings`, above four rows visibly about the
+    // page, and named nothing the reader could not already see. #194 put one back with a
+    // different job: `this device` names the one thing they cannot see — every row above
+    // `you` is localStorage and the iPad will not follow. Same test, the other answer.
+    // The boundary is still in the same place and still the whole information
+    // architecture; it is the order that is pinned here, not the count.
+    await expect(knag.page.locator("[data-settings] .group")).toHaveText(["this device", "you"]);
     await expect(knag.page.locator("[data-settings] .pref")).toHaveCount(6);
   });
 
