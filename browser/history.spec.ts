@@ -175,6 +175,47 @@ test.describe("history", () => {
       .toBe("Kingspan 70mm quoted 2wks\n- [ ] undone thing");
   });
 
+  test("🔴 three quick taps all land, in tap order, and none says it changed elsewhere", async ({
+    knag,
+  }) => {
+    await knag.resetPages();
+    await knag.seed(PAGE);
+    await wipeThePage(knag);
+    await openHistory(knag);
+
+    await knag.page.locator("[data-history-list] .head").first().click();
+    const lines = knag.page.locator("[data-history-list] [data-put-line]");
+    // 🔴 Each PUT is held for 300ms so the second and third taps land inside the first
+    // one's flight — which is the race (#205): computed from the pre-tap body, sent with
+    // the version the server had already moved past, answered with a 409 the pane blamed
+    // on another device. On CI a slow runner opened that window by itself and this went
+    // red on a CHANGELOG-only PR; on a laptop the round trip beats the ~50ms between
+    // clicks and the bug never shows, so the window is opened here on purpose. Wrapped
+    // in the page rather than with `page.route`, which never sees a request the service
+    // worker handled. Queued, each tap starts from the document the one before it left.
+    await knag.page.evaluate(() => {
+      type Fetch = (input: unknown, init?: { method?: string }) => Promise<unknown>;
+      const g = globalThis as unknown as { fetch: Fetch };
+      const real = g.fetch;
+      g.fetch = async (input, init) => {
+        if (init?.method === "PUT" && String(input).includes("/api/doc")) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        return real(input, init);
+      };
+    });
+    await lines.nth(0).click();
+    await lines.nth(2).click();
+    await lines.nth(1).click();
+
+    // Tap order, because `insertLines` appends — the line tapped last goes last.
+    await expect
+      .poll(() => knag.document())
+      .toBe("Kingspan 70mm quoted 2wks\n- [ ] undone thing\n- [x] done thing");
+    await expect(knag.page.locator("[data-history-list] li[data-restored]")).toHaveCount(3);
+    await expect(knag.page.locator("[data-history-error]")).toBeHidden();
+  });
+
   test("names the page it is the record of", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(PAGE);

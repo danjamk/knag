@@ -208,6 +208,12 @@ function noteMcpOrigin(request: Request): void {
  * MIME types a client that renders icons at all MUST support; the design pass specifies
  * this exact array. The mark is two rectangles, so 256 downscales to a connector row
  * without artefacts and the 32/64 exports are not shipped.
+ *
+ * 🔴 **Claude.ai does not read these** (#191, checked 2026-08-25). Its connector card is
+ * `google.com/s2/favicons?domain=<registrable domain>` — the subdomain stripped, so the
+ * card shows danjamkuhn.com's mark whatever this array or `/favicon.ico` says. Kept
+ * because it is what the spec says and the day the client reads it the mark appears with
+ * no change here; do not spend another round on the icon from this side.
  */
 function serverIcons(origin: string) {
   return [
