@@ -27,6 +27,7 @@ import {
   oldestRevisionAt,
   pageTemplate,
   renamePage,
+  reorderPages,
   saveTemplate,
   type PageRow,
   readPage,
@@ -170,6 +171,40 @@ const router = {
           { error: "Method not allowed" },
           { status: 405, headers: { Allow: "GET, POST" } },
         );
+      }
+
+      // The order, as one write (#195): the full list of live ids, in the order wanted.
+      // Whole-list rather than "move this one", for the same reason the document is
+      // whole-page: there is one order and this is all of it. The store refuses a list
+      // that is not exactly the live set, and that surfaces as a 409 with the current
+      // list — the client repaints and the reader drags again.
+      if (tail === "/order") {
+        if (request.method !== "PUT") {
+          return Response.json(
+            { error: "Method not allowed" },
+            { status: 405, headers: { Allow: "PUT" } },
+          );
+        }
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return Response.json({ error: "body must be JSON" }, { status: 400 });
+        }
+        const ids = (body as { ids?: unknown } | null)?.ids;
+        if (!Array.isArray(ids) || !ids.every((id) => Number.isInteger(id) && id > 0)) {
+          return Response.json({ error: "ids must be an array of page ids" }, { status: 400 });
+        }
+        if (!(await reorderPages(env, ids as number[]))) {
+          return Response.json(
+            {
+              error: "ids must be every live page, once each — the list changed elsewhere",
+              pages: await listPages(env),
+            },
+            { status: 409 },
+          );
+        }
+        return Response.json({ pages: await listPages(env) });
       }
 
       const id = Number(tail.slice(1));
