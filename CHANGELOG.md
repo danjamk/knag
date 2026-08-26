@@ -13,6 +13,10 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.5.2] — 2026-08-25
+
+One word, after a day on the phone.
+
 ### Changed
 
 - The `agent` row in Settings is labelled **`agent prompt`**, and so is its pane. One word
@@ -1931,7 +1935,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.2...HEAD
+[1.5.2]: https://github.com/danjamk/knag/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/danjamk/knag/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/danjamk/knag/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/danjamk/knag/compare/v1.4.0...v1.4.1
