@@ -18,6 +18,12 @@ clears, promote the next one.** Nothing else decides what to pick up.
 This replaces the MVP plan's `#2 → #3 → #4 → #8`, which was true until it was
 not and stayed written down for a while afterwards.
 
+**Where it stands, 2026-08-26.** **Phase 8 is done** — 1.2.1, 1.3.0, 1.4.0, 1.5.0 through
+1.5.2, all tagged, prod on 1.5.2. One thing that was never on this page is next: the
+landing page describes 1.0, and everything that makes knag worth deploying shipped after
+it. So **Phase 9 is the product page** (#224), and **multi-user moves back one more slot
+to Phase 10**. The brief is with the design session; the reasoning is in the phase.
+
 **Where it stands, 2026-08-24.** 1.2.0 is merged (#189) and **Phase 7 is done** — the
 history pane, the glyph, and the `bring back` verb all shipped. A few days of using it on
 a phone and through the connector produced eight issues, #190–#197, none from the suite —
@@ -138,7 +144,15 @@ Set 2026-08-19. The version numbers are meant to say something:
 | **1.2.1** | Two fixes from use, no design input | 8a |
 | **1.3** | **The phone pass** — the ledge, the checkbox, dev's own icon | 8b |
 | **1.4** | The first server-side setting, and pages in an order | 8c |
-| **1.5** | Multi-user | 9 |
+| **1.5** | The design halves of 8b and 8c — the `agent ›` pane, the grip | 8b, 8c |
+| **1.6** | **The product page** | 9 |
+| **1.7** | Multi-user | 10 |
+
+🔴 **Amended 2026-08-26: the product page is 1.6, and it is a minor for the same reason
+the landing page was 0.16.0.** It ships no app code — `site/` deploys on its own workflow
+and never touches the Worker — but a version that skips it would say nothing shipped
+between 1.5 and multi-user, and something did. The table's 1.5 row was also stale: it
+still read *multi-user* three days after the renumbering below.
 
 🔴 **Amended 2026-08-24: three releases of use-findings before multi-user.** A week of
 real use produced #190–#197, and holding them behind a spike-and-ADR phase would be the
@@ -522,7 +536,50 @@ column later; do not wait on the multi-user decision to build it.
 pages max, creation order is tolerable — and the biggest cost: a migration, a route and a
 drag surface in a pane that is not Arrange.
 
-### Phase 9 · Multi-user — #122 · **ships 1.6**
+### Phase 9 · Show it, again — #224 · **ships 1.6**
+
+**Added 2026-08-26.** Nothing on this page covered it: Phase 5 shipped the landing page
+and closed, and the queue ran straight from 8c to multi-user. The page that is live
+describes 1.0 — one screen, a wipe, *Throwing it away is the feature.*, a link to the
+repo — and everything that makes knag worth deploying shipped after it. It does not
+mention pages, history, or the agent at all.
+
+**The brief is [design/product-page-brief.md](design/product-page-brief.md)**, and it
+reverses one of the design session's own rulings deliberately: `landing-page-brief.md`
+§5.5 said nothing needs to be written underneath the wipe, which was right for a product
+whose whole surface was one page you wipe. Three things changed, and §2 of the brief names
+them — nine pages, the agent turning out to be the differentiator rather than the
+minimalism, and a use case (the workout) that shows all of it in one loop. The prompt asks
+the session to argue with the reversal before executing it.
+
+🔴 **It goes before multi-user for the same reason Phase 5 went before the pilot**: *you
+only get to invite someone for the first time once*, and the page is what they read
+before the invitation means anything. The page is also a smaller, better-bounded job — one
+file, one design round trip, four test assertions — and multi-user's spike can float
+earlier in any week that wants a break from building, as it always could.
+
+**The shape is #90's**, one issue with the design round trip inside it, and the constraint
+that made #90 cheap still binds: one static self-contained file, no build step, fonts
+byte-identical to the app's. What is new is the one animated scene — five beats, one use
+case, the other three a row of text — and the ruling everything else waits on is brief
+§7.1, how the agent is depicted without a chat bubble, a robot, a sparkle or a gradient.
+
+🔴 **Two things the brief found that are not the page.** `worker/test/site.test.ts`
+forbids the words *your pages*, written in 0.16.0 to enforce "no second document" — pages
+shipped in 1.1 and the test has been green only because nothing tried to say it. And the
+history claim has two halves: the pane is seven days, `cleared_items` is never pruned. A
+page that says "full history" beside a seven-day pane has written its own bug report. Both
+are on the issue.
+
+**Phase 9 must not be written so that Phase 10 makes it a lie.** *Your account, your
+data* is true today and is the next thing to change; the page says *your account* rather
+than *one person only*.
+
+### Phase 10 · Multi-user — #122 · **ships 1.7**
+
+🔴 **Renumbered again on 2026-08-26, from Phase 9 and 1.6.** The product page went in
+ahead of it; the reasoning is in Phase 9 and it is the same reasoning that put Phase 5
+ahead of the pilot the first time.
 
 🔴 **Renumbered from 1.5 on 2026-08-25.** Phase 8's design halves landed a release later
 than their server halves, and they are features, so 1.5 is theirs.
