@@ -13,6 +13,21 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.5.3] — 2026-08-27
+
+One fix, found on a phone: the caret is the height of the text again.
+
+### Fixed
+
+- **The caret on a checkbox line is 20px in WebKit, not 44** (#226). The 44px target
+  around the box (#193, 1.3.0) was an inline span with negative margins — the line stayed
+  the same height and the ink did not move, and the test asserts both — but WebKit sizes
+  the native caret from the tallest *border* box on the line, margins or not. So Safari
+  and every iOS browser drew a caret a row-and-a-third tall on every task line, and
+  Chrome, where the desktop suite runs, drew it correctly. The target is now an absolutely
+  positioned pseudo-element, which takes no part in the line box; the span is the box's
+  own 18px, and the WebKit suite pins that.
+
 ## [1.5.2] — 2026-08-25
 
 One word, after a day on the phone.
@@ -1935,7 +1950,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.2...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.3...HEAD
+[1.5.3]: https://github.com/danjamk/knag/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/danjamk/knag/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/danjamk/knag/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/danjamk/knag/compare/v1.4.1...v1.5.0
