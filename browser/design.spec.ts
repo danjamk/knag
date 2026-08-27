@@ -225,6 +225,15 @@ test.describe("the checkbox", () => {
     expect(ink.x - row.x).toBe(14);
     expect(row.height).toBe(plain.height);
 
+    // 🔴 And the span itself is no taller than the ink (#226). The target used to be the
+    // span — 44px, pulled back with negative margins — and every assertion above held
+    // while WebKit drew a 44px caret on every checkbox line, because the native caret
+    // takes the line's tallest border box and ignores margins. The caret cannot be
+    // measured from here; the box that sets its height can.
+    const hit = await line.locator(".cm-box-hit").boundingBox();
+    if (!hit) throw new Error("no geometry");
+    expect(hit.height).toBe(18);
+
     // The target: 12px left of the ink is inside the row padding, 20px below its top is
     // past the ink's bottom edge — neither point is on the box, both are on the target.
     await knag.page.mouse.click(ink.x - 12, ink.y + 20);

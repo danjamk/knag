@@ -642,24 +642,39 @@
          `accent-color` can only tint a control the platform still owns, so the fix is
          to stop letting it own one. Every declaration below mirrors `li.checkbox
          input[type="checkbox"]`, deliberately. */
-      /* 🔴 The target around the box (#193). The span is 44px tall and spans the row
-         padding, the box and the gap after it; negative margins pull its margin box back
-         to exactly the 18px the box occupied, so the ink and the text after it do not
-         move by a pixel — the test asserts the box still sits at --row-pad-left and a
-         checkbox line is no taller than a plain one. Neighbouring rows' targets overlap
-         by a few px at 34px row pitch, which is how every dense list on iOS works. */
+      /* 🔴 The target around the box (#193). The span is exactly the box's 18px; the
+         44px target is its `::before`, absolutely positioned to reach the row's left
+         edge, past the gap after the box, and 13px above and below it. A pointer on a
+         pseudo-element lands on its element, so the span's `pointerdown` is the handler
+         for the whole target. Neighbouring rows' targets overlap by a few px at 34px
+         row pitch, which is how every dense list on iOS works.
+
+         🔴 Not a 44px span with negative margins, which is how this shipped in 1.3.0
+         (#226). Layout was right — the margin box was 18px, the ink did not move and
+         the line was no taller, exactly as the test asserts — but WebKit sizes the
+         native caret from the line's top and bottom, and those take an inline box's
+         *border* box whatever its margins say. So every checkbox line carried a 44px
+         caret on every Apple device, and Chrome, which does not, is where the test
+         runs. An absolutely positioned box takes no part in the line at all. */
       .cm-box-hit {
+        position: relative;
         display: inline-flex;
-        align-items: center;
+        flex: none;
         box-sizing: border-box;
-        width: calc(var(--row-pad-left) + var(--checkbox-size) + var(--row-gap));
-        height: var(--checkbox-target);
-        margin: calc((var(--checkbox-size) - var(--checkbox-target)) / 2) 0
-          calc((var(--checkbox-size) - var(--checkbox-target)) / 2)
-          calc(-1 * var(--row-pad-left));
-        padding: 0 var(--row-gap) 0 var(--row-pad-left);
+        width: var(--checkbox-size);
+        height: var(--checkbox-size);
+        margin: 0 var(--row-gap) 0 0;
+        padding: 0;
         vertical-align: -3px;
         cursor: pointer;
+      }
+      .cm-box-hit::before {
+        content: "";
+        position: absolute;
+        top: calc((var(--checkbox-size) - var(--checkbox-target)) / 2);
+        bottom: calc((var(--checkbox-size) - var(--checkbox-target)) / 2);
+        left: calc(-1 * var(--row-pad-left));
+        right: calc(-1 * var(--row-gap));
       }
       input.cm-box {
         appearance: none;

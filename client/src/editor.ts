@@ -192,8 +192,10 @@ class Box extends WidgetType {
     // 🔴 The target is the span; the ink is the input (#193). An 18px box was the whole
     // hit area, in a product whose own rule is 44 — "a 44px target is 44px of touchable
     // area; it is not 44px of ink" — and on a phone it missed often enough to be a habit.
-    // The span is sized in CSS to the target and hangs into the row padding with negative
-    // margins, so neither the box nor the text after it moves.
+    // The span is the box's own 18px; the target is its absolutely positioned `::before`,
+    // which reaches into the row padding without touching the line box. It was a 44px
+    // span with negative margins once, and WebKit gave every checkbox line a 44px caret
+    // for it (#226) — see the rule in index.html.
     const hit = document.createElement("span");
     hit.className = "cm-box-hit";
 
