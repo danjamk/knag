@@ -677,6 +677,12 @@
         right: calc(-1 * var(--row-gap));
       }
       input.cm-box {
+        /* 🔴 Positioned, so the box paints above its own target. The `::before` is
+           positioned and comes first in tree order, so without this it paints over the
+           in-flow input and a hit test at the box's centre lands on the span. A finger
+           would not notice — the span is the handler either way — but Playwright refuses
+           to click an element another element is covering, and CI did (#226). */
+        position: relative;
         appearance: none;
         -webkit-appearance: none;
         flex: none;
