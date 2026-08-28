@@ -269,7 +269,7 @@ Sets `ETag: "<version>"`. Honours `If-None-Match` with **304** and empty body.
   create no revision. The response is an ordinary 200 reporting the unchanged
   version — the caller's question is "what version am I on", and the answer does
   not depend on whether anything moved.
-- `base_version: 0` is honoured against a missing **or empty** row (§14.5) and is
+- `base_version: 0` is honoured against an **empty** row (§14.5) and is
   a conflict against anything else.
 - Rejected with **400**: a non-JSON body, a `body` that is not a string, a
   `base_version` that is not a non-negative integer. **413** past 1 MiB — roughly
@@ -1378,9 +1378,12 @@ Nothing seeds `documents`, so every read fails on a fresh deploy.
 
 - Migration inserts `(1, '', 1, <now>, 'system')`.
 - `GET /api/doc` treats a missing row as empty body at version 0 rather than
-  erroring — defensive, in case the migration is skipped.
-- `PUT` with `base_version: 0` against a missing or empty row succeeds and
-  initialises it.
+  erroring — defensive, in case the migration is skipped. *Since #230 the row is
+  **created** rather than simulated: with a default page per owner there is no id to
+  synthesise, so `defaultPageFor` makes the owner's `today` (empty, version 1,
+  `source: system`) and the read proceeds. Same invariant — a fresh database is
+  readable and empty is a valid state — held by construction instead of by pretence.*
+- `PUT` with `base_version: 0` against an empty row succeeds and initialises it.
 - Empty body is a valid state. It is not an error and must not be confused with
   a failed read anywhere in the client.
 

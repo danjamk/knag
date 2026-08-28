@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PAGE_ID, writePage } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * Migration 0004 — the expand half of pages (#152).
@@ -112,7 +113,7 @@ describe("revisions gain a page", () => {
     // 🔴 This is what makes the expand half safe to deploy on its own: the currently
     // deployed Worker knows nothing about `page_id` and its INSERTs still land correctly.
     // `make migrate` runs before `make deploy`, so that is not a hypothetical window.
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "milk\n", baseVersion: 1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "milk\n", baseVersion: 1, source: "pwa" });
 
     const newest = await env.DB.prepare(
       "SELECT page_id, body FROM revisions ORDER BY id DESC LIMIT 1",

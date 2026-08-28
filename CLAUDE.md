@@ -72,17 +72,22 @@ answering a formatting request; it has been asked three times.
 a handler. That chokepoint is what keeps a future schema change to one file — and it
 held the first time it was tested (#152, spec §17).
 
-**Every read and write takes a page.** `DEFAULT_PAGE_ID` is the page a request that
-names none is about, never a literal `1` and — since #152 — **never an identity**. It
-replaced `DOC_ID`, which meant "the only row there can be" because `documents` carried
-`CHECK (id = 1)`; `pages` has no such CHECK.
+**Every read and write takes an owner and a page.** Since #230 (ADR-008) the page a
+request that names none is about is `defaultPageFor(env, ownerId)` — the caller's oldest
+live page — and every `store.ts` query carries the owner. `DEFAULT_PAGE_ID` survives only
+as the name of migration 0004's seed row for the tests; nothing at runtime resolves a
+default by it. It was never an identity (#152 — it replaced `DOC_ID`, which meant "the
+only row there can be" because `documents` carried `CHECK (id = 1)`), and now it is not a
+default either. **The operator is a `role`, never `id = 1`**, for the same reason.
 
-🔴 **It is never the answer to "that page does not exist."** Whole-document write is the
-only write this product has, so falling back to the default would let a caller overwrite
-a page it never named. Missing is `null` from the store and a 404 from the route. The
-same rule is why MCP resolves to the *default* page rather than "the current page" —
-the Worker has no current page, that lives in a browser's localStorage, and a bearer
-token carries no device.
+🔴 **Missing and not-yours are the same `null` from the store and the same 404 from the
+route.** Whole-document write is the only write this product has, so falling back to a
+default would let a caller overwrite a page it never named — and a 404 that differed for
+"exists, somebody else's" would confirm the page is there. The same rule is why MCP
+resolves to the caller's *default* page rather than "the current page": the Worker has
+no current page, that lives in a browser's localStorage, and a bearer token carries no
+device. **A `store.ts` query that reaches for a page without its owner is the two-page
+bug below, one dimension over** — it shows up as one person reading another's page.
 
 Two queries in `store.ts` were correct only because there was one page:
 `newestUnsealedRevision` would coalesce one page's save into another's revision, and the

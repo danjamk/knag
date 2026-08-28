@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { OWNER, SESSION_COOKIE, authenticate, hashToken, secretEquals } from "../src/auth.js";
+import { SESSION_COOKIE, authenticate, hashToken, secretEquals } from "../src/auth.js";
+import { OPERATOR } from "./users.js";
 
 // Matches vitest.config.ts.
 const PASSPHRASE = "test-passphrase-do-not-use-in-production";
@@ -244,7 +245,8 @@ describe("bearer is first-class on every /api/* route", () => {
       headers: { Authorization: `Bearer ${BEARER}`, Cookie: `${SESSION_COOKIE}=${raw}` },
     });
 
-    expect(await authenticate(request, env)).toEqual({ id: OWNER, source: "bearer" });
+    // The static bearer is the operator's and only the operator's (ADR-008 §6).
+    expect(await authenticate(request, env)).toEqual({ id: OPERATOR, role: "operator", source: "bearer" });
   });
 
   it("falls through to the cookie when the bearer is wrong", async () => {
@@ -256,7 +258,7 @@ describe("bearer is first-class on every /api/* route", () => {
     // Matched rather than deep-equalled: a session principal now also carries its own
     // identity (#125), and this test is about *which credential won*, not about the
     // shape of the object. Deep equality here would fail on every future field.
-    expect(await authenticate(request, env)).toMatchObject({ id: OWNER, source: "session" });
+    expect(await authenticate(request, env)).toMatchObject({ id: OPERATOR, source: "session" });
   });
 
   it("401s with WWW-Authenticate when nothing is presented", async () => {

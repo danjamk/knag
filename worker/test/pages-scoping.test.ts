@@ -5,12 +5,13 @@ import {
   DEFAULT_PAGE_ID,
   createPage,
   clearedItemsInRange,
-  readDefaultPage,
+  defaultPageFor,
   readPage,
   revisionsInRange,
   wipe,
   writePage,
 } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * Two pages, which is the first time any of this can be wrong (#152).
@@ -38,7 +39,7 @@ const authed = { Authorization: `Bearer ${BEARER}` };
 const V1 = 1;
 
 async function second(name = "shopping") {
-  return await createPage(env, { name, body: "", source: "pwa" }, T0);
+  return await createPage(env, { ownerId: OPERATOR, name, body: "", source: "pwa" }, T0);
 }
 
 async function revisionsOn(pageId: number) {
@@ -54,10 +55,10 @@ describe("writes stay on their page", () => {
   it("leaves the other page's body and version untouched", async () => {
     const other = await second();
 
-    await writePage(env, { pageId: other.id, body: "milk\neggs\n", baseVersion: V1, source: "pwa" }, at(0));
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "milk\neggs\n", baseVersion: V1, source: "pwa" }, at(0));
 
-    expect((await readPage(env, other.id))?.body).toBe("milk\neggs\n");
-    expect((await readDefaultPage(env)).body).toBe("");
+    expect((await readPage(env, OPERATOR, other.id))?.body).toBe("milk\neggs\n");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("");
   });
 
   it("🔴 does not coalesce one page's save into the other page's revision", async () => {
@@ -67,8 +68,8 @@ describe("writes stay on their page", () => {
     // `newestUnsealedRevision` used to ask for the newest unsealed revision full stop —
     // so this save would have been UPDATEd into today's revision, replacing today's body
     // with the shopping list and losing both.
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "today's list\n", baseVersion: V1, source: "pwa" }, at(0));
-    await writePage(env, { pageId: other.id, body: "milk\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "today's list\n", baseVersion: V1, source: "pwa" }, at(0));
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "milk\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
 
     expect(COALESCE_WINDOW_MS).toBeGreaterThan(MINUTE);
 
@@ -86,8 +87,8 @@ describe("writes stay on their page", () => {
     // corruption for an unbounded log, and both are failures.
     const before = (await revisionsOn(DEFAULT_PAGE_ID)).length;
 
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "a\n", baseVersion: V1, source: "pwa" }, at(0));
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "ab\n", baseVersion: V1 + 1, source: "pwa" }, at(MINUTE));
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "a\n", baseVersion: V1, source: "pwa" }, at(0));
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "ab\n", baseVersion: V1 + 1, source: "pwa" }, at(MINUTE));
 
     const after = await revisionsOn(DEFAULT_PAGE_ID);
     expect(after.length).toBe(before + 1);
@@ -99,8 +100,8 @@ describe("wiping stays on its page", () => {
   it("🔴 seals its own page's newest revision, never the other page's", async () => {
     const other = await second();
 
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "- [ ] keep\n", baseVersion: V1, source: "pwa" }, at(0));
-    await writePage(env, { pageId: other.id, body: "- [x] milk\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "- [ ] keep\n", baseVersion: V1, source: "pwa" }, at(0));
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "- [x] milk\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
 
     // 🔴 Captured before the wipe. Migration 0002's baseline revision ships **sealed**,
     // so "this page has no sealed revision" is false from first boot and would have made
@@ -113,6 +114,7 @@ describe("wiping stays on its page", () => {
     await wipe(
       env,
       {
+        ownerId: OPERATOR,
         pageId: other.id,
         baseVersion: V1 + 1,
         body: "",
@@ -138,12 +140,13 @@ describe("wiping stays on its page", () => {
   it("🔴 files its cleared items against a revision on its own page", async () => {
     const other = await second();
 
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "- [ ] keep\n", baseVersion: V1, source: "pwa" }, at(0));
-    await writePage(env, { pageId: other.id, body: "- [x] milk\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "- [ ] keep\n", baseVersion: V1, source: "pwa" }, at(0));
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "- [x] milk\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
 
     await wipe(
       env,
       {
+        ownerId: OPERATOR,
         pageId: other.id,
         baseVersion: V1 + 1,
         body: "",
@@ -169,17 +172,17 @@ describe("wiping stays on its page", () => {
 
   it("leaves the other page's body alone", async () => {
     const other = await second();
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "keep me\n", baseVersion: V1, source: "pwa" }, at(0));
-    await writePage(env, { pageId: other.id, body: "wipe me\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "keep me\n", baseVersion: V1, source: "pwa" }, at(0));
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "wipe me\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
 
     await wipe(
       env,
-      { pageId: other.id, baseVersion: V1 + 1, body: "", clearedLines: [], source: "pwa", scope: "all", wipedCount: 1 },
+      { ownerId: OPERATOR, pageId: other.id, baseVersion: V1 + 1, body: "", clearedLines: [], source: "pwa", scope: "all", wipedCount: 1 },
       at(2 * MINUTE),
     );
 
-    expect((await readDefaultPage(env)).body).toBe("keep me\n");
-    expect((await readPage(env, other.id))?.body).toBe("");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("keep me\n");
+    expect((await readPage(env, OPERATOR, other.id))?.body).toBe("");
   });
 });
 
@@ -188,8 +191,8 @@ describe("history stays on its page", () => {
 
   it("🔴 does not return the other page's revisions", async () => {
     const other = await second();
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "mine\n", baseVersion: V1, source: "pwa" }, at(0));
-    await writePage(env, { pageId: other.id, body: "theirs\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "mine\n", baseVersion: V1, source: "pwa" }, at(0));
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "theirs\n", baseVersion: V1, source: "pwa" }, at(MINUTE));
 
     const mine = await revisionsInRange(env, { pageId: DEFAULT_PAGE_ID, ...RANGE });
     expect(mine.revisions.map((r) => r.body)).toContain("mine\n");
@@ -198,10 +201,11 @@ describe("history stays on its page", () => {
 
   it("🔴 does not return the other page's cleared items", async () => {
     const other = await second();
-    await writePage(env, { pageId: other.id, body: "- [x] milk\n", baseVersion: V1, source: "pwa" }, at(0));
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "- [x] milk\n", baseVersion: V1, source: "pwa" }, at(0));
     await wipe(
       env,
       {
+        ownerId: OPERATOR,
         pageId: other.id,
         baseVersion: V1 + 1,
         body: "",
@@ -222,7 +226,7 @@ describe("history stays on its page", () => {
 
 describe("a page that does not exist", () => {
   it("reads as null rather than as the default page", async () => {
-    expect(await readPage(env, 999)).toBeNull();
+    expect(await readPage(env, OPERATOR, 999)).toBeNull();
   });
 
   it("🔴 404s on the API instead of serving page 1", async () => {

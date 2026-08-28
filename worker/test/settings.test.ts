@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { AGENT_INSTRUCTIONS, readSetting } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * `/api/settings/agent-instructions` — the one setting the server holds (#190).
@@ -43,14 +44,14 @@ describe("PUT /api/settings/agent-instructions", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ text });
 
-    expect(await readSetting(env, AGENT_INSTRUCTIONS.key)).toBe(text);
+    expect(await readSetting(env, OPERATOR, AGENT_INSTRUCTIONS.key)).toBe(text);
     expect(await (await SELF.fetch(URL_, { headers: authed })).json()).toEqual({ text });
   });
 
   it("replaces rather than appends, and blank clears", async () => {
     await put({ text: "first" });
     await put({ text: "second" });
-    expect(await readSetting(env, AGENT_INSTRUCTIONS.key)).toBe("second");
+    expect(await readSetting(env, OPERATOR, AGENT_INSTRUCTIONS.key)).toBe("second");
 
     await put({ text: "" });
     expect(await (await SELF.fetch(URL_, { headers: authed })).json()).toEqual({ text: "" });
@@ -73,7 +74,7 @@ describe("PUT /api/settings/agent-instructions", () => {
     const res = await put({ text: over });
     expect(res.status).toBe(413);
     // And the cap refusal left the previous value standing.
-    expect(await readSetting(env, AGENT_INSTRUCTIONS.key)).toBe(atCap);
+    expect(await readSetting(env, OPERATOR, AGENT_INSTRUCTIONS.key)).toBe(atCap);
   });
 
   it("405s any other method, naming the two it takes", async () => {

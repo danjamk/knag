@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PAGE_ID, listPages, reorderPages } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * The pages' order (#195): `position`, server-side, so every device sees the same list.
@@ -43,7 +44,7 @@ describe("the default order", () => {
 
   it("🔴 returns no position — the order is the array's", async () => {
     await create("a");
-    for (const page of await listPages(env)) {
+    for (const page of await listPages(env, OPERATOR)) {
       expect(Object.keys(page).sort()).toEqual(["has_template", "id", "name"]);
     }
   });
@@ -121,8 +122,8 @@ describe("PUT /api/pages/order", () => {
 
   it("the store refuses the same things, so the route adds no rule of its own", async () => {
     const a = await create("a");
-    expect(await reorderPages(env, [a])).toBe(false);
-    expect(await reorderPages(env, [a, DEFAULT_PAGE_ID])).toBe(true);
+    expect(await reorderPages(env, OPERATOR, [a])).toBe(false);
+    expect(await reorderPages(env, OPERATOR, [a, DEFAULT_PAGE_ID])).toBe(true);
     expect(await listed()).toEqual([a, DEFAULT_PAGE_ID]);
   });
 });

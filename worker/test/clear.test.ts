@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_PAGE_ID, readDefaultPage, wipe } from "../src/store.js";
+import { DEFAULT_PAGE_ID, defaultPageFor, wipe } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * Clear-completed — the sweep, and the only destructive path in the product.
@@ -52,7 +53,7 @@ describe("what counts as completed (spec §14.2)", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ cleared_count: 2, version: SEEDED_VERSION + 2 });
-    expect((await readDefaultPage(env)).body).toBe(SURVIVORS);
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe(SURVIVORS);
   });
 
   it("leaves a checked box inside a fence alone", async () => {
@@ -60,13 +61,13 @@ describe("what counts as completed (spec §14.2)", () => {
     // and clear must not second-guess it with its own regex.
     await clear({ base_version: SEEDED_VERSION + 1 });
 
-    expect((await readDefaultPage(env)).body).toContain("- [x] not a task");
+    expect((await defaultPageFor(env, OPERATOR)).body).toContain("- [x] not a task");
   });
 
   it("preserves the survivors byte for byte", async () => {
     await clear({ base_version: SEEDED_VERSION + 1 });
 
-    const body = (await readDefaultPage(env)).body;
+    const body = (await defaultPageFor(env, OPERATOR)).body;
     expect(body).toBe(SURVIVORS);
     // The blank line survived, so spacing is intact.
     expect(body.split("\n")).toContain("");
@@ -173,7 +174,7 @@ describe("conflict", () => {
 
     expect(await revisions()).toEqual(revisionsBefore);
     expect(await clearedItems()).toEqual(itemsBefore);
-    expect((await readDefaultPage(env)).body).toBe(MIXED);
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe(MIXED);
   });
 });
 
@@ -195,6 +196,7 @@ describe("a write landing between the read and the batch", () => {
     // base_version make the outcome deterministic: exactly one wins, and the other is
     // guaranteed to have taken the path that must leave nothing behind.
     const request = {
+      ownerId: OPERATOR,
       pageId: DEFAULT_PAGE_ID,
       baseVersion: version,
       body: SURVIVORS,
@@ -214,15 +216,15 @@ describe("a write landing between the read and the batch", () => {
     // cleared_items for a sweep that never happened.
     expect(await clearedItems()).toHaveLength(2);
     expect((await revisions()).filter((r) => r.event_type === "clear_completed")).toHaveLength(1);
-    expect((await readDefaultPage(env)).body).toBe(SURVIVORS);
-    expect((await readDefaultPage(env)).version).toBe(version + 1);
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe(SURVIVORS);
+    expect((await defaultPageFor(env, OPERATOR)).version).toBe(version + 1);
   });
 });
 
 describe("nothing to clear", () => {
   it("succeeds with a count of zero and touches nothing", async () => {
     await put({ body: "- [ ] open\nplain", base_version: SEEDED_VERSION });
-    const before = await readDefaultPage(env);
+    const before = await defaultPageFor(env, OPERATOR);
     const revisionsBefore = await revisions();
 
     const res = await clear({ base_version: before.version });
@@ -232,7 +234,7 @@ describe("nothing to clear", () => {
     // base_version for nothing.
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ cleared_count: 0, version: before.version });
-    expect(await readDefaultPage(env)).toEqual(before);
+    expect(await defaultPageFor(env, OPERATOR)).toEqual(before);
     expect(await revisions()).toEqual(revisionsBefore);
   });
 });
@@ -271,7 +273,7 @@ describe("wipe-all (#58)", () => {
     const res = await clear({ base_version: SEEDED_VERSION + 1, scope: "all" });
 
     expect(res.status).toBe(200);
-    expect((await readDefaultPage(env)).body).toBe("");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("");
   });
 
   it("🔴 records only the checked lines as finished, not everything it removed", async () => {
@@ -319,7 +321,7 @@ describe("wipe-all (#58)", () => {
 
   it("is a no-op on an already-empty page, reported as success", async () => {
     await put({ body: "", base_version: SEEDED_VERSION + 1 });
-    const emptyVersion = (await readDefaultPage(env)).version;
+    const emptyVersion = (await defaultPageFor(env, OPERATOR)).version;
 
     const res = await clear({ base_version: emptyVersion, scope: "all" });
 
@@ -327,14 +329,14 @@ describe("wipe-all (#58)", () => {
     // something from a page that had nothing on it.
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ wiped_count: 0, cleared_count: 0 });
-    expect((await readDefaultPage(env)).version).toBe(emptyVersion);
+    expect((await defaultPageFor(env, OPERATOR)).version).toBe(emptyVersion);
   });
 
   it("conflicts on a stale base_version without touching anything", async () => {
     const res = await clear({ base_version: SEEDED_VERSION, scope: "all" });
 
     expect(res.status).toBe(409);
-    expect((await readDefaultPage(env)).body).toBe(MIXED);
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe(MIXED);
     expect(await clearedItems()).toHaveLength(0);
   });
 
@@ -342,7 +344,7 @@ describe("wipe-all (#58)", () => {
     const res = await clear({ base_version: SEEDED_VERSION + 1 });
 
     expect(res.status).toBe(200);
-    expect((await readDefaultPage(env)).body).toBe(SURVIVORS);
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe(SURVIVORS);
   });
 
   it("400s an unrecognised scope rather than quietly doing the safer thing", async () => {
@@ -351,7 +353,7 @@ describe("wipe-all (#58)", () => {
     const res = await clear({ base_version: SEEDED_VERSION + 1, scope: "everything" });
 
     expect(res.status).toBe(400);
-    expect((await readDefaultPage(env)).body).toBe(MIXED);
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe(MIXED);
   });
 });
 
