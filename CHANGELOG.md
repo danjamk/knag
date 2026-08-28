@@ -13,6 +13,22 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-08-28
+
+The caret is the mark.
+
+### Changed
+
+- **The editing caret is the wordmark's block** (#228). Amber, half an em wide, the
+  height of the text — drawn by the editor behind the native caret, because the one
+  thing CSS lets anyone change about a native caret is its colour. So that is what
+  changes: the native caret is the same amber and blinks inside the block, unseen. The
+  block sits under the text, so a letter it lands on is chalk over amber rather than
+  hidden. Nothing about selecting changed — the native selection, and on iOS the drag
+  handles and the highlight, are exactly what they were. A first cut hid the native
+  caret with `caret-color: transparent` and took the phone's handles with it: iOS paints
+  them in the caret colour. That lasted one afternoon on dev.
+
 ## [1.5.3] — 2026-08-27
 
 One fix, found on a phone: the caret is the height of the text again.
@@ -1950,7 +1966,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.3...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/danjamk/knag/compare/v1.5.3...v1.6.0
 [1.5.3]: https://github.com/danjamk/knag/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/danjamk/knag/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/danjamk/knag/compare/v1.5.0...v1.5.1

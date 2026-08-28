@@ -234,6 +234,10 @@
         /* The touch target around the 18px box in the editing surface (#193): 44 tall,
            and wide enough to reach the screen edge. Target, not ink — see above. */
         --checkbox-target: 44px;
+        /* The editing caret is the mark's block (#228), drawn by the editor rather
+           than the browser; text-high, and this wide. Half an em is the login mark's
+           own proportion (13px at 26px). */
+        --caret-width: 0.5em;
 
         --radius-sm: 3px; /* controls, checkboxes */
         --radius-md: 6px; /* fields, dialog buttons */

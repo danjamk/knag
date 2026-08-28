@@ -31,9 +31,11 @@ import {
 import {
   Decoration,
   EditorView,
+  RectangleMarker,
   ViewPlugin,
   WidgetType,
   keymap,
+  layer,
   type Command,
   type DecorationSet,
   type ViewUpdate,
@@ -603,6 +605,12 @@ const theme = EditorView.theme({
     fontSize: "var(--size-row)",
     lineHeight: "var(--leading-row)",
   },
+  // 🔴 The native caret stays, in the block's own amber — **not** `transparent`. It is
+  // 1–2px at the insertion point and `caretLayer` draws an 8px block from the same edge
+  // in the same colour, so it disappears into the block. Hiding it instead cost the
+  // phone its selection: iOS paints the drag handles and the highlight in the caret
+  // colour, so a transparent caret is a transparent selection (#228, found on the
+  // phone). That is also the real reason CodeMirror's `drawSelection` fakes handles.
   ".cm-content": { padding: "0", caretColor: "var(--caret)" },
   // The row geometry, so switching surfaces does not move the text.
   ".cm-line": {
@@ -610,7 +618,40 @@ const theme = EditorView.theme({
   },
   ".cm-fence": { fontFamily: "var(--font-mono)", lineHeight: "1.5" },
   ".cm-done": { color: "var(--dim)", textDecoration: "line-through" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--caret)" },
+  ".cm-caret-layer": { pointerEvents: "none" },
+  ".cm-caret": { display: "none", width: "var(--caret-width)", background: "var(--caret)" },
+  "&.cm-focused .cm-caret-layer .cm-caret": { display: "block" },
+});
+
+// ── The caret ────────────────────────────────────────────────────────────────
+
+/**
+ * The editing caret is the mark's block (#228): amber, `--caret-width` wide, text-high.
+ * This layer draws it — a `div` behind the collapsed selection, positioned by
+ * CodeMirror — and the native caret, painted the same amber, blinks inside it unseen.
+ * The block itself does not blink: it is steady, and the caret you cannot see is the
+ * one doing the blinking, so nothing here animates and nothing restarts on a keystroke.
+ *
+ * 🔴 Not `drawSelection()`, and the native caret is not hidden. Both would cost the
+ * phone its selection: iOS paints the drag handles and the highlight in the caret
+ * colour, so `caret-color: transparent` — which `drawSelection` sets — is a selection
+ * nobody can see or grab. This draws the collapsed caret and nothing else: a range
+ * selection is the browser's, untouched, and while one exists there is no block,
+ * which is what a native caret does too.
+ *
+ * Below the text (`above: false`), so a glyph the block lands on is chalk over amber
+ * rather than gone.
+ */
+const caretLayer = layer({
+  above: false,
+  class: "cm-caret-layer",
+  markers(view) {
+    const main = view.state.selection.main;
+    return main.empty ? RectangleMarker.forRange(view, "cm-caret", main) : [];
+  },
+  update(update) {
+    return update.docChanged || update.selectionSet;
+  },
 });
 
 // ── Mount ────────────────────────────────────────────────────────────────────
@@ -692,6 +733,7 @@ export function mountEditor(parent: HTMLElement, options: EditorOptions): Editor
         keymap.of([...standardKeymap, ...historyKeymap]),
         EditorView.lineWrapping,
         theme,
+        caretLayer,
         decorations,
 
         // ADR-003 §6. CodeMirror sets `spellcheck="false"` by default, so without this

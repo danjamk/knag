@@ -145,8 +145,15 @@ Set 2026-08-19. The version numbers are meant to say something:
 | **1.3** | **The phone pass** — the ledge, the checkbox, dev's own icon | 8b |
 | **1.4** | The first server-side setting, and pages in an order | 8c |
 | **1.5** | The design halves of 8b and 8c — the `agent ›` pane, the grip | 8b, 8c |
-| **1.6** | **The product page** | 9 |
-| **1.7** | Multi-user | 10 |
+| **1.6** | The caret is the mark's block — one feature from use, no design input | — |
+| **1.7** | **The product page** | 9 |
+| **1.8** | Multi-user | 10 |
+
+🔴 **Amended 2026-08-28: 1.6 is the block caret (#228), and the two rows below it moved
+down one.** Asked for on a phone alongside the tall-caret bug (#226) and built the day
+after, because the only thing holding it was a design ruling on a second blinking thing —
+and the mark it would have competed with left the app bar in #139. It is a feature, so it
+is a minor, and it landed before the product page did. Not a phase: a phase has a brief.
 
 🔴 **Amended 2026-08-26: the product page is 1.6, and it is a minor for the same reason
 the landing page was 0.16.0.** It ships no app code — `site/` deploys on its own workflow
@@ -536,7 +543,7 @@ column later; do not wait on the multi-user decision to build it.
 pages max, creation order is tolerable — and the biggest cost: a migration, a route and a
 drag surface in a pane that is not Arrange.
 
-### Phase 9 · Show it, again — #224 · **ships 1.6**
+### Phase 9 · Show it, again — #224 · **ships 1.7**
 
 **Added 2026-08-26.** Nothing on this page covered it: Phase 5 shipped the landing page
 and closed, and the queue ran straight from 8c to multi-user. The page that is live
@@ -575,7 +582,7 @@ are on the issue.
 data* is true today and is the next thing to change; the page says *your account* rather
 than *one person only*.
 
-### Phase 10 · Multi-user — #122 · **ships 1.7**
+### Phase 10 · Multi-user — #122 · **ships 1.8**
 
 🔴 **Renumbered again on 2026-08-26, from Phase 9 and 1.6.** The product page went in
 ahead of it; the reasoning is in Phase 9 and it is the same reasoning that put Phase 5
