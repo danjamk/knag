@@ -138,8 +138,8 @@ export async function handleMcp(
   // Module scope survives between requests on a Worker and hoisting this looks like a
   // free optimization. It is not: sharing a server or transport can leak one caller's
   // response into another's, and the SDK added a guard against exactly this (mcp.md
-  // §2). knag has one operator today, which makes the blast radius small and the habit
-  // no less wrong — §17's multi-user branch would turn it into an incident.
+  // §2). While knag had one operator the blast radius was small and the habit no less
+  // wrong; since #230 a shared server would leak one person's page into another's.
   // The operator's text is read per request too (#190): instructions are handed over at
   // `initialize`, so an edit in Settings reaches the next session that connects, and
   // never a stale copy hoisted at module scope.

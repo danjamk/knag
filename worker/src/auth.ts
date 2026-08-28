@@ -68,7 +68,7 @@ export async function hashToken(token: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** The session cookie's name. One document, one cookie, one user. */
+/** The session cookie's name. One cookie; since #230 the row it names says whose. */
 export const SESSION_COOKIE = "knag_session";
 
 /** A year, matching the cookie's Max-Age. Re-auth is the thing that kills daily use. */

@@ -269,7 +269,7 @@ Sets `ETag: "<version>"`. Honours `If-None-Match` with **304** and empty body.
   create no revision. The response is an ordinary 200 reporting the unchanged
   version — the caller's question is "what version am I on", and the answer does
   not depend on whether anything moved.
-- `base_version: 0` is honoured against a missing **or empty** row (§14.5) and is
+- `base_version: 0` is honoured against an **empty** row (§14.5) and is
   a conflict against anything else.
 - Rejected with **400**: a non-JSON body, a `body` that is not a string, a
   `base_version` that is not a non-negative integer. **413** past 1 MiB — roughly
