@@ -215,13 +215,14 @@ read.
 | [docs/philosophy.md](docs/philosophy.md) | Why throwing things away is the product, and where that sits in a long argument about lists. §5 answers feature requests before they arrive. |
 | [docs/deployment.md](docs/deployment.md) | The runbook — what ships where, provisioning a pipeline from nothing, and what a failure at each step means. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and why, per release. |
-| [ADR-001](docs/adr/ADR-001-passphrase-auth.md) | Why this rolls its own sessions instead of using Cloudflare Access. |
+| [ADR-001](docs/adr/ADR-001-passphrase-auth.md) | Why this rolls its own sessions instead of using Cloudflare Access. The passphrase half is superseded by ADR-008; the case against Access is not. |
 | [ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md) | Two Cloudflare accounts, and why migrations are additive-only. |
 | [ADR-003](docs/adr/ADR-003-single-mode-editor.md) | Why there is one editing mode, reversing the spec's original two-view design. Its mechanism is amended by ADR-007. |
 | [ADR-004](docs/adr/ADR-004-display-matches-the-bytes.md) | The display never diverges from the bytes. Read before answering a formatting request. |
 | [ADR-005](docs/adr/ADR-005-mcp-oauth.md) | Why `/mcp` needs OAuth as well as a static bearer. |
 | [ADR-006](docs/adr/ADR-006-cross-row-selection.md) | What a hand-rolled `contenteditable` did to the document. Decision 1 is superseded by ADR-007; the measurement is why. |
 | [ADR-007](docs/adr/ADR-007-one-editing-surface.md) | One editing surface, owned by CodeMirror. Amends ADR-003's mechanism while upholding its intent. |
+| [ADR-008](docs/adr/ADR-008-email-login.md) | Email login for a few invited people — a link and a code — superseding ADR-001's passphrase while keeping its case against Access. |
 | [docs/reviews/](docs/reviews/) | The brief written for outside review of the editing surface, and the review that came back. ADR-007 is the decision; these are the argument. |
 
 The spec refers to a set of house standards — a private, personal collection covering

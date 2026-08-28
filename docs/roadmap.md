@@ -591,6 +591,25 @@ ahead of the pilot the first time.
 🔴 **Renumbered from 1.5 on 2026-08-25.** Phase 8's design halves landed a release later
 than their server halves, and they are features, so 1.5 is theirs.
 
+✅ **What it is, decided 2026-08-21.** Not a product. A small group of friends and
+family, invited by the operator, using it free, hosted by the operator, **inside
+the free tier**. Invite only — there is no sign-up page and that is a feature. Plus
+a simple admin view for one person: who is here, what is being used. Full ruling
+and the arithmetic in [spec §17](spec.md).
+
+🔴 **That decision came from the scale model, not from taste.** Selling this was
+modelled and rejected on the numbers — see
+[planning/scale-model.html](planning/scale-model.html). What survived is the part
+that was always the point.
+
+🔴 **And it puts a number on "small".** §14.4's polling budget is the binding
+meter, not storage: ~4k requests/day per user at realistic use against a 100k/day
+free ceiling is **about twenty-five people**. Three desktops left open on the page
+all day exceed it on polling alone. So the invite count wants to be a cap in the
+code the way the nine-page limit is, and the admin view is how the free-tier
+promise stays checkable rather than hoped-for. Those two are the design work; the
+auth spike is the other half.
+
 Last, deliberately — and the reason is not difficulty. The spike is reading and
 measuring, and it can float earlier in any week that wants a break from
 building.
@@ -610,6 +629,10 @@ Note also that #122 is scoped as **spike and ADR, not build**. It is
 human, not a feature count* — and §17 already decided the first move is an auth
 spike rather than a schema change.
 
+🔴 **The trigger has now fired on purpose rather than by drift.** A shared
+passphrase fails on the first invited person, which is the whole shape of what was
+just decided, so ADR-001 is due its successor rather than an amendment.
+
 **The design session recommends an email link** and argues it against the
 alternatives in [§7](design/holistic-response.md): the login surface stays one
 field, the identifier is one nobody can lose, recovery *is* the login flow, and it
@@ -618,6 +641,30 @@ the only screen that is not the page. Two questions the spike has to answer: doe
 the link land you on **the page** rather than a "logged in" screen, and does an
 existing session survive a new link on the same device — it must, or every
 re-login costs a device row.
+
+✅ **Decided 2026-08-28: [ADR-008](adr/ADR-008-email-login.md), and #122 closes with it.**
+Email login — the mail carries a link *and* a six-digit code, so the desktop taps and the
+iPhone types, and ADR-001's wrong-jar objection is answered rather than overruled. Both
+spike questions are answered by construction: the link lands on the page, and a login on a
+device with a live session reuses it. Identity is an email address; an invite is the first
+login mail; recovery *is* the login flow; one owner per page and no sharing yet; a cap of
+25 in the code; an admin view that shows who is here and never what they wrote.
+
+**The build, in order — 1.8.0 is the first three:**
+
+| | Issue | What | Visible? |
+|---|---|---|---|
+| 1 | #230 | Users and ownership — `users`, `owner_id`, `sessions.user_id`, grants per person | no |
+| 2 | #231 | Email login — `login_codes`, link + code, Resend, passphrase retired | **yes — the phone finds the bugs here** |
+| 3 | #232 | Invite, revoke, change email, delete, and the admin view | operator only |
+| 4 | #233 | Scheduled prod backup; "hosting knag for others" in the README | no |
+| 5 | #234 | `settings` → `user_settings`, three releases; expand rides with #230 | no |
+
+🔴 **#231 is not merged until the iPhone has done the whole day-one path on dev**: invite
+link in Safari lands on the page, add to home screen, code login in the PWA, a second login
+reuses the session. Two design surfaces are new — the code-entry state and the admin table
+— and both get a brief; the login state is built against §7's one-field screen either way,
+and the admin table ships plain if the ruling is not back, because it has one viewer.
 
 ---
 

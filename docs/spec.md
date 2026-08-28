@@ -143,6 +143,28 @@ future that may never arrive; the chokepoint makes adding them cheap if it does.
 
 ## 4. Auth
 
+🔴 **Amended 2026-08-28 — [ADR-008](adr/ADR-008-email-login.md) replaces the passphrase
+with an email login, and this section is now the history of the cookie it keeps.** The
+trigger ADR-001 named — a second human — fired when multi-user was decided (§17). What
+changes is what the one field holds and what mints the session; what does not change is
+the session itself: server-set, a year, `SameSite=Lax`, the cookie #4 measured.
+
+- Identity is an email address in a `users` table; the operator is a `role`, not `id = 1`.
+- One mechanism: type your email, get a mail carrying **a link and a six-digit code**. The
+  link lands on the page (desktop); the code is typed into the PWA inside its own cookie
+  jar, which is how the wrong-jar objection below is answered rather than overruled.
+- An invite is the first login mail. No sign-up page; `MAX_USERS = 25` in the code.
+- Recovery *is* the login flow. The operator's only lever is changing someone's address.
+- Mail goes out through Resend behind a one-function interface; tests read the code out of
+  D1 and never a mailbox. "Do not build email infrastructure" below is still the rule —
+  one `fetch` to a sender is not infrastructure.
+- `/mcp` still refuses the cookie; OAuth grants carry the person (ADR-005 §2 gates consent
+  on the session, so the grant's user is the session's user). `KNAG_BEARER_TOKEN` is the
+  operator's and only the operator's.
+
+Everything below this line describes 0.1 through 1.7 and is kept because the cookie, the
+hardening in §4.2 and the `authenticate()` contract in §4.1 are all still exactly true.
+
 Single user. Do not build email infrastructure for this.
 
 - `KNAG_PASSPHRASE` in Worker secrets. Long, random, stored in 1Password.
@@ -175,7 +197,9 @@ function authenticate(request: Request, env: Env): Promise<Principal | null>;
 
 **Every route calls this and keys off `principal.id`.** No handler ever asks
 "was the passphrase right." Today `id` is always `'dan'`; that is fine and it is
-the point — replacing the credential scheme touches one file (§17).
+the point — replacing the credential scheme touches one file (§17). *ADR-008 is that
+replacement: `id` becomes the user's id and `OWNER` goes, and the contract that no handler
+asks how the principal was resolved is what makes it a one-file change.*
 
 **Bearer is first-class on every `/api/*` route, not an agent afterthought.** A
 native wrapper (§17) authenticates from the Keychain with a header, not a
@@ -1138,6 +1162,12 @@ Two entries have since been argued properly rather than merely listed:
   in is a small, fixed number of pages you switch between. What stays out is everything
   a *document manager* implies, and §17's guard below is now a rule rather than a
   prediction.
+- **multi-user** and **email auth** — come off the list together in 1.8 as **a few
+  people the operator knows, each with their own pages**, by
+  [ADR-008](adr/ADR-008-email-login.md). What is in is an email login, an invite, and an
+  admin view that answers "is this still free?". What stays out is **sharing** — one
+  owner per page, and the household case is served by sharing an account until
+  `page_members` is argued on its own — and anything with a sign-up page.
 
   🔴 **knag has no index.** There is no screen that lists your pages — only a control
   that switches between them, and it is never what you land on. **Launch opens the last
@@ -1681,6 +1711,11 @@ The chokepoint did hold: every one of those is in `store.ts`.
 no billing hooks, no CORS. Each is a future that may never come, and each is
 cheap *because* of the chokepoints above.
 
+*Amended 2026-08-28: the first two are now being built (ADR-008, 1.8), and the list is
+honest about what replaced them — no `page_members`, no billing hooks, no CORS, no
+per-user static bearer tokens. Sharing a page is the one of those with a named use case
+(a household, one list) and it waits for its own argument.*
+
 **The one to watch.** Auth is the only decision here that gets expensive with
 age. A shared passphrase does not survive multiple users and would not pass App
 Store review. The trigger to revisit is a second human, not a feature count.
@@ -1709,6 +1744,72 @@ The cost that is easy to miss is not in the code: holding other people's data
 turns `make backup` from a personal habit into an obligation, multiplies the
 polling budget of §14.4 by the tenant count, and gives the login rate-limit rule
 a different threat model.
+
+#### Decided 2026-08-21: it is friends and family, invite-only, and free
+
+The two sections below are the reasoning; this is the ruling that came out of them, and it
+**replaces "not being engineered for"** above. Multi-user is being built. What it is not is
+a product.
+
+| | |
+|---|---|
+| **Who** | A small group of friends and family, invited by the operator |
+| **Cost to them** | Free. There is no billing, no plan, no tier |
+| **Cost to the operator** | The free tier, or close to it — a hard constraint, not a preference |
+| **How you get in** | **Invite only.** There is no sign-up page, and that is a feature |
+| **What the operator gets** | A simple admin view: who is here, what is being used. For one person |
+
+🔴 **The scale model is why, and it is worth reading before this is re-opened.** Selling
+this was modelled and rejected on the numbers: infrastructure is not what kills it, price
+is, paid acquisition can never pay back, and the honest ceiling is beer money. So the thing
+that survives is the part that was always the point — a few people the operator knows,
+using it for free.
+
+🔴 **The binding constraint is §14.4, and it bites sooner than it looks.** Workers' free
+tier is 100k requests/day and this product's meter is polling, not storage:
+
+| | Requests/day | People inside 100k/day |
+|---|---|---|
+| Realistic, with the adaptive backoff | ~4k per user across their devices | **~25** |
+| One tab left open all day at the 4s interval | ~21.6k per device | **~4 devices** |
+
+So "a small group" has an actual number attached, and it is around **twenty-five people at
+realistic use** — not a hundred. Three desktops left open on the page all day exceed the
+ceiling on polling alone, which §14.4 already says in as many words.
+
+Two things follow, and they are the design work rather than the auth work:
+
+1. **The invite count wants to be a cap in the code**, the way the nine-page limit is — a
+   tripwire that makes the promise structural instead of something the operator has to
+   remember. A cap nobody enforces is a hope.
+2. 🔴 **The admin view and the free-tier constraint are the same requirement.** "Who is
+   here and what are they using" is not a nice-to-have next to "stay free" — it is the only
+   way to know the second is still true. That is the argument for building it, and it is a
+   better one than convenience.
+
+**The open question is which constraint is literal**, because the two answers give very
+different caps. Workers Paid is $5/month and includes 10M requests, which covers roughly
+eighty people on the same profile and makes D1 writes the next meter instead. If "very
+little" means five dollars rather than zero, the group can be three times the size. That is
+the operator's call and nothing else in this section depends on it.
+
+#### Decided 2026-08-28: the auth model — [ADR-008](adr/ADR-008-email-login.md)
+
+The spike ran as reading and pricing rather than as building, and the question it was
+left with — email link on the existing rails, or Clerk — closed on the design session's
+argument (§7) plus one reconciliation: **the mail carries a link and a code.** The link is
+the desktop affordance; the code is typed into the PWA, inside its own cookie jar, which is
+how ADR-001's magic-link objection is answered rather than overruled.
+
+The rest of the ruling, in one place: identity is an email address; an invite is the first
+login mail; recovery *is* the login flow and the operator's only lever is changing an
+address; one owner per page and **no sharing yet** (a household shares an account);
+`MAX_USERS = 25` in the code; the admin view exists to answer "is this still free?" and
+shows no page content; Resend sends the mail; the passphrase retires in the same release.
+The arithmetic above is unchanged and the cap is its number.
+
+The build is #230 (ownership), #231 (the login), #232 (invite and the admin view),
+#233 (backup and hosting docs) and #234 (`settings` → `user_settings`, three releases).
 
 #### The economic half, modelled 2026-08-21
 
