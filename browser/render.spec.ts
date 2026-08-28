@@ -1,4 +1,5 @@
-import { Knag, expect, test } from "./fixtures.js";
+import { TEST_OPERATOR_EMAIL } from "../playwright.config.js";
+import { expect, test } from "./fixtures.js";
 
 /**
  * Rendering and geometry — what the vitest suite structurally cannot reach.
@@ -215,17 +216,24 @@ test.describe("the dev badge", () => {
   });
 });
 
-test("logs in over plain http, where the cookie must drop Secure", async ({ page }) => {
-  // 🔴 Safari refuses to store a `Secure` cookie on http://localhost, so `issueSession`
-  // omits it there (spec §5). That branch is unreachable from any deployment and has
-  // never been exercised until now — if it regressed, local development would simply
-  // stop being able to log in.
-  const knag = new Knag(page);
-  await knag.login();
+test("sets its cookies over plain http, where they must drop Secure", async ({ page }) => {
+  // 🔴 Safari refuses to store a `Secure` cookie on http://localhost, so the login
+  // cookies omit it there (spec §5). That branch is unreachable from any deployment — if
+  // it regressed, local development would simply stop being able to log in.
+  //
+  // Since #231 a browser cannot finish a login (the code is in a mail), so what is checked
+  // is the first cookie the flow sets: the request cookie `knag_login`, minted by the
+  // same rule as the session cookie. The session cookie itself is pinned over
+  // http://localhost by the worker suite (auth.test.ts), which can read the mail.
+  await page.goto("/");
+  const form = page.locator("[data-login]");
+  await form.locator('input[name="email"]').fill(TEST_OPERATOR_EMAIL);
+  await form.locator("[data-login-submit]").click();
+  await expect(form).toHaveAttribute("data-step", "code");
 
   const cookies = await page.context().cookies();
-  const session = cookies.find((c) => c.name === "knag_session");
-  expect(session).toBeDefined();
-  expect(session?.secure).toBe(false);
-  expect(session?.httpOnly).toBe(true);
+  const login = cookies.find((c) => c.name === "knag_login");
+  expect(login).toBeDefined();
+  expect(login?.secure).toBe(false);
+  expect(login?.httpOnly).toBe(true);
 });
