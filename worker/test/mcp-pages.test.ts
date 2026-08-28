@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAGE_ID, createPage, readDefaultPage, readPage, writePage } from "../src/store.js";
+import { DEFAULT_PAGE_ID, createPage, defaultPageFor, readPage, writePage } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * The MCP `page` parameter (#153), driven over real JSON-RPC.
@@ -51,14 +52,14 @@ async function call(name: string, args: Record<string, unknown> = {}): Promise<T
 const V1 = 1;
 
 async function shopping(body = "- [ ] milk\n") {
-  const page = await createPage(env, { name: "shopping", body, source: "pwa" });
+  const page = await createPage(env, { ownerId: OPERATOR, name: "shopping", body, source: "pwa" });
   return page;
 }
 
 describe("naming a page", () => {
   it("reads the one you named, not the default", async () => {
     await shopping();
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "today's things\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "today's things\n", baseVersion: V1, source: "pwa" });
 
     const result = await call("knag_read", { page: "shopping" });
 
@@ -86,21 +87,21 @@ describe("naming a page", () => {
     });
 
     expect(result.isError).toBeFalsy();
-    expect((await readPage(env, other.id))?.body).toBe("- [ ] milk\n- [ ] eggs\n");
-    expect((await readDefaultPage(env)).body).toBe("");
+    expect((await readPage(env, OPERATOR, other.id))?.body).toBe("- [ ] milk\n- [ ] eggs\n");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("");
   });
 
   it("wipes the one you named, and leaves the other alone", async () => {
     const other = await shopping("- [x] milk\n- [ ] eggs\n");
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "- [x] keep me\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "- [x] keep me\n", baseVersion: V1, source: "pwa" });
 
     const result = await call("knag_wipe", { base_version: V1, page: "shopping" });
 
     expect(result.structuredContent).toMatchObject({ wiped_count: 1, page: "shopping" });
-    expect((await readPage(env, other.id))?.body).toBe("- [ ] eggs\n");
+    expect((await readPage(env, OPERATOR, other.id))?.body).toBe("- [ ] eggs\n");
     // The default page had a checked line too. A wipe that took it would be the exact
     // failure this parameter exists to prevent.
-    expect((await readDefaultPage(env)).body).toBe("- [x] keep me\n");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("- [x] keep me\n");
   });
 
   it("reports history for the one you named", async () => {
@@ -138,7 +139,7 @@ describe("a name that is not a page", () => {
 
   it("🔴 writes nothing at all when the name is wrong", async () => {
     await shopping();
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "do not touch\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "do not touch\n", baseVersion: V1, source: "pwa" });
 
     const result = await call("knag_write", {
       body: "clobbered",
@@ -149,17 +150,17 @@ describe("a name that is not a page", () => {
     expect(result.isError).toBe(true);
     // Resolution happens before the write, so a miss is inert. Resolving after would
     // make an unrecognised name a coin flip on which page got the body.
-    expect((await readDefaultPage(env)).body).toBe("do not touch\n");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("do not touch\n");
   });
 
   it("🔴 wipes nothing at all when the name is wrong", async () => {
     await shopping();
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "- [x] done\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "- [x] done\n", baseVersion: V1, source: "pwa" });
 
     const result = await call("knag_wipe", { base_version: 2, page: "typo" });
 
     expect(result.isError).toBe(true);
-    expect((await readDefaultPage(env)).body).toBe("- [x] done\n");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("- [x] done\n");
   });
 });
 
@@ -168,14 +169,14 @@ describe("omitting the page", () => {
     // §17's rule: an optional parameter added later is backward-compatible, a required
     // one breaks every deployed Claude Code config the moment this ships — and those
     // configs live on machines nobody is going to edit.
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "the default\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "the default\n", baseVersion: V1, source: "pwa" });
 
     const read = await call("knag_read");
     expect(read.structuredContent).toMatchObject({ body: "the default\n", page: "today" });
 
     const wrote = await call("knag_write", { body: "still the default\n", base_version: 2 });
     expect(wrote.isError).toBeFalsy();
-    expect((await readDefaultPage(env)).body).toBe("still the default\n");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("still the default\n");
   });
 
   it("🔴 never means `the page you were last looking at`", async () => {
@@ -184,7 +185,7 @@ describe("omitting the page", () => {
     // The Worker has no current page. "Current" lives in a browser's localStorage and a
     // bearer token carries no device, so there is nothing here that could make an
     // agent's write follow a phone — asserted so nobody adds one.
-    await writePage(env, { pageId: other.id, body: "just written\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "just written\n", baseVersion: V1, source: "pwa" });
 
     const read = await call("knag_read");
     expect(read.structuredContent).toMatchObject({ page: "today" });

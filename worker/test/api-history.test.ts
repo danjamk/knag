@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_PAGE_ID, revisionsInRange, wipe, writePage } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * `GET /api/history` end to end (spec §5, §14.3).
@@ -61,23 +62,23 @@ const SEEDED_VERSION = 1;
  */
 async function seedRevisions(): Promise<void> {
   await writePage(
-    env,
-    { pageId: DEFAULT_PAGE_ID, body: "alpha", baseVersion: SEEDED_VERSION, source: "pwa" },
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "alpha", baseVersion: SEEDED_VERSION, source: "pwa" },
     new Date("2026-03-07T18:00:00.000Z"), // 12:00 Sat, CST
   );
   await writePage(
-    env,
-    { pageId: DEFAULT_PAGE_ID, body: "alpha\nbravo", baseVersion: 2, source: "pwa" },
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "alpha\nbravo", baseVersion: 2, source: "pwa" },
     new Date("2026-03-08T13:00:00.000Z"), // 08:00 Sun, CDT — after the jump
   );
   await writePage(
-    env,
-    { pageId: DEFAULT_PAGE_ID, body: "alpha\nbravo\ncharlie", baseVersion: 3, source: "agent" },
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "alpha\nbravo\ncharlie", baseVersion: 3, source: "agent" },
     new Date("2026-03-09T04:00:00.000Z"), // 23:00 Sun local — the 8th, not the 9th
   );
   await writePage(
-    env,
-    { pageId: DEFAULT_PAGE_ID, body: "alpha\ncharlie", baseVersion: 4, source: "pwa" },
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "alpha\ncharlie", baseVersion: 4, source: "pwa" },
     new Date("2026-03-09T18:00:00.000Z"), // 13:00 Mon
   );
 }
@@ -245,12 +246,12 @@ describe("cleared items", () => {
   beforeEach(async () => {
     await writePage(
       env,
-      { pageId: DEFAULT_PAGE_ID, body: "- [x] laundry\n- [ ] taxes", baseVersion: SEEDED_VERSION, source: "pwa" },
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "- [x] laundry\n- [ ] taxes", baseVersion: SEEDED_VERSION, source: "pwa" },
       new Date("2026-03-08T13:00:00.000Z"),
     );
     await wipe(
       env,
-      { pageId: DEFAULT_PAGE_ID,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID,
         baseVersion: 2,
         body: "- [ ] taxes",
         clearedLines: ["- [x] laundry"],

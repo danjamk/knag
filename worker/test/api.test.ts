@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_PAGE_ID, readDefaultPage, writePage } from "../src/store.js";
+import { DEFAULT_PAGE_ID, defaultPageFor, writePage } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 // Matches vitest.config.ts. The suite authenticates as the agent because the
 // session-cookie half of auth arrives with issue #3 — bearer is first-class on every
@@ -48,7 +49,7 @@ describe("auth", () => {
     });
 
     expect(res.status).toBe(401);
-    expect((await readDefaultPage(env)).body).toBe("");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("");
   });
 });
 
@@ -107,7 +108,7 @@ describe("PUT /api/doc", () => {
     expect(await res.json()).toMatchObject({ version: SEEDED_VERSION + 1 });
     expect(res.headers.get("ETag")).toBe(`"${SEEDED_VERSION + 1}"`);
 
-    const doc = await readDefaultPage(env);
+    const doc = await defaultPageFor(env, OPERATOR);
     expect(doc.body).toBe("hello");
     expect(doc.version).toBe(SEEDED_VERSION + 1);
   });
@@ -145,7 +146,7 @@ describe("conflict", () => {
     await put({ body: "the real content", base_version: SEEDED_VERSION });
     await put({ body: "a week-old iPad", base_version: SEEDED_VERSION });
 
-    const doc = await readDefaultPage(env);
+    const doc = await defaultPageFor(env, OPERATOR);
     expect(doc.body).toBe("the real content");
     expect(doc.version).toBe(SEEDED_VERSION + 1);
   });
@@ -160,7 +161,7 @@ describe("conflict", () => {
     expect(statuses).toEqual([200, 409]);
 
     // One bump, not two — the loser must not have applied on top.
-    expect((await readDefaultPage(env)).version).toBe(SEEDED_VERSION + 1);
+    expect((await defaultPageFor(env, OPERATOR)).version).toBe(SEEDED_VERSION + 1);
   });
 
   it("lets exactly one of two writes that both read the same version win", async () => {
@@ -174,12 +175,12 @@ describe("conflict", () => {
     // standing between here and a silent overwrite. Weaken that clause and this test
     // returns two `applied` — verified, not assumed.
     const [a, b] = await Promise.all([
-      writePage(env, { pageId: DEFAULT_PAGE_ID, body: "from the phone", baseVersion: SEEDED_VERSION, source: "pwa" }),
-      writePage(env, { pageId: DEFAULT_PAGE_ID, body: "from the mac", baseVersion: SEEDED_VERSION, source: "agent" }),
+      writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "from the phone", baseVersion: SEEDED_VERSION, source: "pwa" }),
+      writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "from the mac", baseVersion: SEEDED_VERSION, source: "agent" }),
     ]);
 
     expect([a.status, b.status].sort()).toEqual(["applied", "conflict"]);
-    expect((await readDefaultPage(env)).version).toBe(SEEDED_VERSION + 1);
+    expect((await defaultPageFor(env, OPERATOR)).version).toBe(SEEDED_VERSION + 1);
   });
 });
 
@@ -189,14 +190,14 @@ describe("no-op writes", () => {
   });
 
   it("bumps nothing and leaves updated_at alone", async () => {
-    const before = await readDefaultPage(env);
+    const before = await defaultPageFor(env, OPERATOR);
 
     const res = await put({ body: "unchanged", base_version: before.version });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ version: before.version });
 
-    const after = await readDefaultPage(env);
+    const after = await defaultPageFor(env, OPERATOR);
     expect(after.version).toBe(before.version);
     expect(after.updated_at).toBe(before.updated_at);
   });
@@ -222,7 +223,7 @@ describe("first boot (spec §14.5)", () => {
     const res = await put({ body: "first ever line", base_version: 0 });
 
     expect(res.status).toBe(200);
-    expect((await readDefaultPage(env)).body).toBe("first ever line");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("first ever line");
   });
 
   it("rejects base_version 0 once there is something to lose", async () => {
@@ -231,24 +232,29 @@ describe("first boot (spec §14.5)", () => {
     const res = await put({ body: "clobber", base_version: 0 });
 
     expect(res.status).toBe(409);
-    expect((await readDefaultPage(env)).body).toBe("real content");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("real content");
   });
 
-  it("reads a missing row as empty at version 0, and initialises it", async () => {
-    // The defensive path: the migration seeds the row, so this is only reachable if
-    // the migration was skipped. Empty must never be confused with a failed read.
-    // 🔴 `pages`, because that is what `readPage` reads. While the shadow still existed
-    // this could have been written against `documents` and would have passed without ever
-    // making the row missing — the defensive path untested, the test green. `documents`
-    // is gone as of #155, so the trap is closed, but the reason is worth keeping.
+  it("🔴 heals a missing row rather than pretending one is there", async () => {
+    // The defensive path: the migration seeds the row, so this is only reachable if the
+    // migration was skipped or a user was created outside `createUser`. Empty must never
+    // be confused with a failed read — and since #230 it is not *simulated* either.
+    // `readPage` used to answer a missing default with a synthetic version-0 row; with a
+    // default page per owner there is no id to synthesise, so `defaultPageFor` creates
+    // the page and the read proceeds on a row that exists.
     await env.DB.prepare("DELETE FROM pages WHERE id = ?").bind(DEFAULT_PAGE_ID).run();
 
-    expect(await readDefaultPage(env)).toMatchObject({ body: "", version: 0 });
+    const healed = await defaultPageFor(env, OPERATOR);
+    expect(healed).toMatchObject({ name: "today", body: "", version: 1 });
+    // A new row, not the old number reused — the seed id was never an identity.
+    expect(healed.id).not.toBe(DEFAULT_PAGE_ID);
 
+    // spec §14.5 still holds from the client's side: base_version 0 against an empty
+    // page initialises it.
     const res = await put({ body: "recovered", base_version: 0 });
 
     expect(res.status).toBe(200);
-    expect(await readDefaultPage(env)).toMatchObject({ body: "recovered", version: 1 });
+    expect(await defaultPageFor(env, OPERATOR)).toMatchObject({ body: "recovered", version: 2 });
   });
 });
 
@@ -287,7 +293,7 @@ describe("request validation", () => {
     const res = await put({ body: "", base_version: SEEDED_VERSION + 1 });
 
     expect(res.status).toBe(200);
-    expect((await readDefaultPage(env)).body).toBe("");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("");
   });
 
   it("400s a base_version that is not a non-negative integer", async () => {
@@ -301,20 +307,20 @@ describe("request validation", () => {
     const res = await put({ body: "x".repeat(1_048_577), base_version: SEEDED_VERSION });
 
     expect(res.status).toBe(413);
-    expect((await readDefaultPage(env)).body).toBe("");
+    expect((await defaultPageFor(env, OPERATOR)).body).toBe("");
   });
 });
 
 describe("writePage (store)", () => {
   it("reports a no-op distinctly from an applied write", async () => {
-    const applied = await writePage(env, { pageId: DEFAULT_PAGE_ID,
+    const applied = await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID,
       body: "x",
       baseVersion: SEEDED_VERSION,
       source: "pwa",
     });
     expect(applied.status).toBe("applied");
 
-    const noop = await writePage(env, { pageId: DEFAULT_PAGE_ID,
+    const noop = await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID,
       body: "x",
       baseVersion: SEEDED_VERSION + 1,
       source: "pwa",

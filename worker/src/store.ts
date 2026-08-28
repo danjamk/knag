@@ -8,7 +8,11 @@ import type { Env } from "./env.js";
  * be a one-file change instead of a rewrite (spec §17), and it is worth exactly as
  * much as the last exception made to it.
  *
- * The single-row id is a constant here, never a literal 1 in a handler.
+ * 🔴 **Every read and write names an owner** (#230, ADR-008 §5). A query here that reaches
+ * for a page without its owner is the two-page bug of #152 again — it will not show up
+ * until there are two people, and then it shows up as one person reading another's page.
+ * Missing and not-yours are the same answer: `null`, and a 404 from the route. Never a
+ * fall back to some other page.
  */
 
 /**
@@ -26,6 +30,14 @@ import type { Env } from "./env.js";
  * so; see `readPage`.
  */
 export const DEFAULT_PAGE_ID = 1;
+
+/**
+ * 🔴 Since #230 nothing at runtime resolves a default *by this number*. A request that
+ * names no page is about its caller's default page — `defaultPageFor(env, ownerId)`, the
+ * owner's oldest live page — and this constant survives only as the name of migration
+ * 0004's seed row, which the test suite and the migration comments refer to. Reaching for
+ * it in a handler would hand one person's page to another.
+ */
 
 /** What migration 0004 named page 1 — the label tier 1 has always displayed. */
 export const DEFAULT_PAGE_NAME = "today";
@@ -57,51 +69,63 @@ export type WriteResult =
   | { status: "conflict"; current: PageRow };
 
 /**
- * Read one page's live state, or `null` if there is no such page.
+ * Read one of `ownerId`'s pages, or `null` if there is no such page — including when the
+ * page exists and belongs to somebody else.
  *
- * 🔴 **Two different kinds of absence, and conflating them is a data-loss path.**
+ * 🔴 **Missing and not-yours are the same `null`, and the caller must say so rather than
+ * serve a default.** A request for page 7 answered with page 1's body would let a caller
+ * write a whole document over a page it never named — and whole-document write is the
+ * only write this product has. Nothing here distinguishes the two absences, on purpose:
+ * a 404 that differed for "exists, not yours" would confirm the page exists.
  *
- * A missing *default* page reads as an empty body at version 0 rather than throwing —
- * defensive in case the migration was skipped, and because empty is a valid state that
- * must never be confused with a failed read (spec §14.5). `PUT` with `base_version: 0`
- * then initialises it. That behaviour is unchanged and is scoped to the default page.
- *
- * A missing *named* page is `null`, and the caller must say so rather than serving the
- * default. A request for page 7 answered with page 1's body would let a caller write a
- * whole document over a page it never named — and whole-document write is the only write
- * this product has.
+ * The synthetic empty-at-version-0 answer this used to give for a missing default row is
+ * gone with #230 — with a default page per owner there is no id to synthesise. Spec
+ * §14.5's invariant — a fresh database is readable, and empty is a valid state — is kept
+ * by `defaultPageFor`, which creates the page rather than pretending one is there.
  */
-export async function readPage(env: Env, pageId: number): Promise<PageRow | null> {
-  const row = await env.DB.prepare(
-    "SELECT id, name, body, version, updated_at FROM pages WHERE id = ? AND deleted_at IS NULL",
+export async function readPage(env: Env, ownerId: number, pageId: number): Promise<PageRow | null> {
+  return await env.DB.prepare(
+    `SELECT id, name, body, version, updated_at FROM pages
+      WHERE id = ? AND owner_id = ? AND deleted_at IS NULL`,
   )
-    .bind(pageId)
+    .bind(pageId, ownerId)
     .first<PageRow>();
-
-  if (row) return row;
-  if (pageId !== DEFAULT_PAGE_ID) return null;
-
-  return {
-    id: DEFAULT_PAGE_ID,
-    name: DEFAULT_PAGE_NAME,
-    body: "",
-    version: 0,
-    updated_at: new Date(0).toISOString(),
-  };
 }
 
 /**
- * The default page, which always answers.
+ * The page a request that names none is about: `ownerId`'s **oldest live page** (#230).
  *
- * A named seam for the one case `readPage` cannot return `null` for, so callers that
- * genuinely mean "the page a request without a page is about" do not each carry a
- * non-null assertion. The invariant is spec §14.5's — empty is a valid state, so a
- * missing row reads as an empty body at version 0 rather than as an absence.
+ * 🔴 Oldest by `id`, not first by `position`. Reordering the switcher (#195) is a thing a
+ * person does with a thumb, and it must not silently move where an agent's whole-document
+ * write lands when it omits `page`, nor which page cannot be deleted. Creation order is
+ * stable; for the operator it is migration 0004's row 1, exactly as before.
+ *
+ * 🔴 **Always answers, by construction rather than by pretence.** Spec §14.5 says a fresh
+ * database is readable and empty is a valid state. `readPage` used to satisfy that with a
+ * synthetic version-0 row for the default id; with a default per owner there is no id to
+ * synthesise, so an owner with no live page gets one created — empty, named `today`,
+ * `source: system` like the seed — and the read proceeds. The only ways to arrive here
+ * with nothing are a skipped migration and a user created outside `createUser`, and both
+ * are better healed than 500'd against the only copy of a document.
  */
-export async function readDefaultPage(env: Env): Promise<PageRow> {
-  const page = await readPage(env, DEFAULT_PAGE_ID);
-  if (!page) throw new Error("readPage returned null for the default page");
-  return page;
+export async function defaultPageFor(env: Env, ownerId: number): Promise<PageRow> {
+  const page = await oldestLivePage(env, ownerId);
+  if (page) return page;
+
+  const created = await createPage(env, { ownerId, name: DEFAULT_PAGE_NAME, source: "system" });
+  const healed = await readPage(env, ownerId, created.id);
+  if (!healed) throw new Error("defaultPageFor created a page it cannot read back");
+  return healed;
+}
+
+async function oldestLivePage(env: Env, ownerId: number): Promise<PageRow | null> {
+  return await env.DB.prepare(
+    `SELECT id, name, body, version, updated_at FROM pages
+      WHERE owner_id = ? AND deleted_at IS NULL
+      ORDER BY id ASC LIMIT 1`,
+  )
+    .bind(ownerId)
+    .first<PageRow>();
 }
 
 /**
@@ -121,17 +145,21 @@ export async function readDefaultPage(env: Env): Promise<PageRow> {
  * Case-insensitive against `idx_pages_name`, which is `COLLATE NOCASE` and unique — so
  * this can never have two answers.
  */
-export async function findPageByName(env: Env, name: string): Promise<PageRow | null> {
+export async function findPageByName(
+  env: Env,
+  ownerId: number,
+  name: string,
+): Promise<PageRow | null> {
   return await env.DB.prepare(
     `SELECT id, name, body, version, updated_at FROM pages
-      WHERE name = ? COLLATE NOCASE AND deleted_at IS NULL`,
+      WHERE owner_id = ? AND name = ? COLLATE NOCASE AND deleted_at IS NULL`,
   )
-    .bind(name)
+    .bind(ownerId, name)
     .first<PageRow>();
 }
 
 /**
- * Every page, in the operator's order — the switcher's list (#154) and nothing more.
+ * Every one of `ownerId`'s pages, in their order — the switcher's list (#154) and nothing more.
  *
  * 🔴 No counts, no last-modified, no body. §7's rule for the selector is that
  * *anything else you add is a column, and a column is a file manager*, and the cheapest
@@ -143,14 +171,17 @@ export async function findPageByName(env: Env, name: string): Promise<PageRow | 
  */
 export async function listPages(
   env: Env,
+  ownerId: number,
 ): Promise<Array<{ id: number; name: string; has_template: boolean }>> {
   const { results } = await env.DB.prepare(
     // `template IS NOT NULL` rather than the template itself: whether a page has one is a
     // fact the switcher's last row needs, and the body of it is not something any list
     // should be carrying around.
     `SELECT id, name, template IS NOT NULL AS has_template FROM pages
-      WHERE deleted_at IS NULL ORDER BY COALESCE(position, id), id`,
-  ).all<{ id: number; name: string; has_template: number }>();
+      WHERE owner_id = ? AND deleted_at IS NULL ORDER BY COALESCE(position, id), id`,
+  )
+    .bind(ownerId)
+    .all<{ id: number; name: string; has_template: number }>();
 
   return results.map((row) => ({ id: row.id, name: row.name, has_template: row.has_template === 1 }));
 }
@@ -164,8 +195,8 @@ export async function listPages(
  * One statement per page inside a batch, so a reorder is atomic and a device polling
  * `listPages` mid-way never sees half of one.
  */
-export async function reorderPages(env: Env, ids: number[]): Promise<boolean> {
-  const live = (await listPages(env)).map((page) => page.id);
+export async function reorderPages(env: Env, ownerId: number, ids: number[]): Promise<boolean> {
+  const live = (await listPages(env, ownerId)).map((page) => page.id);
   const wanted = [...ids];
   if (wanted.length !== live.length) return false;
   if (new Set(wanted).size !== wanted.length) return false;
@@ -174,10 +205,9 @@ export async function reorderPages(env: Env, ids: number[]): Promise<boolean> {
 
   await env.DB.batch(
     wanted.map((id, index) =>
-      env.DB.prepare("UPDATE pages SET position = ? WHERE id = ? AND deleted_at IS NULL").bind(
-        index + 1,
-        id,
-      ),
+      env.DB.prepare(
+        "UPDATE pages SET position = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
+      ).bind(index + 1, id, ownerId),
     ),
   );
   return true;
@@ -189,12 +219,17 @@ export async function reorderPages(env: Env, ids: number[]): Promise<boolean> {
  * Returns `false` when the name is taken — by the partial unique index, which only sees
  * live pages, so a retired page's name is free to reuse.
  */
-export async function renamePage(env: Env, pageId: number, name: string): Promise<boolean> {
+export async function renamePage(
+  env: Env,
+  ownerId: number,
+  pageId: number,
+  name: string,
+): Promise<boolean> {
   try {
     const result = await env.DB.prepare(
-      "UPDATE pages SET name = ? WHERE id = ? AND deleted_at IS NULL",
+      "UPDATE pages SET name = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
     )
-      .bind(name, pageId)
+      .bind(name, pageId, ownerId)
       .run();
     return result.meta.changes === 1;
   } catch {
@@ -211,25 +246,28 @@ export async function renamePage(env: Env, pageId: number, name: string): Promis
  * "delete does not confirm" an honest thing to say (principle 4, ADR-003 §5). Recovering
  * one is clearing a single column, and there is no code path here that removes a row.
  *
- * 🔴 The default page cannot be retired, and that is structural rather than a policy.
- * `DEFAULT_PAGE_ID` is what a request naming no page resolves to, what every MCP tool
- * writes to, and what spec §14.5's defensive read answers for. Deleting it would need a
- * fallback in all three, and "there is always a page" is a cheaper invariant to keep than
- * three fallbacks are to get right.
+ * 🔴 The owner's default page cannot be retired, and that is structural rather than a
+ * policy. It is what a request naming no page resolves to and what every MCP tool writes
+ * to when none is named (`defaultPageFor`). Retiring it would silently move both onto the
+ * next-oldest page — a whole-document write target changing under an agent that named
+ * nothing — and "there is always a page, and it is the same one" is a cheaper invariant
+ * to keep than that is to explain.
  */
 export type DeleteResult = "deleted" | "not_found" | "refused_default";
 
 export async function deletePage(
   env: Env,
+  ownerId: number,
   pageId: number,
   now: Date = new Date(),
 ): Promise<DeleteResult> {
-  if (pageId === DEFAULT_PAGE_ID) return "refused_default";
+  const oldest = await oldestLivePage(env, ownerId);
+  if (oldest && pageId === oldest.id) return "refused_default";
 
   const result = await env.DB.prepare(
-    "UPDATE pages SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+    "UPDATE pages SET deleted_at = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
   )
-    .bind(now.toISOString(), pageId)
+    .bind(now.toISOString(), pageId, ownerId)
     .run();
 
   return result.meta.changes === 1 ? "deleted" : "not_found";
@@ -250,23 +288,32 @@ export async function deletePage(
  * the page cannot render anyway (ADR-004). The save half of this was always right; what
  * was wrong is what read it.
  */
-export async function saveTemplate(env: Env, pageId: number, keep: boolean): Promise<boolean> {
+export async function saveTemplate(
+  env: Env,
+  ownerId: number,
+  pageId: number,
+  keep: boolean,
+): Promise<boolean> {
   const result = await env.DB.prepare(
     keep
-      ? "UPDATE pages SET template = body WHERE id = ? AND deleted_at IS NULL"
-      : "UPDATE pages SET template = NULL WHERE id = ? AND deleted_at IS NULL",
+      ? "UPDATE pages SET template = body WHERE id = ? AND owner_id = ? AND deleted_at IS NULL"
+      : "UPDATE pages SET template = NULL WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
   )
-    .bind(pageId)
+    .bind(pageId, ownerId)
     .run();
   return result.meta.changes === 1;
 }
 
-/** A page's template, or null. Used when creating a page from one. */
-export async function pageTemplate(env: Env, pageId: number): Promise<string | null> {
+/** A page's template, or null. Read on the whole-page wipe path. */
+export async function pageTemplate(
+  env: Env,
+  ownerId: number,
+  pageId: number,
+): Promise<string | null> {
   const row = await env.DB.prepare(
-    "SELECT template FROM pages WHERE id = ? AND deleted_at IS NULL",
+    "SELECT template FROM pages WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
   )
-    .bind(pageId)
+    .bind(pageId, ownerId)
     .first<{ template: string | null }>();
   return row?.template ?? null;
 }
@@ -285,22 +332,25 @@ export async function pageTemplate(env: Env, pageId: number): Promise<string | n
  */
 export async function writePage(
   env: Env,
-  input: { pageId: number; body: string; baseVersion: number; source: WriteSource },
+  input: { ownerId: number; pageId: number; body: string; baseVersion: number; source: WriteSource },
   now: Date = new Date(),
 ): Promise<WriteResult> {
-  const current = await readPage(env, input.pageId);
+  const current = await readPage(env, input.ownerId, input.pageId);
   // Only reachable if the caller skipped `readPage` — every route resolves the page
   // first and 404s. Treated as a conflict rather than throwing: the caller's `base_version`
-  // describes a page that is not there, which is exactly what a conflict means.
+  // describes a page that is not there (or not theirs), which is exactly what a conflict
+  // means, and it carries an empty body so nothing of anyone's leaks in the answer.
   if (!current) {
     return { status: "conflict", current: { id: input.pageId, name: "", body: "", version: 0, updated_at: new Date(0).toISOString() } };
   }
   const updatedAt = now.toISOString();
 
   // spec §14.5: base_version 0 means "I believe nothing is here yet." It is honoured
-  // against a missing row and against an empty one — an empty body has nothing to
-  // lose, and first boot has to be reachable from a client that has never read.
-  // Any other stale base_version is a conflict.
+  // against an empty page — an empty body has nothing to lose, and first boot has to be
+  // reachable from a client that has never read. Any other stale base_version is a
+  // conflict. (The row itself always exists by now: `defaultPageFor` creates a missing
+  // one rather than `readPage` pretending, so the version-0 INSERT this used to carry
+  // is gone with #230.)
   const initialising = input.baseVersion === 0 && current.body === "";
   if (!initialising && input.baseVersion !== current.version) {
     return { status: "conflict", current };
@@ -310,35 +360,18 @@ export async function writePage(
     return { status: "noop", version: current.version, updated_at: current.updated_at };
   }
 
-  // No row at all. Only reachable if the migration was skipped — the seed in
-  // 0001_init.sql means the normal path never comes here (spec §14.5).
-  if (current.version === 0) {
-    await env.DB.prepare(
-      `INSERT INTO pages (id, name, body, version, updated_at, source, created_at)
-       VALUES (?, ?, ?, 1, ?, ?, ?)`,
-    )
-      .bind(input.pageId, DEFAULT_PAGE_NAME, input.body, updatedAt, input.source, updatedAt)
-      .run();
-    await recordRevision(
-      env,
-      { pageId: input.pageId, body: input.body, version: 1, source: input.source },
-      now,
-    );
-    return { status: "applied", version: 1, updated_at: updatedAt };
-  }
-
   const result = await env.DB.prepare(
     `UPDATE pages
         SET body = ?, version = version + 1, updated_at = ?, source = ?
-      WHERE id = ? AND version = ?`,
+      WHERE id = ? AND owner_id = ? AND version = ?`,
   )
-    .bind(input.body, updatedAt, input.source, input.pageId, current.version)
+    .bind(input.body, updatedAt, input.source, input.pageId, input.ownerId, current.version)
     .run();
 
   // Zero rows means another write landed between the read and the UPDATE. Re-read
   // rather than reporting the state we no longer believe.
   if (result.meta.changes !== 1) {
-    const reread = await readPage(env, input.pageId);
+    const reread = await readPage(env, input.ownerId, input.pageId);
     return { status: "conflict", current: reread ?? current };
   }
 
@@ -511,6 +544,7 @@ const EVENT_TYPE: Record<WipeScope, string> = {
 export async function wipe(
   env: Env,
   input: {
+    ownerId: number;
     pageId: number;
     baseVersion: number;
     body: string;
@@ -522,7 +556,7 @@ export async function wipe(
   },
   now: Date = new Date(),
 ): Promise<ClearResult> {
-  const current = await readPage(env, input.pageId);
+  const current = await readPage(env, input.ownerId, input.pageId);
   if (!current) {
     return {
       status: "conflict",
@@ -572,8 +606,8 @@ export async function wipe(
   // than by arithmetic on the array's length. See `casIndex`.
   const cas = env.DB.prepare(
     `UPDATE pages SET body = ?, version = version + 1, updated_at = ?, source = ?
-      WHERE id = ? AND version = ?`,
-  ).bind(input.body, timestamp, input.source, pageId, version);
+      WHERE id = ? AND owner_id = ? AND version = ?`,
+  ).bind(input.body, timestamp, input.source, pageId, input.ownerId, version);
 
   const statements = [
     // 1. Seal the newest revision, so the pre-clear state cannot be swallowed by the
@@ -665,7 +699,7 @@ export async function wipe(
   const results = await env.DB.batch(statements);
 
   if (results[casIndex]?.meta.changes !== 1) {
-    const reread = await readPage(env, pageId);
+    const reread = await readPage(env, input.ownerId, pageId);
     return { status: "conflict", current: reread ?? current };
   }
 
@@ -741,8 +775,11 @@ export type RevisionPage = {
  * the build line with the version and the environment. Per-page it would answer "how old
  * is this page", which is a different question nobody has asked and which would make the
  * build line change when you switch pages.
+ *
+ * **Per owner, though** (#230): "how long have *I* been using knag" is a fact about one
+ * person's record. Retired pages count — their history was kept on purpose (0005).
  */
-export async function oldestRevisionAt(env: Env): Promise<string | null> {
+export async function oldestRevisionAt(env: Env, ownerId: number): Promise<string | null> {
   // 🔴 Ordered by `id`, **not** `min(created_at)`, and the difference is not stylistic.
   // `created_at` is text, and the two writers in this file disagree on precision: every
   // revision is `toISOString()` at milliseconds, while migration 0002's baseline row is
@@ -754,8 +791,13 @@ export async function oldestRevisionAt(env: Env): Promise<string | null> {
   // `id` is a monotonic integer primary key, so the oldest revision is simply the first
   // one, and this is an index read rather than a scan.
   const row = await env.DB.prepare(
-    "SELECT created_at AS at FROM revisions ORDER BY id ASC LIMIT 1",
-  ).first<{ at: string | null }>();
+    `SELECT r.created_at AS at FROM revisions r
+       JOIN pages p ON p.id = r.page_id
+      WHERE p.owner_id = ?
+      ORDER BY r.id ASC LIMIT 1`,
+  )
+    .bind(ownerId)
+    .first<{ at: string | null }>();
   return row?.at ?? null;
 }
 
@@ -869,27 +911,29 @@ export async function clearedItemsInRange(
  * store would make it a data constraint that the agent and a future import would also hit,
  * which is not what it is for. The control that creates pages enforces it.
  *
- * A duplicate name is rejected by `idx_pages_name`, case-insensitively, and surfaces as a
- * thrown D1 error rather than a silently renamed page.
+ * A duplicate name is rejected by `idx_pages_name` — per owner and case-insensitive since
+ * #230, so two people can each have a `today` — and surfaces as a thrown D1 error rather
+ * than a silently renamed page.
  */
 export async function createPage(
   env: Env,
-  input: { name: string; body?: string; source: WriteSource },
+  input: { ownerId: number; name: string; body?: string; source: WriteSource },
   now: Date = new Date(),
 ): Promise<{ id: number; name: string }> {
   const timestamp = now.toISOString();
   const body = input.body ?? "";
 
-  // Appended: one past the highest position among live pages (#195). Retired pages keep
-  // theirs, so the subquery excludes them or a long-dead page could leave a gap the
-  // switcher would never show but a reorder would have to reason about.
+  // Appended: one past the highest position among the owner's live pages (#195). Retired
+  // pages keep theirs, so the subquery excludes them or a long-dead page could leave a gap
+  // the switcher would never show but a reorder would have to reason about.
   const row = await env.DB.prepare(
-    `INSERT INTO pages (name, body, version, updated_at, source, template, created_at, position)
-     VALUES (?, ?, 1, ?, ?, NULL, ?,
-       (SELECT COALESCE(MAX(COALESCE(position, id)), 0) + 1 FROM pages WHERE deleted_at IS NULL))
+    `INSERT INTO pages (owner_id, name, body, version, updated_at, source, template, created_at, position)
+     VALUES (?, ?, ?, 1, ?, ?, NULL, ?,
+       (SELECT COALESCE(MAX(COALESCE(position, id)), 0) + 1 FROM pages
+         WHERE owner_id = ? AND deleted_at IS NULL))
      RETURNING id, name`,
   )
-    .bind(input.name, body, timestamp, input.source, timestamp)
+    .bind(input.ownerId, input.name, body, timestamp, input.source, timestamp, input.ownerId)
     .first<{ id: number; name: string }>();
 
   if (!row) throw new Error("page insert returned no row");
@@ -902,6 +946,82 @@ export async function createPage(
   return row;
 }
 
+// ── Users ────────────────────────────────────────────────────────────────────
+
+/**
+ * Who a principal is (#230, ADR-008 §1). `operator` is the one person who hosts this
+ * deployment; everyone else is a `member`. There is no third role and no per-role
+ * permission table — the operator gate (#232) is one comparison.
+ */
+export type UserRole = "operator" | "member";
+
+export type UserRow = {
+  id: number;
+  email: string | null;
+  role: UserRole;
+  created_at: string;
+  revoked_at: string | null;
+};
+
+const USER_COLUMNS = "id, email, role, created_at, revoked_at";
+
+/**
+ * The operator — resolved by role, never by number.
+ *
+ * `null` only when migration 0009 has not run, which the deploy order makes impossible
+ * in any environment `make migrate` reaches before `make deploy`. `authenticate()` treats
+ * it as "nobody", which surfaces a skipped migration as a 401 rather than as a Worker
+ * that quietly assumes row 1.
+ */
+export async function findOperator(env: Env): Promise<UserRow | null> {
+  return await env.DB.prepare(
+    `SELECT ${USER_COLUMNS} FROM users WHERE role = 'operator' AND revoked_at IS NULL LIMIT 1`,
+  ).first<UserRow>();
+}
+
+/**
+ * A live user by id, or `null` — and a revoked user is `null` here too. This is the
+ * lookup behind an OAuth access token (ADR-008 §6): the grant carries the person's id,
+ * and revoking the person (#232) has to stop every token they were ever issued without
+ * touching the provider's store. One predicate here does that by construction.
+ */
+export async function findUser(env: Env, id: number): Promise<UserRow | null> {
+  return await env.DB.prepare(
+    `SELECT ${USER_COLUMNS} FROM users WHERE id = ? AND revoked_at IS NULL`,
+  )
+    .bind(id)
+    .first<UserRow>();
+}
+
+/**
+ * Create a user and their first page. The invite (#232) calls this; the suite calls it to
+ * be the second person, which is the first time any owner predicate in this file can be
+ * wrong.
+ *
+ * The page comes with the person rather than on first request, so "there is always a
+ * page" (`defaultPageFor`) holds from the first read and the healing path there stays the
+ * exception it is documented as. No cap enforced here, for `createPage`'s reason: the
+ * invite count is a tripwire in the route, not a data constraint.
+ */
+export async function createUser(
+  env: Env,
+  input: { email: string; role?: UserRole },
+  now: Date = new Date(),
+): Promise<UserRow> {
+  const row = await env.DB.prepare(
+    `INSERT INTO users (email, role, created_at) VALUES (?, ?, ?)
+     RETURNING ${USER_COLUMNS}`,
+  )
+    .bind(input.email, input.role ?? "member", now.toISOString())
+    .first<UserRow>();
+  if (!row) throw new Error("user insert returned no row");
+
+  await createPage(env, { ownerId: row.id, name: DEFAULT_PAGE_NAME, source: "system" }, now);
+  return row;
+}
+
+// ── Sessions ─────────────────────────────────────────────────────────────────
+
 /** Drop sessions that have already expired. Called on login; no cron trigger. */
 export async function sweepExpiredSessions(env: Env, now: Date = new Date()): Promise<void> {
   await env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now.toISOString()).run();
@@ -913,13 +1033,21 @@ export async function sweepExpiredSessions(env: Env, now: Date = new Date()): Pr
  */
 export async function createSession(
   env: Env,
-  input: { tokenHash: string; publicId: string; deviceLabel: string | null; expiresAt: Date },
+  input: {
+    userId: number;
+    tokenHash: string;
+    publicId: string;
+    deviceLabel: string | null;
+    expiresAt: Date;
+  },
   now: Date = new Date(),
 ): Promise<void> {
   await env.DB.prepare(
-    "INSERT INTO sessions (token_hash, public_id, created_at, expires_at, device_label) VALUES (?, ?, ?, ?, ?)",
+    `INSERT INTO sessions (user_id, token_hash, public_id, created_at, expires_at, device_label)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   )
     .bind(
+      input.userId,
       input.tokenHash,
       input.publicId,
       now.toISOString(),
@@ -930,23 +1058,35 @@ export async function createSession(
 }
 
 /**
- * Look up a live session by token hash.
+ * Look up a live session by token hash, and the live user it belongs to.
  *
  * 🔴 `expires_at > ?` is in the WHERE clause, not checked by the caller. The sweep
  * runs on login only, so an expired row can sit here for a year — a lookup that
  * returned it and trusted a caller to compare dates would be a session that never
  * actually expires.
+ *
+ * 🔴 Joined to `users` with `revoked_at IS NULL` for the same reason (#230). Revoking a
+ * person (#232) deletes their sessions, but a lookup that did not also check the person
+ * would make that deletion the *only* thing standing between a revoked user and the page
+ * — one missed row and they are back. Here it is a predicate, not a procedure.
  */
 export async function findLiveSession(
   env: Env,
   tokenHash: string,
   now: Date = new Date(),
-): Promise<{ device_label: string | null; public_id: string | null } | null> {
+): Promise<{
+  device_label: string | null;
+  public_id: string | null;
+  user_id: number;
+  role: UserRole;
+} | null> {
   return await env.DB.prepare(
-    "SELECT device_label, public_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
+    `SELECT s.device_label, s.public_id, s.user_id, u.role
+       FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = ? AND s.expires_at > ? AND u.revoked_at IS NULL`,
   )
     .bind(tokenHash, now.toISOString())
-    .first<{ device_label: string | null; public_id: string | null }>();
+    .first<{ device_label: string | null; public_id: string | null; user_id: number; role: UserRole }>();
 }
 
 /** One row of the device list. Never carries `token_hash` — see the migration. */
@@ -958,7 +1098,7 @@ export type SessionRecord = {
 };
 
 /**
- * Every session that is still live, newest first.
+ * Every one of `userId`'s sessions that is still live, newest first.
  *
  * 🔴 `token_hash` is not selected, and that is not an oversight to be tidied up later:
  * it is the SHA-256 of a live credential and this result reaches a response body.
@@ -968,29 +1108,32 @@ export type SessionRecord = {
  */
 export async function listLiveSessions(
   env: Env,
+  userId: number,
   now: Date = new Date(),
 ): Promise<SessionRecord[]> {
   const { results } = await env.DB.prepare(
     `SELECT public_id, device_label, created_at, expires_at
        FROM sessions
-      WHERE expires_at > ?
+      WHERE user_id = ? AND expires_at > ?
       ORDER BY created_at DESC`,
   )
-    .bind(now.toISOString())
+    .bind(userId, now.toISOString())
     .all<SessionRecord>();
 
   return results;
 }
 
 /**
- * Revoke one session by its surrogate id. Returns whether a row actually went.
+ * Revoke one of `userId`'s sessions by its surrogate id. Returns whether a row went.
  *
  * The boolean is what lets the handler answer 404 for an id that never existed rather
  * than 204 for everything, which would make a typo indistinguishable from a revocation.
+ * Somebody else's id matches nothing here, and so gets the same 404 — a device list is
+ * not a thing one person can prune for another (#230).
  */
-export async function deleteSession(env: Env, publicId: string): Promise<boolean> {
-  const result = await env.DB.prepare("DELETE FROM sessions WHERE public_id = ?")
-    .bind(publicId)
+export async function deleteSession(env: Env, userId: number, publicId: string): Promise<boolean> {
+  const result = await env.DB.prepare("DELETE FROM sessions WHERE public_id = ? AND user_id = ?")
+    .bind(publicId, userId)
     .run();
 
   return (result.meta.changes ?? 0) > 0;
@@ -1010,21 +1153,24 @@ export async function deleteSessionByToken(env: Env, tokenHash: string): Promise
 }
 
 /**
- * Sign out everywhere. `keepPublicId` spares the caller's own row so the operator is
- * not logged out by the act of securing everything else — the panic button is for a
- * lost phone, and being ejected from the device you are holding while using it is a
- * worse experience than the problem.
+ * Sign out everywhere — every one of `userId`'s sessions. `keepPublicId` spares the
+ * caller's own row so the operator is not logged out by the act of securing everything
+ * else — the panic button is for a lost phone, and being ejected from the device you are
+ * holding while using it is a worse experience than the problem.
  *
  * Pass null to take everything, which is what a bearer caller gets: it holds no
  * session, so there is nothing of its own to spare.
  */
 export async function deleteOtherSessions(
   env: Env,
+  userId: number,
   keepPublicId: string | null,
 ): Promise<number> {
   const result = keepPublicId
-    ? await env.DB.prepare("DELETE FROM sessions WHERE public_id IS NOT ?").bind(keepPublicId).run()
-    : await env.DB.prepare("DELETE FROM sessions").run();
+    ? await env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND public_id IS NOT ?")
+        .bind(userId, keepPublicId)
+        .run()
+    : await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run();
 
   return result.meta.changes ?? 0;
 }
@@ -1032,28 +1178,54 @@ export async function deleteOtherSessions(
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 /**
- * The one setting the server holds (#190): free text the operator writes, appended to
- * the MCP server's `instructions` under a fixed heading. Global rather than per page —
- * a page's purpose is one line inside it — and capped, because it rides in every
- * agent conversation's system prompt.
+ * The one setting the server holds (#190): free text a person writes, appended to the
+ * MCP server's `instructions` under a fixed heading for *their* agent sessions. Global
+ * to the account rather than per page — a page's purpose is one line inside it — and
+ * capped, because it rides in every agent conversation's system prompt.
  *
  * 🔴 Never exposed as a tool. An agent editing its own instructions is not a feature.
  */
 export const AGENT_INSTRUCTIONS = { key: "agent_instructions", max: 4000 } as const;
 
-export async function readSetting(env: Env, key: string): Promise<string | null> {
-  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?")
-    .bind(key)
+/**
+ * 🔴 Reads `user_settings`, never `settings` (#234, expand: read new). Migration 0010
+ * backfilled the operator's row, and the old table is written to below only so a rollback
+ * to the previous Worker would still find the operator's current text.
+ */
+export async function readSetting(env: Env, userId: number, key: string): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = ?")
+    .bind(userId, key)
     .first<{ value: string }>();
   return row?.value ?? null;
 }
 
-/** Upsert. An empty value is stored as empty rather than deleted — absent and blank read the same. */
-export async function writeSetting(env: Env, key: string, value: string): Promise<void> {
-  await env.DB.prepare(
-    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-  )
-    .bind(key, value, new Date().toISOString())
-    .run();
+/**
+ * Upsert. An empty value is stored as empty rather than deleted — absent and blank read
+ * the same.
+ *
+ * 🔴 **Write both, read new** — release one of #234's three. The second statement mirrors
+ * the operator's value into the legacy `settings` table, and only the operator's: that
+ * table has no user dimension, so it can only ever hold the one person's text it always
+ * held. The predicate resolves "the operator" by role in SQL rather than by a number
+ * handed in, so a member's write cannot land there whatever the caller passes. The next
+ * release deletes this statement; the one after drops the table.
+ */
+export async function writeSetting(
+  env: Env,
+  userId: number,
+  key: string,
+  value: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).bind(userId, key, value, now),
+    env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at)
+       SELECT ?, ?, ? WHERE (SELECT role FROM users WHERE id = ?) = 'operator'
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).bind(key, value, now, userId),
+  ]);
 }

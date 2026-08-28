@@ -146,8 +146,15 @@ Set 2026-08-19. The version numbers are meant to say something:
 | **1.4** | The first server-side setting, and pages in an order | 8c |
 | **1.5** | The design halves of 8b and 8c — the `agent ›` pane, the grip | 8b, 8c |
 | **1.6** | The caret is the mark's block — one feature from use, no design input | — |
-| **1.7** | **The product page** | 9 |
-| **1.8** | Multi-user | 10 |
+| **1.7** | Users and ownership (#230) — multi-user's first third, no visible change | 10 |
+| **1.8** | **The product page** — lands before the first invitation, which is #232 | 9 |
+| **1.9** | Email login (#231), then invite and the admin view (#232) | 10 |
+
+🔴 **Amended 2026-08-28, evening: #230 shipped as 1.7, ahead of the product page.** It
+changes nothing visible and waits on no design, so holding it behind a brief that is
+still with the design session would be the §12 failure again. The product page keeps its
+place ahead of the *invitation* — and the invitation is #232, not #230. The ownership
+release is the one that can go first precisely because nobody else can log in yet.
 
 🔴 **Amended 2026-08-28: 1.6 is the block caret (#228), and the two rows below it moved
 down one.** Asked for on a phone alongside the tall-caret bug (#226) and built the day

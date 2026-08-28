@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PAGE_ID, listPages, readPage, writePage } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * `/api/pages` — create, rename, template, retire (#154).
@@ -71,24 +72,24 @@ describe("creating", () => {
     const res = await create("shopping");
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({ name: "shopping" });
-    expect(await listPages(env)).toHaveLength(2);
+    expect(await listPages(env, OPERATOR)).toHaveLength(2);
   });
 
   it("starts empty unless a template is named", async () => {
     const res = await create("shopping");
     const { id } = (await res.json()) as { id: number };
-    expect((await readPage(env, id))?.body).toBe("");
+    expect((await readPage(env, OPERATOR, id))?.body).toBe("");
   });
 
   it("🔴 starts empty even when another page has a template", async () => {
     // A template is a page's *reset state*, not a seed for other pages (#165). 1.1.0
     // shipped the second reading, which made the wipe less useful on exactly the pages
     // that need it most — and made a new page inherit a body nobody asked it to.
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "## work\n\n## home\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "## work\n\n## home\n", baseVersion: V1, source: "pwa" });
     await req(`${PAGES}/${DEFAULT_PAGE_ID}`, "PATCH", { template: "save" });
 
     const { id } = (await (await create("tuesday")).json()) as { id: number };
-    expect((await readPage(env, id))?.body).toBe("");
+    expect((await readPage(env, OPERATOR, id))?.body).toBe("");
   });
 
   it("🔴 refuses a duplicate name, case-insensitively", async () => {
@@ -98,7 +99,7 @@ describe("creating", () => {
     // #153 resolves the agent's `page` by name. Two pages a lookup cannot tell apart
     // would make a whole-document write ambiguous against the only copy of a document.
     expect(res.status).toBe(409);
-    expect(await listPages(env)).toHaveLength(2);
+    expect(await listPages(env, OPERATOR)).toHaveLength(2);
   });
 
   it("refuses a name that is empty, too long, or more than one line", async () => {
@@ -130,7 +131,7 @@ describe("creating", () => {
     for (let n = 2; n <= 9; n++) {
       expect((await create(`page ${n}`)).status).toBe(201);
     }
-    expect(await listPages(env)).toHaveLength(9);
+    expect(await listPages(env, OPERATOR)).toHaveLength(9);
 
     const res = await create("the tenth");
     expect(res.status).toBe(409);
@@ -147,7 +148,7 @@ describe("renaming", () => {
     const res = await req(`${PAGES}/${id}`, "PATCH", { name: "shopping" });
 
     expect(res.status).toBe(200);
-    expect((await readPage(env, id))?.name).toBe("shopping");
+    expect((await readPage(env, OPERATOR, id))?.name).toBe("shopping");
   });
 
   it("refuses a name another live page already holds", async () => {
@@ -155,19 +156,19 @@ describe("renaming", () => {
     const { id } = (await (await create("work")).json()) as { id: number };
 
     expect((await req(`${PAGES}/${id}`, "PATCH", { name: "shopping" })).status).toBe(409);
-    expect((await readPage(env, id))?.name).toBe("work");
+    expect((await readPage(env, OPERATOR, id))?.name).toBe("work");
   });
 });
 
 describe("templates", () => {
   it("saves the current body, and clears it again", async () => {
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "standing items\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "standing items\n", baseVersion: V1, source: "pwa" });
 
     await req(`${PAGES}/${DEFAULT_PAGE_ID}`, "PATCH", { template: "save" });
-    expect((await listPages(env))[0]?.has_template).toBe(true);
+    expect((await listPages(env, OPERATOR))[0]?.has_template).toBe(true);
 
     await req(`${PAGES}/${DEFAULT_PAGE_ID}`, "PATCH", { template: "clear" });
-    expect((await listPages(env))[0]?.has_template).toBe(false);
+    expect((await listPages(env, OPERATOR))[0]?.has_template).toBe(false);
   });
 
   it("rejects anything but save or clear", async () => {
@@ -182,11 +183,11 @@ describe("🔴 the template is what a wipe returns the page to", () => {
   const SHOPPING = ["- [x] milk", "- [x] eggs", "- [x] birthday candles", ""].join("\n");
 
   async function withTemplate() {
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: STANDING, baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: STANDING, baseVersion: V1, source: "pwa" });
     await req(`${PAGES}/${DEFAULT_PAGE_ID}`, "PATCH", { template: "save" });
-    const page = await readPage(env, DEFAULT_PAGE_ID);
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: SHOPPING, baseVersion: page?.version ?? 0, source: "pwa" });
-    return (await readPage(env, DEFAULT_PAGE_ID))?.version ?? 0;
+    const page = await readPage(env, OPERATOR, DEFAULT_PAGE_ID);
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: SHOPPING, baseVersion: page?.version ?? 0, source: "pwa" });
+    return (await readPage(env, OPERATOR, DEFAULT_PAGE_ID))?.version ?? 0;
   }
 
   async function wipeAll(version: number) {
@@ -205,14 +206,14 @@ describe("🔴 the template is what a wipe returns the page to", () => {
     // Byte for byte, including the trailing newline. A template is a saved body and
     // nothing else, so a reset that normalised anything would be the feature being
     // subtly wrong in a way nothing on screen would show.
-    expect((await readPage(env, DEFAULT_PAGE_ID))?.body).toBe(STANDING);
+    expect((await readPage(env, OPERATOR, DEFAULT_PAGE_ID))?.body).toBe(STANDING);
   });
 
   it("brings the standing items back unchecked", async () => {
     const version = await withTemplate();
     await wipeAll(version);
 
-    const body = (await readPage(env, DEFAULT_PAGE_ID))?.body ?? "";
+    const body = (await readPage(env, OPERATOR, DEFAULT_PAGE_ID))?.body ?? "";
     expect(body).toContain("- [ ] milk");
     expect(body).not.toContain("- [x] milk");
     // And the thing that was only on the list this once is gone.
@@ -245,22 +246,22 @@ describe("🔴 the template is what a wipe returns the page to", () => {
 
     // `completed` means "clear what is done" and runs several times a day. Making it
     // restore lines too would mean a page you swept at noon grew back by itself.
-    expect((await readPage(env, DEFAULT_PAGE_ID))?.body).toBe("");
+    expect((await readPage(env, OPERATOR, DEFAULT_PAGE_ID))?.body).toBe("");
   });
 
   it("empties a page that has no template, as before", async () => {
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: SHOPPING, baseVersion: V1, source: "pwa" });
-    const version = (await readPage(env, DEFAULT_PAGE_ID))?.version ?? 0;
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: SHOPPING, baseVersion: V1, source: "pwa" });
+    const version = (await readPage(env, OPERATOR, DEFAULT_PAGE_ID))?.version ?? 0;
 
     await wipeAll(version);
 
-    expect((await readPage(env, DEFAULT_PAGE_ID))?.body).toBe("");
+    expect((await readPage(env, OPERATOR, DEFAULT_PAGE_ID))?.body).toBe("");
   });
 
   it("🔴 resets the page it was asked about, not the one with the template", async () => {
     const version = await withTemplate();
     const other = (await (await create("shopping")).json()) as { id: number };
-    await writePage(env, { pageId: other.id, body: "- [x] something\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: other.id, body: "- [x] something\n", baseVersion: V1, source: "pwa" });
 
     await SELF.fetch("https://knag.test/api/doc/clear-completed", {
       method: "POST",
@@ -269,8 +270,8 @@ describe("🔴 the template is what a wipe returns the page to", () => {
     });
 
     // The other page has no template, so it empties — and today, which does, is untouched.
-    expect((await readPage(env, other.id))?.body).toBe("");
-    expect((await readPage(env, DEFAULT_PAGE_ID))?.version).toBe(version);
+    expect((await readPage(env, OPERATOR, other.id))?.body).toBe("");
+    expect((await readPage(env, OPERATOR, DEFAULT_PAGE_ID))?.version).toBe(version);
   });
 });
 
@@ -281,13 +282,13 @@ describe("deleting", () => {
     const res = await req(`${PAGES}/${id}`, "DELETE");
 
     expect(res.status).toBe(200);
-    expect((await listPages(env)).map((p) => p.name)).toEqual(["today"]);
-    expect(await readPage(env, id)).toBeNull();
+    expect((await listPages(env, OPERATOR)).map((p) => p.name)).toEqual(["today"]);
+    expect(await readPage(env, OPERATOR, id)).toBeNull();
   });
 
   it("🔴 keeps every revision it ever had — deletion is not loss", async () => {
     const { id } = (await (await create("shopping")).json()) as { id: number };
-    await writePage(env, { pageId: id, body: "- [x] milk\n", baseVersion: V1, source: "pwa" });
+    await writePage(env, { ownerId: OPERATOR, pageId: id, body: "- [x] milk\n", baseVersion: V1, source: "pwa" });
 
     const before = await env.DB.prepare("SELECT count(*) AS n FROM revisions WHERE page_id = ?")
       .bind(id)
@@ -307,7 +308,7 @@ describe("deleting", () => {
     // And recovering it is clearing one column. Asserted so nobody "tidies up" by adding
     // a cascade.
     await env.DB.prepare("UPDATE pages SET deleted_at = NULL WHERE id = ?").bind(id).run();
-    expect((await readPage(env, id))?.body).toBe("- [x] milk\n");
+    expect((await readPage(env, OPERATOR, id))?.body).toBe("- [x] milk\n");
   });
 
   it("🔴 frees the name, because the unique index is partial", async () => {
@@ -327,7 +328,7 @@ describe("deleting", () => {
     // for. "There is always a page" is cheaper to keep than three fallbacks are to get
     // right.
     expect(res.status).toBe(409);
-    expect(await readPage(env, DEFAULT_PAGE_ID)).not.toBeNull();
+    expect(await readPage(env, OPERATOR, DEFAULT_PAGE_ID)).not.toBeNull();
   });
 
   it("404s a page that is already gone", async () => {

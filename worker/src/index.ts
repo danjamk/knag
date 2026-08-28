@@ -1,6 +1,5 @@
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import {
-  OWNER,
   type Principal,
   authenticate,
   clearSession,
@@ -20,9 +19,11 @@ import {
   deleteSession,
   deleteSessionByToken,
   listLiveSessions,
-  DEFAULT_PAGE_ID,
   createPage,
+  defaultPageFor,
   deletePage,
+  findOperator,
+  findUser,
   listPages,
   oldestRevisionAt,
   pageTemplate,
@@ -174,7 +175,7 @@ const router = {
           { status: 405, headers: { Allow: "GET" } },
         );
       }
-      return getHistory(url, env);
+      return getHistory(url, env, principal);
     }
 
     // 🔴 Behind auth, and that is the whole reason it is not on `/health`. The build
@@ -195,7 +196,7 @@ const router = {
         );
       }
 
-      const since = await oldestRevisionAt(env);
+      const since = await oldestRevisionAt(env, principal.id);
       return Response.json({ since });
     }
 
@@ -207,7 +208,7 @@ const router = {
       const principal = await authenticate(request, env);
       if (!principal) return unauthorized();
 
-      if (request.method === "GET") return getDoc(request, env, url);
+      if (request.method === "GET") return getDoc(request, env, url, principal);
       if (request.method === "PUT") return putDoc(request, env, principal);
 
       return Response.json(
@@ -226,7 +227,9 @@ const router = {
       if (!principal) return unauthorized();
 
       if (request.method === "GET") {
-        return Response.json({ text: (await readSetting(env, AGENT_INSTRUCTIONS.key)) ?? "" });
+        return Response.json({
+          text: (await readSetting(env, principal.id, AGENT_INSTRUCTIONS.key)) ?? "",
+        });
       }
 
       if (request.method === "PUT") {
@@ -246,7 +249,7 @@ const router = {
             { status: 413 },
           );
         }
-        await writeSetting(env, AGENT_INSTRUCTIONS.key, text);
+        await writeSetting(env, principal.id, AGENT_INSTRUCTIONS.key, text);
         return Response.json({ text });
       }
 
@@ -267,8 +270,10 @@ const router = {
       const tail = url.pathname.slice("/api/pages".length);
 
       if (tail === "" || tail === "/") {
-        if (request.method === "GET") return Response.json({ pages: await listPages(env) });
-        if (request.method === "POST") return newPage(request, env);
+        if (request.method === "GET") {
+          return Response.json({ pages: await listPages(env, principal.id) });
+        }
+        if (request.method === "POST") return newPage(request, env, principal);
 
         return Response.json(
           { error: "Method not allowed" },
@@ -298,16 +303,16 @@ const router = {
         if (!Array.isArray(ids) || !ids.every((id) => Number.isInteger(id) && id > 0)) {
           return Response.json({ error: "ids must be an array of page ids" }, { status: 400 });
         }
-        if (!(await reorderPages(env, ids as number[]))) {
+        if (!(await reorderPages(env, principal.id, ids as number[]))) {
           return Response.json(
             {
               error: "ids must be every live page, once each — the list changed elsewhere",
-              pages: await listPages(env),
+              pages: await listPages(env, principal.id),
             },
             { status: 409 },
           );
         }
-        return Response.json({ pages: await listPages(env) });
+        return Response.json({ pages: await listPages(env, principal.id) });
       }
 
       const id = Number(tail.slice(1));
@@ -315,8 +320,8 @@ const router = {
         return Response.json({ error: "page must be a positive integer" }, { status: 400 });
       }
 
-      if (request.method === "PATCH") return editPage(request, env, id);
-      if (request.method === "DELETE") return retirePage(env, id);
+      if (request.method === "PATCH") return editPage(request, env, principal.id, id);
+      if (request.method === "DELETE") return retirePage(env, principal.id, id);
 
       return Response.json(
         { error: "Method not allowed" },
@@ -380,7 +385,7 @@ const router = {
  * row reads `false` — correct, not a special case.
  */
 async function listSessions(env: Env, principal: Principal): Promise<Response> {
-  const sessions = await listLiveSessions(env);
+  const sessions = await listLiveSessions(env, principal.id);
 
   return Response.json({
     sessions: sessions.map((s) => ({
@@ -424,8 +429,8 @@ async function logout(request: Request, env: Env, principal: Principal): Promise
  * Revoke one device by its surrogate id.
  *
  * 404 for an id that matched nothing, so a typo is distinguishable from a revocation.
- * There is no ownership check because there is one owner (`OWNER`); when that stops
- * being true this is the line that has to change, which is why it says so here.
+ * Somebody else's session id also matches nothing — the store scopes the delete by the
+ * caller (#230) — and gets the same 404, so the response does not confirm it exists.
  */
 async function revokeSession(
   request: Request,
@@ -433,7 +438,7 @@ async function revokeSession(
   principal: Principal,
   publicId: string,
 ): Promise<Response> {
-  const revoked = await deleteSession(env, publicId);
+  const revoked = await deleteSession(env, principal.id, publicId);
   if (!revoked) return Response.json({ error: "No such session" }, { status: 404 });
 
   // Revoking your own row from the device list is a log out, and it has to clear the
@@ -455,7 +460,7 @@ async function revokeSession(
  * which is the honest reading of the request rather than a refusal.
  */
 async function revokeOthers(env: Env, principal: Principal): Promise<Response> {
-  const revoked = await deleteOtherSessions(env, principal.session?.publicId ?? null);
+  const revoked = await deleteOtherSessions(env, principal.id, principal.session?.publicId ?? null);
   return Response.json({ revoked });
 }
 
@@ -501,9 +506,26 @@ function oauthProvider(origin: string): OAuthProvider<Env> {
     // re-derived. `source: "bearer"` is the literal truth: an OAuth access token arrives
     // as `Authorization: Bearer`, and it lands in the revision log as `agent`, which is
     // what it is.
+    //
+    // 🔴 The person comes from `ctx.props`, which the grant carries (oauth.ts), and is
+    // looked up on every request rather than trusted: a revoked user (#232) is `null`
+    // from `findUser`, so every token they were ever issued stops here without the
+    // provider's store being touched.
+    //
+    // 🔴 A grant minted before #230 carries `props: { id: "dan" }` — the old `OWNER`
+    // constant, a string. There was one human then, so a non-numeric id is the operator's
+    // by definition, and mapping it keeps every connector already added to claude.ai
+    // working across the deploy rather than asking the operator to reconnect.
     apiHandler: {
-      fetch: (request: Request, env: Env) =>
-        handleMcp(request, env, { id: OWNER, source: "bearer" }),
+      fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
+        const id = (ctx as { props?: { id?: unknown } }).props?.id;
+        const user =
+          typeof id === "number" && Number.isInteger(id)
+            ? await findUser(env, id)
+            : await findOperator(env);
+        if (!user) return unauthorized();
+        return handleMcp(request, env, { id: user.id, role: user.role, source: "bearer" });
+      },
     },
     defaultHandler: router,
     authorizeEndpoint: "/oauth/authorize",
@@ -564,9 +586,16 @@ async function login(request: Request, env: Env): Promise<Response> {
     return loginFailed(request, "passphrase mismatch");
   }
 
+  // The passphrase is the operator's credential and nobody else's, until #231 replaces
+  // it. Resolved by role; a missing operator row is a skipped migration, and it reads as
+  // the same opaque 401 as every other failure here.
+  const operator = await findOperator(env);
+  if (!operator) return loginFailed(request, "no operator row");
+
   const cookie = await issueSession(
     request,
     env,
+    operator.id,
     typeof deviceLabel === "string" ? deviceLabel : null,
   );
 
@@ -616,7 +645,7 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
     page,
   } = (payload ?? {}) as Record<string, unknown>;
 
-  const lookup = await resolvePage(env, page);
+  const lookup = await resolvePage(env, principal.id, page);
   if (!lookup.ok) return lookup.response;
   if (typeof baseVersion !== "number" || !Number.isInteger(baseVersion) || baseVersion < 0) {
     return Response.json({ error: "base_version must be a non-negative integer" }, { status: 400 });
@@ -643,7 +672,8 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
   // grew back by itself, which is the opposite of what the control is for.
   //
   // Read only on the whole-page path, so the everyday sweep costs no extra query.
-  const resetTo = wipeScope === "all" ? ((await pageTemplate(env, current.id)) ?? "") : "";
+  const resetTo =
+    wipeScope === "all" ? ((await pageTemplate(env, principal.id, current.id)) ?? "") : "";
 
   // An empty page has nothing to wipe under either scope. `parse("")` yields a single
   // blank block, so this is checked on the body rather than the block count — otherwise
@@ -663,6 +693,7 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
   }
 
   const result = await wipe(env, {
+    ownerId: principal.id,
     pageId: current.id,
     baseVersion,
     body: wipeScope === "all" ? resetTo : serialize(blocks.filter((block) => !isCompleted(block))),
@@ -707,8 +738,8 @@ async function clear(request: Request, env: Env, principal: Principal): Promise<
  * the same two functions, so the HTTP surface and the agent surface cannot answer the
  * same question differently.
  */
-async function getHistory(url: URL, env: Env): Promise<Response> {
-  const lookup = await resolvePage(env, url.searchParams.get("page"));
+async function getHistory(url: URL, env: Env, principal: Principal): Promise<Response> {
+  const lookup = await resolvePage(env, principal.id, url.searchParams.get("page"));
   if (!lookup.ok) return lookup.response;
 
   const timeZone = reportingZone(env.KNAG_TZ);
@@ -786,7 +817,7 @@ function validName(raw: unknown): string | null {
   return name;
 }
 
-async function newPage(request: Request, env: Env): Promise<Response> {
+async function newPage(request: Request, env: Env, principal: Principal): Promise<Response> {
   let payload: unknown;
   try {
     payload = await request.json();
@@ -803,7 +834,7 @@ async function newPage(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const existing = await listPages(env);
+  const existing = await listPages(env, principal.id);
   if (existing.length >= MAX_PAGES) {
     return Response.json(
       {
@@ -819,7 +850,7 @@ async function newPage(request: Request, env: Env): Promise<Response> {
   const body = "";
 
   try {
-    const page = await createPage(env, { name, body, source: "pwa" });
+    const page = await createPage(env, { ownerId: principal.id, name, body, source: "pwa" });
     return Response.json(page, { status: 201 });
   } catch {
     // The partial unique index. Only live pages hold a name, so a retired page's name is
@@ -828,7 +859,12 @@ async function newPage(request: Request, env: Env): Promise<Response> {
   }
 }
 
-async function editPage(request: Request, env: Env, id: number): Promise<Response> {
+async function editPage(
+  request: Request,
+  env: Env,
+  ownerId: number,
+  id: number,
+): Promise<Response> {
   let payload: unknown;
   try {
     payload = await request.json();
@@ -842,7 +878,7 @@ async function editPage(request: Request, env: Env, id: number): Promise<Respons
     if (template !== "save" && template !== "clear") {
       return Response.json({ error: 'template must be "save" or "clear"' }, { status: 400 });
     }
-    if (!(await saveTemplate(env, id, template === "save"))) {
+    if (!(await saveTemplate(env, ownerId, id, template === "save"))) {
       return Response.json({ error: "No such page" }, { status: 404 });
     }
   }
@@ -855,7 +891,7 @@ async function editPage(request: Request, env: Env, id: number): Promise<Respons
         { status: 400 },
       );
     }
-    if (!(await renamePage(env, id, name))) {
+    if (!(await renamePage(env, ownerId, id, name))) {
       // Either the page is gone or the name is taken. Both are 409-shaped from the
       // caller's side — it asked for a state the server will not enter — and the message
       // says which, because a rename that fails silently reads as a broken control.
@@ -866,12 +902,12 @@ async function editPage(request: Request, env: Env, id: number): Promise<Respons
     }
   }
 
-  const pages = await listPages(env);
+  const pages = await listPages(env, ownerId);
   return Response.json({ pages });
 }
 
-async function retirePage(env: Env, id: number): Promise<Response> {
-  const result = await deletePage(env, id);
+async function retirePage(env: Env, ownerId: number, id: number): Promise<Response> {
+  const result = await deletePage(env, ownerId, id);
 
   if (result === "refused_default") {
     // 🔴 Structural, not a policy. The default page is what a request naming no page
@@ -888,20 +924,21 @@ async function retirePage(env: Env, id: number): Promise<Response> {
 
   // 🔴 Retired, never removed — its revisions and cleared items are untouched, which is
   // what makes skipping a confirmation dialog honest (principle 4).
-  return Response.json({ pages: await listPages(env) });
+  return Response.json({ pages: await listPages(env, ownerId) });
 }
 
 /**
- * Which page a request is about (#152).
+ * Which page a request is about (#152), and whose (#230).
  *
- * Absent means the **default page**, which is what every client built before pages
- * sends — so `/api/doc` with no `page` behaves exactly as it did, and that is what
+ * Absent means the caller's **default page**, which is what every client built before
+ * pages sends — so `/api/doc` with no `page` behaves exactly as it did, and that is what
  * makes the expand half deployable on its own.
  *
- * 🔴 An unrecognised page is a 404, never a fall back to the default. Whole-document
- * write is the only write this product has, so serving page 1 to a caller who asked for
- * page 7 would let it overwrite a page it never named. Same rule the store states on
- * `DEFAULT_PAGE_ID`, enforced at the edge where the number arrives from outside.
+ * 🔴 An unrecognised page is a 404, never a fall back to the default — and so is a page
+ * that exists and belongs to somebody else, with the same body. Whole-document write is
+ * the only write this product has, so serving page 1 to a caller who asked for page 7
+ * would let it overwrite a page it never named. Same rule the store states on `readPage`,
+ * enforced at the edge where the number arrives from outside.
  *
  * Ids here, not names. Name resolution is #153's — it belongs with the MCP parameter an
  * agent actually types, and putting a second lookup in front of the browser's requests
@@ -909,21 +946,20 @@ async function retirePage(env: Env, id: number): Promise<Response> {
  */
 type PageLookup = { ok: true; page: PageRow } | { ok: false; response: Response };
 
-async function resolvePage(env: Env, raw: unknown): Promise<PageLookup> {
-  let pageId = DEFAULT_PAGE_ID;
-
-  if (raw !== undefined && raw !== null && raw !== "") {
-    const parsed = typeof raw === "number" ? raw : Number(raw);
-    if (!Number.isInteger(parsed) || parsed < 1) {
-      return {
-        ok: false,
-        response: Response.json({ error: "page must be a positive integer" }, { status: 400 }),
-      };
-    }
-    pageId = parsed;
+async function resolvePage(env: Env, ownerId: number, raw: unknown): Promise<PageLookup> {
+  if (raw === undefined || raw === null || raw === "") {
+    return { ok: true, page: await defaultPageFor(env, ownerId) };
   }
 
-  const page = await readPage(env, pageId);
+  const parsed = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return {
+      ok: false,
+      response: Response.json({ error: "page must be a positive integer" }, { status: 400 }),
+    };
+  }
+
+  const page = await readPage(env, ownerId, parsed);
   if (!page) {
     return { ok: false, response: Response.json({ error: "No such page" }, { status: 404 }) };
   }
@@ -931,8 +967,13 @@ async function resolvePage(env: Env, raw: unknown): Promise<PageLookup> {
   return { ok: true, page };
 }
 
-async function getDoc(request: Request, env: Env, url: URL): Promise<Response> {
-  const lookup = await resolvePage(env, url.searchParams.get("page"));
+async function getDoc(
+  request: Request,
+  env: Env,
+  url: URL,
+  principal: Principal,
+): Promise<Response> {
+  const lookup = await resolvePage(env, principal.id, url.searchParams.get("page"));
   if (!lookup.ok) return lookup.response;
 
   const doc = lookup.page;
@@ -967,7 +1008,7 @@ async function putDoc(request: Request, env: Env, principal: Principal): Promise
 
   const { body, base_version: baseVersion, page } = (payload ?? {}) as Record<string, unknown>;
 
-  const lookup = await resolvePage(env, page);
+  const lookup = await resolvePage(env, principal.id, page);
   if (!lookup.ok) return lookup.response;
 
   // An empty string is a valid document and a valid write. Only the absence of a
@@ -984,6 +1025,7 @@ async function putDoc(request: Request, env: Env, principal: Principal): Promise
   }
 
   const result = await writePage(env, {
+    ownerId: principal.id,
     pageId: lookup.page.id,
     body,
     baseVersion,

@@ -10,9 +10,9 @@ import {
   type WipeScope,
   AGENT_INSTRUCTIONS,
   findPageByName,
+  defaultPageFor,
   listPages,
   pageTemplate,
-  readDefaultPage,
   readSetting,
   wipe,
   writePage,
@@ -146,7 +146,8 @@ export async function handleMcp(
   const server = buildServer(
     env,
     new URL(request.url).origin,
-    await readSetting(env, AGENT_INSTRUCTIONS.key),
+    await readSetting(env, principal.id, AGENT_INSTRUCTIONS.key),
+    principal.id,
   );
   const transport = new WebStandardStreamableHTTPServerTransport({
     // Stateless, and **omitting `sessionIdGenerator` is how you say so** — the SDK
@@ -247,7 +248,13 @@ function withOperator(operator: string | null): string {
   return text ? `${INSTRUCTIONS}\n\n${OPERATOR_HEADING}\n\n${text}` : INSTRUCTIONS;
 }
 
-function buildServer(env: Env, origin: string, operator: string | null): McpServer {
+/**
+ * `ownerId` is the person every tool below acts as (#230, ADR-008 §6): the one the
+ * bearer resolved to, whether that was the static token (the operator) or an OAuth
+ * grant (whoever consented). Every page lookup names them, so an agent connected by
+ * one person cannot read or write another's page by any argument it can pass.
+ */
+function buildServer(env: Env, origin: string, operator: string | null, ownerId: number): McpServer {
   const server = new McpServer(
     {
       name: "knag",
@@ -258,10 +265,10 @@ function buildServer(env: Env, origin: string, operator: string | null): McpServ
     { instructions: withOperator(operator) },
   );
 
-  registerRead(server, env);
-  registerWrite(server, env);
-  registerWipe(server, env);
-  registerHistory(server, env);
+  registerRead(server, env, ownerId);
+  registerWrite(server, env, ownerId);
+  registerWipe(server, env, ownerId);
+  registerHistory(server, env, ownerId);
 
   return server;
 }
@@ -352,13 +359,13 @@ const PAGE = z
  */
 type PageResult = { ok: true; page: PageRow } | { ok: false; result: ReturnType<typeof failed> };
 
-async function agentPage(env: Env, name?: string): Promise<PageResult> {
-  if (name === undefined) return { ok: true, page: await readDefaultPage(env) };
+async function agentPage(env: Env, ownerId: number, name?: string): Promise<PageResult> {
+  if (name === undefined) return { ok: true, page: await defaultPageFor(env, ownerId) };
 
-  const page = await findPageByName(env, name);
+  const page = await findPageByName(env, ownerId, name);
   if (page) return { ok: true, page };
 
-  const names = (await listPages(env)).map((p) => p.name);
+  const names = (await listPages(env, ownerId)).map((p) => p.name);
   return {
     ok: false,
     result: failed(
@@ -373,7 +380,7 @@ async function agentPage(env: Env, name?: string): Promise<PageResult> {
   };
 }
 
-function registerRead(server: McpServer, env: Env): void {
+function registerRead(server: McpServer, env: Env, ownerId: number): void {
   server.registerTool(
     "knag_read",
     {
@@ -403,7 +410,7 @@ function registerRead(server: McpServer, env: Env): void {
       },
     },
     async ({ page }) => {
-      const found = await agentPage(env, page);
+      const found = await agentPage(env, ownerId, page);
       if (!found.ok) return found.result;
       const doc = found.page;
 
@@ -415,7 +422,7 @@ function registerRead(server: McpServer, env: Env): void {
   );
 }
 
-function registerWrite(server: McpServer, env: Env): void {
+function registerWrite(server: McpServer, env: Env, ownerId: number): void {
   server.registerTool(
     "knag_write",
     {
@@ -461,11 +468,12 @@ function registerWrite(server: McpServer, env: Env): void {
       // agent contract's "byte-preserve every line not explicitly targeted" is a promise
       // about a *named* page; a write that lands on the wrong one keeps every byte and
       // destroys the document anyway.
-      const found = await agentPage(env, page);
+      const found = await agentPage(env, ownerId, page);
       if (!found.ok) return found.result;
       const target = found.page;
 
       const result = await writePage(env, {
+        ownerId,
         pageId: target.id,
         body,
         baseVersion: base_version,
@@ -487,7 +495,7 @@ function registerWrite(server: McpServer, env: Env): void {
   );
 }
 
-function registerWipe(server: McpServer, env: Env): void {
+function registerWipe(server: McpServer, env: Env, ownerId: number): void {
   server.registerTool(
     "knag_wipe",
     {
@@ -536,13 +544,14 @@ function registerWipe(server: McpServer, env: Env): void {
     },
     async ({ base_version, scope, page }) => {
       const wipeScope: WipeScope = scope === "all" ? "all" : "completed";
-      const found = await agentPage(env, page);
+      const found = await agentPage(env, ownerId, page);
       if (!found.ok) return found.result;
       const current = found.page;
 
       const blocks = parse(current.body);
       const completed = blocks.filter(isCompleted);
-      const resetTo = wipeScope === "all" ? ((await pageTemplate(env, current.id)) ?? "") : "";
+      const resetTo =
+        wipeScope === "all" ? ((await pageTemplate(env, ownerId, current.id)) ?? "") : "";
 
       // `parse("")` yields a single blank block, so an empty page is detected on the
       // body rather than the block count — otherwise wiping nothing would report one.
@@ -561,6 +570,7 @@ function registerWipe(server: McpServer, env: Env): void {
       }
 
       const result = await wipe(env, {
+        ownerId,
         pageId: current.id,
         baseVersion: base_version,
         // 🔴 A whole-page wipe **resets to the template** when the page has one (#165),
@@ -606,7 +616,7 @@ function registerWipe(server: McpServer, env: Env): void {
 const HISTORY_BOUNDARY =
   "A bare date (2026-08-14), resolved to local midnight in the page's timezone, or a full ISO 8601 instant.";
 
-function registerHistory(server: McpServer, env: Env): void {
+function registerHistory(server: McpServer, env: Env, ownerId: number): void {
   server.registerTool(
     "knag_history",
     {
@@ -672,7 +682,7 @@ function registerHistory(server: McpServer, env: Env): void {
       },
     },
     async ({ since, until, page }) => {
-      const found = await agentPage(env, page);
+      const found = await agentPage(env, ownerId, page);
       if (!found.ok) return found.result;
 
       const timeZone = reportingZone(env.KNAG_TZ);

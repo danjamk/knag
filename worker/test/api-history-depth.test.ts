@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { oldestRevisionAt } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * `GET /api/history/depth` — when the record starts (#132).
@@ -42,7 +43,7 @@ describe("GET /api/history/depth", () => {
     const res = await SELF.fetch("https://knag.test/api/history/depth", { headers: authed });
     const { since } = (await res.json()) as { since: string | null };
 
-    expect(since).toBe(await oldestRevisionAt(env));
+    expect(since).toBe(await oldestRevisionAt(env, OPERATOR));
   });
 
   it("🔴 stays the oldest as the log grows, and caught a real bug doing it", async () => {
@@ -55,7 +56,7 @@ describe("GET /api/history/depth", () => {
     // In production the baseline is days old and `min()` would have looked correct
     // forever — right up until someone read the number on a page created that minute.
     // The fix orders by `id`, which is monotonic and has no format to disagree about.
-    const before = await oldestRevisionAt(env);
+    const before = await oldestRevisionAt(env, OPERATOR);
 
     await SELF.fetch("https://knag.test/api/doc", {
       method: "PUT",
@@ -63,7 +64,7 @@ describe("GET /api/history/depth", () => {
       body: JSON.stringify({ body: "a line the log did not have", base_version: 1 }),
     });
 
-    expect(await oldestRevisionAt(env)).toBe(before);
+    expect(await oldestRevisionAt(env, OPERATOR)).toBe(before);
   });
 
   it("refuses a method that is not GET", async () => {

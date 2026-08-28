@@ -1,26 +1,34 @@
 import type { Env } from "./env.js";
-import { createSession, findLiveSession, sweepExpiredSessions } from "./store.js";
+import {
+  type UserRole,
+  createSession,
+  findLiveSession,
+  findOperator,
+  sweepExpiredSessions,
+} from "./store.js";
 
 /**
  * Authentication. Every route goes through `authenticate()`.
  *
  * 🔴 The contract that matters: this returns a **Principal, not a boolean**, and no
- * handler anywhere asks whether the passphrase matched. Handlers key off
+ * handler anywhere asks whether the credential matched. Handlers key off
  * `principal.id`.
  *
- * Today `id` is always OWNER — that is the point, not an oversight. A shared
- * passphrase does not survive a second human and would not pass App Store review
- * (ADR-001, spec §17). Keeping every caller on `principal.id` means replacing the
- * credential scheme later is a change to this file, not to the whole tree.
+ * `id` is a row in `users` since #230 (ADR-008). Before that it was the constant
+ * `OWNER = "dan"` — deliberately, because a shared passphrase has one person behind it
+ * — and the reason every caller keyed off `principal.id` anyway is that replacing the
+ * credential scheme would then be a change to this file rather than to the whole tree.
+ * That is what happened: the shape below did not change, only what `id` holds.
  *
  * Bearer is first-class on every `/api/*` route, not an agent afterthought: a native
  * wrapper authenticates from the Keychain with a header, never a cookie.
  */
 
-export const OWNER = "dan";
-
 export type Principal = {
-  id: string;
+  /** `users.id`. Every page, session and setting a handler touches is scoped by it. */
+  id: number;
+  /** The operator gate (#232) is `role === "operator"` and nothing more elaborate. */
+  role: UserRole;
   source: "session" | "bearer";
 
   /**
@@ -97,7 +105,11 @@ export async function authenticate(request: Request, env: Env): Promise<Principa
   if (header?.startsWith("Bearer ")) {
     const presented = header.slice("Bearer ".length).trim();
     if (await secretEquals(presented, env.KNAG_BEARER_TOKEN)) {
-      return { id: OWNER, source: "bearer" };
+      // 🔴 The static bearer is the operator's and only the operator's (ADR-008 §6). It
+      // is the Claude Code credential, there is one operator, and members reach `/mcp`
+      // through OAuth, whose grants carry the person. Resolved by role, never by number.
+      const operator = await findOperator(env);
+      return operator ? { id: operator.id, role: operator.role, source: "bearer" } : null;
     }
   }
 
@@ -110,7 +122,8 @@ export async function authenticate(request: Request, env: Env): Promise<Principa
     const session = await findLiveSession(env, tokenHash);
     if (session) {
       return {
-        id: OWNER,
+        id: session.user_id,
+        role: session.role,
         source: "session",
         // `public_id` is NOT NULL in practice — the migration backfilled every row and
         // `createSession` always sets it — but the column is nullable because SQLite
@@ -137,6 +150,7 @@ export async function authenticate(request: Request, env: Env): Promise<Principa
 export async function issueSession(
   request: Request,
   env: Env,
+  userId: number,
   deviceLabel: string | null,
   now: Date = new Date(),
 ): Promise<string> {
@@ -157,6 +171,7 @@ export async function issueSession(
   await createSession(
     env,
     {
+      userId,
       tokenHash: await hashToken(raw),
       publicId,
       deviceLabel: deviceLabel?.slice(0, MAX_DEVICE_LABEL) || null,

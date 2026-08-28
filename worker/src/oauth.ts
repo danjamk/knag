@@ -1,5 +1,5 @@
 import type { AuthRequest, ClientInfo, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
-import { OWNER, authenticate } from "./auth.js";
+import { type Principal, authenticate } from "./auth.js";
 import type { Env } from "./env.js";
 
 /**
@@ -50,7 +50,7 @@ export async function handleAuthorize(request: Request, env: Env): Promise<Respo
   }
 
   if (request.method === "POST") {
-    return completeGrant(provider, oauthReq, env);
+    return completeGrant(provider, oauthReq, env, principal);
   }
 
   return consentPage(request, oauthReq, await lookupClient(provider, oauthReq.clientId));
@@ -91,17 +91,21 @@ async function completeGrant(
   provider: OAuthHelpers,
   oauthReq: AuthRequest,
   env: Env,
+  principal: Principal,
 ): Promise<Response> {
   const { redirectTo } = await provider.completeAuthorization({
     request: oauthReq,
-    // One operator, and the id every route already keys off (auth.ts). When a second
-    // human appears this is the value that changes, not the shape around it.
-    userId: OWNER,
-    metadata: { label: OWNER },
+    // 🔴 The person whose session consented, and so the person every token from this
+    // grant will act as (ADR-008 §6). This was the constant `OWNER` while there was one
+    // human; the shape around it did not change when the value did.
+    userId: String(principal.id),
+    metadata: { label: `user ${principal.id}` },
     scope: oauthReq.scope,
     // Reaches the MCP handler as `ctx.props`. Deliberately minimal: knag's tools read
-    // the document, not the caller, and a prop nobody reads is a prop that leaks.
-    props: { id: OWNER },
+    // the document, not the caller, and a prop nobody reads is a prop that leaks. The
+    // handler looks the user up on every request rather than trusting the role here,
+    // so a revoked person's token dies with the row (#232).
+    props: { id: principal.id },
   });
 
   console.log(`oauth grant completed for client ${oauthReq.clientId} on ${env.KNAG_ENV || "local"}`);

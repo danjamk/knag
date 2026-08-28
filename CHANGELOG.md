@@ -13,6 +13,38 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-08-28
+
+Every page has an owner. Nothing visible changed.
+
+### Added
+
+- **Users, and an owner on every page, session and grant** (#230, [ADR-008]). The first
+  third of multi-user, and the one with no visible change: a `users` table, `owner_id`
+  on `pages`, `user_id` on `sessions`, both backfilled to the operator so every existing
+  row carries over untouched. Every `store.ts` read and write now names its owner —
+  missing and not-yours are the same `null`, and the same 404 — and a request that names
+  no page lands on the caller's own oldest page rather than on row 1. The operator is a
+  `role`, never `id = 1`. The static bearer stays the operator's; an OAuth grant now
+  carries the person who consented, and a token minted before this release is still the
+  operator's, so nothing already connected to claude.ai needs reconnecting. A page name is
+  unique per owner, so two people can each have a `today`; the nine-page cap is per
+  person too. Fourteen tests ask every route to cross between two people and expect the
+  404 a missing page would get.
+- **`settings` begins its move to `user_settings`** (#234, release one of three). Read
+  from the new table, written to both — the operator's row mirrors into the old one so a
+  rollback still reads current text. Migration 0007's comment promised an owner *column*;
+  `key` is that table's primary key, so it could not have one.
+
+### Changed
+
+- **A missing default page is created, not simulated.** `readPage` used to answer a
+  missing row 1 with a synthetic empty page at version 0; with a default per owner there
+  is no id to synthesise, so `defaultPageFor` creates the owner's `today` and the read
+  proceeds. Spec §14.5's invariant holds by construction.
+
+[ADR-008]: docs/adr/ADR-008-email-login.md
+
 ## [1.6.0] — 2026-08-28
 
 The caret is the mark.
@@ -1967,6 +1999,7 @@ The first plateau: a legal pad you can actually live in.
   Checked 2026-08-22. If it does not, auth needs rework.
 
 [Unreleased]: https://github.com/danjamk/knag/compare/v1.6.0...HEAD
+[1.7.0]: https://github.com/danjamk/knag/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/danjamk/knag/compare/v1.5.3...v1.6.0
 [1.5.3]: https://github.com/danjamk/knag/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/danjamk/knag/compare/v1.5.1...v1.5.2

@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { COALESCE_WINDOW_MS, DEFAULT_PAGE_ID, writePage } from "../src/store.js";
+import { OPERATOR } from "./users.js";
 
 /**
  * The revision log — principle 4, "deletion is not loss".
@@ -35,7 +36,7 @@ async function revisions(): Promise<
 const SEEDED_VERSION = 1;
 
 async function write(body: string, baseVersion: number, when: Date) {
-  return writePage(env, { pageId: DEFAULT_PAGE_ID, body, baseVersion, source: "pwa" }, when);
+  return writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body, baseVersion, source: "pwa" }, when);
 }
 
 describe("the baseline revision (migration 0002)", () => {
@@ -64,7 +65,7 @@ describe("recording", () => {
   });
 
   it("records the source of the write", async () => {
-    await writePage(env, { pageId: DEFAULT_PAGE_ID, body: "by an agent", baseVersion: SEEDED_VERSION, source: "agent" }, T0);
+    await writePage(env, { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "by an agent", baseVersion: SEEDED_VERSION, source: "agent" }, T0);
 
     expect((await revisions())[1]?.source).toBe("agent");
   });
