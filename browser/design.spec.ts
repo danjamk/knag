@@ -284,14 +284,21 @@ test.describe("the wipe, the only animation in the product", () => {
   });
 
   test("nothing else on the page animates", async ({ knag }) => {
-    // Everything is still except the wipe, the blink in the mark, and the caret — which
-    // is the mark's block, and is asserted on its own below. A fade on mount or a
-    // slide-in dialog is a bug against the system, not a nicety.
+    // Everything is still except the wipe and the cursor blink in the mark. The block
+    // caret is steady — the native caret blinks inside it, unseen (#228). A fade on
+    // mount or a slide-in dialog is a bug against the system, not a nicety.
     await knag.seed(DAY);
 
     await knag.useEditor();
+    await knag.caretAtEndOfLine(1);
 
-    for (const el of ["[data-surface] .cm-line", "footer", "[data-save-status]", "[data-ledge]"]) {
+    for (const el of [
+      "[data-surface] .cm-line",
+      "[data-surface] .cm-caret-layer",
+      "footer",
+      "[data-save-status]",
+      "[data-ledge]",
+    ]) {
       expect(await css(knag.page.locator(el).first(), "animation-name"), el).toBe("none");
     }
     expect(await css(knag.page.locator("[data-login] .wordmark .block"), "animation-name")).toBe(
@@ -406,15 +413,11 @@ test.describe("the caret is the mark's block", () => {
   // #228. The native caret is hidden and the editor draws one in its place — which is
   // also what makes it measurable. #226 could only pin the checkbox span's height,
   // because a native caret has no box a test can ask for; this one is a `div`.
-  const ms = (value: string) =>
-    value.endsWith("ms") ? Number.parseFloat(value) : Number.parseFloat(value) * 1000;
 
-  test("🔴 the native caret is hidden and the block is drawn in its place", async ({ knag }) => {
+  test("🔴 the block is drawn behind the caret, in the caret's own colour", async ({ knag }) => {
     await knag.seed(DAY);
     await knag.useEditor();
     await knag.caretAtEndOfLine(1);
-
-    expect(await css(knag.surface(), "caret-color")).toBe("rgba(0, 0, 0, 0)");
 
     const caret = knag.page.locator("[data-surface] .cm-caret");
     await expect(caret).toHaveCount(1);
@@ -425,9 +428,14 @@ test.describe("the caret is the mark's block", () => {
     if (!box) throw new Error("no geometry");
     const em = Number.parseFloat(await css(knag.page.locator("[data-surface] .cm-scroller"), "font-size"));
     expect(box.width).toBeCloseTo(em / 2, 0);
-    expect(await css(caret, "background-color")).toBe(
-      await css(knag.page.locator("[data-login] .wordmark .block"), "background-color"),
-    );
+    const amber = await css(caret, "background-color");
+    expect(amber).toBe(await css(knag.page.locator("[data-login] .wordmark .block"), "background-color"));
+
+    // 🔴 The native caret is the same amber, not transparent. It blinks inside the block
+    // unseen — and on iOS the caret colour is also the colour of the selection handles
+    // and the highlight, so a transparent caret is a selection nobody can see or drag.
+    // Found on the phone the day this shipped to dev.
+    expect(await css(knag.surface(), "caret-color")).toBe(amber);
   });
 
   test("🔴 text-high on a checkbox line, not line-box-high (#226)", async ({ knag }) => {
@@ -452,26 +460,18 @@ test.describe("the caret is the mark's block", () => {
     expect(task.height).toBeLessThan(30);
   });
 
-  test("blinks on the mark's timing, below the text, and reduced motion does not stop it", async ({
-    knag,
-  }) => {
+  test("steady, and below the text", async ({ knag }) => {
     await knag.seed(DAY);
     await knag.useEditor();
     await knag.caretAtEndOfLine(1);
     const layer = knag.page.locator("[data-surface] .cm-caret-layer");
 
-    expect(await css(layer, "animation-name")).toBe("knag-blink");
-    expect(ms(await css(layer, "animation-duration"))).toBe(
-      ms(await css(knag.page.locator("body"), "--cursor-blink")),
-    );
+    // The block does not animate. The blink is the native caret's, happening inside it
+    // where it cannot be seen — the wipe is still the only animation in the product.
+    expect(await css(layer, "animation-name")).toBe("none");
+    expect(await css(knag.page.locator("[data-surface] .cm-caret"), "animation-name")).toBe("none");
     // Under the text: a letter the block lands on is chalk over amber, not hidden.
     expect(Number(await css(layer, "z-index"))).toBeLessThan(0);
-
-    // It replaces a native caret, and native carets blink under this preference on every
-    // other surface of the device. The mark stops; the caret is not decoration.
-    await knag.page.emulateMedia({ reducedMotion: "reduce" });
-    expect(await css(layer, "animation-name")).toBe("knag-blink");
-    await knag.page.emulateMedia({ reducedMotion: "no-preference" });
   });
 
   test("🔴 a range selection has no caret, and the selection is the browser's", async ({ knag }) => {

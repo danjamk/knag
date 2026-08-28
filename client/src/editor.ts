@@ -605,10 +605,13 @@ const theme = EditorView.theme({
     fontSize: "var(--size-row)",
     lineHeight: "var(--leading-row)",
   },
-  // 🔴 The native caret is hidden, not styled: `caretLayer` below draws the one you see.
-  // `caret-color` is the only thing CSS lets anyone set on a native caret, and the
-  // block wants a width.
-  ".cm-content": { padding: "0", caretColor: "transparent" },
+  // 🔴 The native caret stays, in the block's own amber — **not** `transparent`. It is
+  // 1–2px at the insertion point and `caretLayer` draws an 8px block from the same edge
+  // in the same colour, so it disappears into the block. Hiding it instead cost the
+  // phone its selection: iOS paints the drag handles and the highlight in the caret
+  // colour, so a transparent caret is a transparent selection (#228, found on the
+  // phone). That is also the real reason CodeMirror's `drawSelection` fakes handles.
+  ".cm-content": { padding: "0", caretColor: "var(--caret)" },
   // The row geometry, so switching surfaces does not move the text.
   ".cm-line": {
     padding: "var(--row-pad-y) var(--row-pad-right) var(--row-pad-y) var(--row-pad-left)",
@@ -617,34 +620,27 @@ const theme = EditorView.theme({
   ".cm-done": { color: "var(--dim)", textDecoration: "line-through" },
   ".cm-caret-layer": { pointerEvents: "none" },
   ".cm-caret": { display: "none", width: "var(--caret-width)", background: "var(--caret)" },
-  // The mark's own keyframes and token, from `index.html`; a keyframe name is global.
-  "&.cm-focused .cm-caret-layer": {
-    animation: "knag-blink var(--cursor-blink) step-end infinite",
-  },
   "&.cm-focused .cm-caret-layer .cm-caret": { display: "block" },
 });
 
 // ── The caret ────────────────────────────────────────────────────────────────
 
 /**
- * The editing caret is the mark's block (#228): amber, `--caret-width` wide, text-high,
- * blinking on `--cursor-blink`. The theme hides the native caret and this layer draws
- * one in its place — a `div` per collapsed selection, positioned by CodeMirror.
+ * The editing caret is the mark's block (#228): amber, `--caret-width` wide, text-high.
+ * This layer draws it — a `div` behind the collapsed selection, positioned by
+ * CodeMirror — and the native caret, painted the same amber, blinks inside it unseen.
+ * The block itself does not blink: it is steady, and the caret you cannot see is the
+ * one doing the blinking, so nothing here animates and nothing restarts on a keystroke.
  *
- * 🔴 Not `drawSelection()`. That hides the native *selection* along with the caret and
- * paints its own, and on iOS the native selection is what carries the drag handles —
- * CodeMirror's changelog says it "draws our own selection handles on iOS" to make up for
- * it. The theme's `::selection` note is the same rule. So this draws the collapsed caret
- * and nothing else: a range selection is the browser's, untouched, and while one exists
- * there is no caret, which is what a native caret does too.
+ * 🔴 Not `drawSelection()`, and the native caret is not hidden. Both would cost the
+ * phone its selection: iOS paints the drag handles and the highlight in the caret
+ * colour, so `caret-color: transparent` — which `drawSelection` sets — is a selection
+ * nobody can see or grab. This draws the collapsed caret and nothing else: a range
+ * selection is the browser's, untouched, and while one exists there is no block,
+ * which is what a native caret does too.
  *
  * Below the text (`above: false`), so a glyph the block lands on is chalk over amber
- * rather than gone. The blink restarts on every move the way a native caret's does —
- * a caret in its off phase as you type reads as a dropped keystroke.
- *
- * Reduced motion does not stop it. It replaces a native caret, and native carets blink
- * under that preference on every other surface of the device; a still caret is one
- * you have to hunt for. The mark's blink stops because the mark is decoration.
+ * rather than gone.
  */
 const caretLayer = layer({
   above: false,
@@ -653,8 +649,7 @@ const caretLayer = layer({
     const main = view.state.selection.main;
     return main.empty ? RectangleMarker.forRange(view, "cm-caret", main) : [];
   },
-  update(update, dom) {
-    if (update.selectionSet) for (const blink of dom.getAnimations()) blink.currentTime = 0;
+  update(update) {
     return update.docChanged || update.selectionSet;
   },
 });

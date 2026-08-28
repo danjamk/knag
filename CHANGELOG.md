@@ -20,12 +20,14 @@ The caret is the mark.
 ### Changed
 
 - **The editing caret is the wordmark's block** (#228). Amber, half an em wide, the
-  height of the text, blinking on the mark's own timing — drawn by the editor, because
-  the one thing CSS lets anyone change about a native caret is its colour. It sits
-  under the text, so a letter it lands on is chalk over amber rather than hidden. The
-  native selection is untouched: the iOS drag handles are the reason this surface
-  exists, and CodeMirror's own `drawSelection` would have replaced them with imitations.
-  Reduced motion does not stop it, on purpose — every other caret on the device blinks.
+  height of the text — drawn by the editor behind the native caret, because the one
+  thing CSS lets anyone change about a native caret is its colour. So that is what
+  changes: the native caret is the same amber and blinks inside the block, unseen. The
+  block sits under the text, so a letter it lands on is chalk over amber rather than
+  hidden. Nothing about selecting changed — the native selection, and on iOS the drag
+  handles and the highlight, are exactly what they were. A first cut hid the native
+  caret with `caret-color: transparent` and took the phone's handles with it: iOS paints
+  them in the caret colour. That lasted one afternoon on dev.
 
 ## [1.5.3] — 2026-08-27
 
