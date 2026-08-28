@@ -95,7 +95,8 @@ token exists anywhere":
 
 - Overwrite or delete the dev Worker.
 - Read, write, or delete the dev D1 database. D1 Time Travel reaches back 30 days.
-- Overwrite `KNAG_PASSPHRASE` and `KNAG_BEARER_TOKEN` on the dev Worker. It **cannot
+- Overwrite the dev Worker's secrets (`KNAG_OPERATOR_EMAIL`, `RESEND_API_KEY`,
+  `KNAG_BEARER_TOKEN`). It **cannot
   read** them — Cloudflare never returns a secret value.
 - Nothing on the prod account. Not the Worker, not the database, not the zone.
 
@@ -166,14 +167,34 @@ What it needs, mirroring the above:
 - [ ] The prod D1 database and OAuth KV namespace created, and their ids pasted into the
       `env.prod` block of `worker/wrangler.jsonc` — both are still
       `REPLACE_WITH_PROD_…` placeholders
-- [ ] `KNAG_PASSPHRASE` and `KNAG_BEARER_TOKEN` set as prod Worker secrets, both
-      **different** from dev's
+- [ ] `KNAG_OPERATOR_EMAIL`, `RESEND_API_KEY` and `KNAG_BEARER_TOKEN` set as prod Worker
+      secrets — the bearer **different** from dev's; the Resend key may be shared
 - [ ] DNS for `knag.danjamkuhn.com`, then uncomment the `routes` entry in `env.prod`
 - [ ] A WAF rate-limiting rule on `POST /api/login` in the zone
 
 🔴 **The prod token never lands on this machine.** If you find yourself pasting it into
 `.env.local` to test something, that is the moment the guarantee stops holding. Deploy
 from Actions instead.
+
+## Email login: provisioning, and retiring the passphrase (1.8.0, #231)
+
+Once, before the first deploy of 1.8.0 to an environment:
+
+1. In Resend, add and verify the sending domain (`danjamkuhn.com` — three DNS records
+   on the Cloudflare zone). One Resend account serves both environments; the sender in
+   `worker/wrangler.jsonc`'s `KNAG_MAIL_FROM` is the same in both and dev's subjects
+   carry `[dev]`.
+2. `wrangler secret put RESEND_API_KEY` and `wrangler secret put KNAG_OPERATOR_EMAIL`
+   (`--env prod` for prod, from Actions' point of view: the prod token is not on this
+   machine, so set prod's from the Cloudflare dashboard).
+3. Deploy. Existing sessions carry over — no device re-logins. The first login request
+   naming the operator's address claims the seed row (migration 0009 left its email NULL).
+4. **After** `make health` is green: `wrangler secret delete KNAG_PASSPHRASE` (both
+   environments). Nothing reads it any more; leaving it is a secret with no reader.
+
+If mail is misconfigured on day one the bearer token still reaches every `/api/*`
+route, and a live session is unaffected — the passphrase's retirement cannot lock the
+operator out of a device that is already in.
 
 ## When a step fails
 

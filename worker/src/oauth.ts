@@ -9,7 +9,7 @@ import type { Env } from "./env.js";
  * rather than serving it. We prove the visitor is the operator, then complete the
  * grant, after which the provider mints the code and redirects back to the client.
  *
- * 🔴 The passphrase is never typed into this page. ADR-005 §2 gates consent on the
+ * 🔴 No credential is ever typed into this page. ADR-005 §2 gates consent on the
  * session knag already has, and a visitor without one is sent to the real login form
  * and returned here. That is not only about phishing-resistance: it is also why
  * `/oauth/authorize` needs no rate limit of its own. It accepts no credential, so the

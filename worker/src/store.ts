@@ -1229,3 +1229,171 @@ export async function writeSetting(
     ).bind(key, value, now, userId),
   ]);
 }
+
+// ── Users, by address ────────────────────────────────────────────────────────
+
+/** A live user by address, case-insensitively (`idx_users_email` is NOCASE). */
+export async function findUserByEmail(env: Env, email: string): Promise<UserRow | null> {
+  return await env.DB.prepare(
+    `SELECT ${USER_COLUMNS} FROM users WHERE email = ? COLLATE NOCASE AND revoked_at IS NULL`,
+  )
+    .bind(email)
+    .first<UserRow>();
+}
+
+/**
+ * Give the operator their address, once (#231).
+ *
+ * Migration 0009 seeded the operator with `email NULL` because a migration cannot read a
+ * secret. The first login request that names `KNAG_OPERATOR_EMAIL` fills it in here —
+ * and only if it is still empty, so this is a one-time claim rather than a rename. `null`
+ * means somebody already did, or there is no operator row.
+ */
+export async function claimOperatorEmail(env: Env, email: string): Promise<UserRow | null> {
+  return await env.DB.prepare(
+    `UPDATE users SET email = ?
+      WHERE role = 'operator' AND email IS NULL AND revoked_at IS NULL
+      RETURNING ${USER_COLUMNS}`,
+  )
+    .bind(email)
+    .first<UserRow>();
+}
+
+// ── Login codes ──────────────────────────────────────────────────────────────
+
+/** A login-code row as the verifier needs it. `code_hash` never reaches a response. */
+export type LoginCodeRow = {
+  id: number;
+  user_id: number;
+  code_hash: string;
+  device_label: string | null;
+  next: string | null;
+  expires_at: string;
+  attempts: number;
+};
+
+const LOGIN_CODE_COLUMNS = "id, user_id, code_hash, device_label, next, expires_at, attempts";
+
+export async function createLoginCode(
+  env: Env,
+  input: {
+    userId: number;
+    linkHash: string;
+    codeHash: string;
+    requestHash: string;
+    deviceLabel: string | null;
+    next: string | null;
+    ttlMs: number;
+  },
+  now: Date = new Date(),
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO login_codes
+       (user_id, link_hash, code_hash, request_hash, device_label, next, created_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      input.userId,
+      input.linkHash,
+      input.codeHash,
+      input.requestHash,
+      input.deviceLabel,
+      input.next,
+      now.toISOString(),
+      new Date(now.getTime() + input.ttlMs).toISOString(),
+    )
+    .run();
+}
+
+/**
+ * How many mails this person has been sent lately — the per-address throttle's input.
+ *
+ * 🔴 The throttle is per *person*, not per caller. `/api/login` is a send-mail-to-this-
+ * address endpoint and anyone can type an address; what has to be bounded is how often
+ * one inbox can be made to ring, and the caller's identity is not something a login
+ * endpoint has. Unknown addresses create no row and so cost nothing to count.
+ */
+export async function recentLoginCodes(
+  env: Env,
+  userId: number,
+  now: Date = new Date(),
+): Promise<{ lastMinute: number; lastHour: number }> {
+  const hourAgo = new Date(now.getTime() - 3_600_000).toISOString();
+  const minuteAgo = new Date(now.getTime() - 60_000).toISOString();
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS hour, SUM(created_at > ?) AS minute
+       FROM login_codes WHERE user_id = ? AND created_at > ?`,
+  )
+    .bind(minuteAgo, userId, hourAgo)
+    .first<{ hour: number; minute: number | null }>();
+  return { lastMinute: row?.minute ?? 0, lastHour: row?.hour ?? 0 };
+}
+
+/**
+ * The live row behind a request cookie, or `null`.
+ *
+ * 🔴 `expires_at > ?` and `consumed_at IS NULL` are in the WHERE clause, for
+ * `findLiveSession`'s reason: a lookup that returned a spent or expired row and trusted
+ * the caller to notice is a code that never expires.
+ */
+export async function findLoginCodeByRequest(
+  env: Env,
+  requestHash: string,
+  now: Date = new Date(),
+): Promise<LoginCodeRow | null> {
+  return await env.DB.prepare(
+    `SELECT ${LOGIN_CODE_COLUMNS} FROM login_codes
+      WHERE request_hash = ? AND consumed_at IS NULL AND expires_at > ?`,
+  )
+    .bind(requestHash, now.toISOString())
+    .first<LoginCodeRow>();
+}
+
+/** The live row behind a link token, or `null`. Same predicates as by request. */
+export async function findLoginCodeByLink(
+  env: Env,
+  linkHash: string,
+  now: Date = new Date(),
+): Promise<LoginCodeRow | null> {
+  return await env.DB.prepare(
+    `SELECT ${LOGIN_CODE_COLUMNS} FROM login_codes
+      WHERE link_hash = ? AND consumed_at IS NULL AND expires_at > ?`,
+  )
+    .bind(linkHash, now.toISOString())
+    .first<LoginCodeRow>();
+}
+
+/**
+ * Spend a row. Returns whether *this* call did — the `consumed_at IS NULL` guard makes
+ * two consumers racing (the link tapped twice, a code posted twice) resolve to one
+ * winner, which is what "works once" means.
+ */
+export async function consumeLoginCode(
+  env: Env,
+  id: number,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const result = await env.DB.prepare(
+    "UPDATE login_codes SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL",
+  )
+    .bind(now.toISOString(), id)
+    .run();
+  return result.meta.changes === 1;
+}
+
+/** One more wrong code against this row. Returns the new count. */
+export async function recordLoginAttempt(env: Env, id: number): Promise<number> {
+  const row = await env.DB.prepare(
+    "UPDATE login_codes SET attempts = attempts + 1 WHERE id = ? RETURNING attempts",
+  )
+    .bind(id)
+    .first<{ attempts: number }>();
+  return row?.attempts ?? 0;
+}
+
+/** Drop rows that can never be used again. Called on login request; no cron trigger. */
+export async function sweepExpiredLoginCodes(env: Env, now: Date = new Date()): Promise<void> {
+  await env.DB.prepare("DELETE FROM login_codes WHERE expires_at < ? OR consumed_at IS NOT NULL")
+    .bind(new Date(now.getTime() - 86_400_000).toISOString())
+    .run();
+}

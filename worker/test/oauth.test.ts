@@ -1,5 +1,7 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { SESSION_COOKIE } from "../src/auth.js";
+import { operatorSession } from "./users.js";
 
 /**
  * The OAuth 2.1 surface (ADR-005, #64) — the thing that makes `/mcp` reachable from
@@ -14,14 +16,7 @@ import { describe, expect, it } from "vitest";
 const ORIGIN = "https://knag.test";
 
 async function login(): Promise<string> {
-  const res = await SELF.fetch(`${ORIGIN}/api/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passphrase: "test-passphrase-do-not-use-in-production" }),
-  });
-  const cookie = res.headers.get("Set-Cookie");
-  if (!cookie) throw new Error("login did not set a cookie");
-  return cookie.split(";")[0] as string;
+  return `${SESSION_COOKIE}=${await operatorSession("browser")}`;
 }
 
 /** Register a client the way a connector does, so tests have a real client_id. */
@@ -108,7 +103,7 @@ describe("consent", () => {
 
     expect(res.status).toBe(302);
 
-    // 🔴 The passphrase is never typed into the consent page (ADR-005 §2). This is also
+    // 🔴 No credential is ever typed into the consent page (ADR-005 §2). This is also
     // why /oauth/authorize needs no rate limit of its own: it accepts no credential.
     const location = new URL(res.headers.get("Location") ?? "");
     expect(location.origin).toBe(ORIGIN);

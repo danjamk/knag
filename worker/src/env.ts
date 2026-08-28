@@ -52,8 +52,25 @@ export interface Env {
   /** IANA zone for history boundaries. Defaults to America/Chicago. See spec §14.3. */
   KNAG_TZ: string;
 
-  /** Secret. PWA login. Absent until `wrangler secret put`. */
-  KNAG_PASSPHRASE?: string;
+  /**
+   * Secret. The operator's address (#231, ADR-008). Migration 0009 seeded the operator
+   * with no email because a migration cannot read a secret; the first login request that
+   * names this address claims the row. After that it is a fact in `users`, not here.
+   */
+  KNAG_OPERATOR_EMAIL?: string;
+
+  /**
+   * Secret. Resend. Absent locally and under test, where mail lands in `mail.ts`'s
+   * outbox instead — and absent on a deployed environment is a configuration error that
+   * is logged as one, never worked around.
+   */
+  RESEND_API_KEY?: string;
+
+  /**
+   * The sender, `name <address>`. Declared in **both** wrangler env blocks; the address
+   * is on a domain Resend has verified.
+   */
+  KNAG_MAIL_FROM: string;
 
   /** Secret. Agent / MCP / any non-browser client. Absent until `wrangler secret put`. */
   KNAG_BEARER_TOKEN?: string;

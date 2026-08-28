@@ -1,5 +1,5 @@
 import { type Page, expect, test as base } from "@playwright/test";
-import { TEST_BEARER, TEST_PASSPHRASE } from "../playwright.config.js";
+import { TEST_BEARER, TEST_SESSION_TOKEN } from "../playwright.config.js";
 
 /**
  * Shared setup: a logged-in page holding a known document.
@@ -39,29 +39,21 @@ export class Knag {
   constructor(readonly page: Page) {}
 
   /**
-   * Log in through the real form, since that is also the first thing to break.
+   * Log in with the seeded session (#231, ADR-008 §9). The cookie is set before the
+   * first navigation, so the boot finds a principal and never shows the form.
    *
-   * 🔴 Waits for the boot to settle before deciding. **Both** the login form and the
-   * editor start `hidden` in the markup, and the boot decides which appears — so
-   * calling `isVisible()` straight after `goto()` races it, finds neither, skips the
-   * login, and then waits five seconds for an editor that will never come.
-   *
-   * It passed locally every time and failed in CI, where the cold start is slower.
-   * A browser suite that is flaky is worse than none, because the next real failure
-   * gets re-run instead of read.
+   * 🔴 This used to type the passphrase into the real form, "since that is also the
+   * first thing to break". The email flow's second half is a mail, which no browser
+   * test can read, so the form's states are covered by `login.spec.ts` instead and the
+   * session comes from `playwright.config.ts`'s seed. Still waits for the boot to
+   * settle rather than racing it — `[data-editor]` starts hidden in the markup.
    */
   async login(): Promise<void> {
+    await this.page.context().addCookies([
+      { name: "knag_session", value: TEST_SESSION_TOKEN, domain: "localhost", path: "/" },
+    ]);
     await this.page.goto("/");
-    const form = this.page.locator("[data-login]");
-    const editor = this.page.locator("[data-editor]");
-
-    await expect(form.or(editor).first()).toBeVisible();
-    if (await form.isVisible()) {
-      await form.locator('input[name="passphrase"]').fill(TEST_PASSPHRASE);
-      await form.locator('input[name="device_label"]').fill("playwright");
-      await form.locator("button[type=submit]").click();
-    }
-    await expect(editor).toBeVisible();
+    await expect(this.page.locator("[data-editor]")).toBeVisible();
   }
 
   /** Replace the document via the API, then reload so the page renders it fresh. */

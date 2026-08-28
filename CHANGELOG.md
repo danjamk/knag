@@ -13,6 +13,33 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-08-28
+
+Type your email, get a mail. The passphrase retires.
+
+### Changed
+
+- **Logging in is your email address** (#231, [ADR-008] §2). The login screen keeps its
+  shape — one field, an optional device label, one button — and the field now takes an
+  address. The mail carries **a link and a six-digit code**: tap the link on a desktop
+  and land on the page; type the code on a phone, into the home-screen app, whose cookie
+  jar the link cannot reach. The code is bound to the browser that asked for it, so six
+  digits and five attempts are safe; the link is 32 random bytes and works once. A
+  device that already holds a live session keeps it — no new row in Devices on a
+  re-login. The endpoint says nothing about who exists: known, unknown and throttled
+  addresses get the same answer, and only the inbox tells them apart. One mail a minute,
+  five an hour, per person. Mail goes out through Resend behind one function; without
+  the key, a local `wrangler dev` prints the code instead. Cloudflare's own Email Service
+  was checked and is Workers Paid only, so it waits.
+- **The passphrase is gone.** `KNAG_PASSPHRASE` is read by nothing; the runbook in
+  `docs/deployment.md` says when to delete it. Existing sessions carry over, so no device
+  logs in again. Two new secrets — `KNAG_OPERATOR_EMAIL`, claimed by the first login
+  request that names it, and `RESEND_API_KEY` — and one var, `KNAG_MAIL_FROM`.
+- The browser suite logs in through a seeded session row rather than the form; the
+  form's two states have their own WebKit spec.
+
+[ADR-008]: docs/adr/ADR-008-email-login.md
+
 ## [1.7.0] — 2026-08-28
 
 Every page has an owner. Nothing visible changed.
@@ -1999,6 +2026,7 @@ The first plateau: a legal pad you can actually live in.
   Checked 2026-08-22. If it does not, auth needs rework.
 
 [Unreleased]: https://github.com/danjamk/knag/compare/v1.6.0...HEAD
+[1.8.0]: https://github.com/danjamk/knag/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/danjamk/knag/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/danjamk/knag/compare/v1.5.3...v1.6.0
 [1.5.3]: https://github.com/danjamk/knag/compare/v1.5.2...v1.5.3

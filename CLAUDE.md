@@ -139,7 +139,7 @@ not invent colours, type, motion or icons; ask for a bundle.
 
 **Every route resolves a principal.** `authenticate(request, env)` returns
 `Principal | null`; handlers key off `principal.id` and never ask whether the
-passphrase matched. Bearer auth is first-class on every `/api/*` route, not an
+credential matched. Bearer auth is first-class on every `/api/*` route, not an
 agent afterthought — cookie-only must not creep into a route.
 
 `/mcp` is the one route that goes further: it resolves a principal and then

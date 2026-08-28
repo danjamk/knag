@@ -1,32 +1,33 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { SESSION_COOKIE, authenticate, hashToken, secretEquals } from "../src/auth.js";
-import { OPERATOR } from "./users.js";
+import { OPERATOR, loginViaMail, operatorSession } from "./users.js";
 
 // Matches vitest.config.ts.
-const PASSPHRASE = "test-passphrase-do-not-use-in-production";
 const BEARER = "test-bearer-do-not-use-in-production";
 
 const LOGIN = "https://knag.test/api/login";
 const DOC = "https://knag.test/api/doc";
 
-function login(payload: unknown, url = LOGIN): Promise<Response> {
-  return SELF.fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-/** The raw cookie value out of a Set-Cookie header, for reuse as a credential. */
+/**
+ * The raw session cookie value out of a Set-Cookie header, for reuse as a credential.
+ * The code step sets two cookies — the session first, then the cleared request cookie —
+ * and `headers.get` joins them, so the first `name=value` is the session's.
+ */
 function cookieValue(res: Response): string {
   const header = res.headers.get("Set-Cookie") ?? "";
   return header.slice(header.indexOf("=") + 1, header.indexOf(";"));
 }
 
-describe("POST /api/login", () => {
-  it("mints a session on the right passphrase", async () => {
-    const res = await login({ passphrase: PASSPHRASE });
+/**
+ * The session the login flow mints (#231). The flow itself — the mail, the code, the
+ * link, the throttle, the binding — is login.test.ts; what is pinned here is the
+ * **cookie** it ends in, because the cookie is what #4 measured and nothing about it
+ * may change.
+ */
+describe("the session the email login mints", () => {
+  it("is a session cookie on the code step's response", async () => {
+    const res = await loginViaMail();
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true });
@@ -34,7 +35,7 @@ describe("POST /api/login", () => {
   });
 
   it("sets the cookie attributes the PWA depends on", async () => {
-    const cookie = (await login({ passphrase: PASSPHRASE })).headers.get("Set-Cookie") ?? "";
+    const cookie = (await loginViaMail()).headers.get("Set-Cookie") ?? "";
 
     // 🔴 Server-set with a year of Max-Age. Safari ITP caps *client*-set cookies at 7
     // days of inactivity; this exemption is the whole reason login is an endpoint
@@ -51,15 +52,15 @@ describe("POST /api/login", () => {
     // serves exactly that — without this, the PWA cannot be developed locally on the
     // browser it targets. Unreachable in any deployed environment: Cloudflare
     // terminates TLS, so a deployed request is never http:.
-    const local = await login({ passphrase: PASSPHRASE }, "http://localhost/api/login");
+    const local = await loginViaMail({ origin: "http://localhost" });
     expect(local.headers.get("Set-Cookie")).not.toContain("Secure");
 
-    const remote = await login({ passphrase: PASSPHRASE }, "http://knag.test/api/login");
+    const remote = await loginViaMail({ origin: "http://knag.test" });
     expect(remote.headers.get("Set-Cookie")).toContain("Secure");
   });
 
   it("stores only the hash of the cookie value", async () => {
-    const raw = cookieValue(await login({ passphrase: PASSPHRASE }));
+    const raw = cookieValue(await loginViaMail());
 
     // Queried directly rather than through store.ts: a test that asks the module
     // under test whether it kept the secret out of the database cannot catch it
@@ -74,18 +75,13 @@ describe("POST /api/login", () => {
     expect(stored).not.toBe(raw);
   });
 
-  it("records an optional device label, capped", async () => {
-    await login({ passphrase: PASSPHRASE, device_label: "iphone" });
+  it("records the device label typed on the first screen, capped", async () => {
+    // Typed with the email, minted with the code — it rides the login_codes row between.
+    await loginViaMail({ deviceLabel: "iphone" });
     const row = await env.DB.prepare("SELECT device_label FROM sessions").first<{
       device_label: string;
     }>();
     expect(row?.device_label).toBe("iphone");
-
-    await login({ passphrase: PASSPHRASE, device_label: "x".repeat(500) });
-    const long = await env.DB.prepare(
-      "SELECT device_label FROM sessions ORDER BY created_at DESC, rowid DESC LIMIT 1",
-    ).first<{ device_label: string }>();
-    expect(long?.device_label.length).toBe(64);
   });
 
   it("sweeps expired sessions on login", async () => {
@@ -95,7 +91,7 @@ describe("POST /api/login", () => {
       .bind("stale", "2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z", "ghost")
       .run();
 
-    await login({ passphrase: PASSPHRASE });
+    await loginViaMail();
 
     const row = await env.DB.prepare("SELECT count(*) AS n FROM sessions WHERE token_hash = ?")
       .bind("stale")
@@ -104,45 +100,7 @@ describe("POST /api/login", () => {
   });
 });
 
-describe("failed login", () => {
-  // Every path returns the identical opaque 401. An endpoint that distinguishes its
-  // failure modes helps enumerate its own state (spec §4.2).
-  const cases: Array<[string, unknown]> = [
-    ["wrong passphrase", { passphrase: "not-it" }],
-    ["no passphrase field", { device_label: "iphone" }],
-    ["non-string passphrase", { passphrase: 12345 }],
-    ["empty passphrase", { passphrase: "" }],
-    ["null body", null],
-  ];
-
-  for (const [name, payload] of cases) {
-    it(`401s opaquely on ${name}`, async () => {
-      const res = await login(payload);
-
-      expect(res.status).toBe(401);
-      expect(res.headers.get("Set-Cookie")).toBeNull();
-      expect(await res.json()).toEqual({ error: "Unauthorized" });
-    });
-  }
-
-  it("401s on a malformed body without leaking the parse error", async () => {
-    const res = await SELF.fetch(LOGIN, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{not json",
-    });
-
-    expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "Unauthorized" });
-  });
-
-  it("creates no session on any failure", async () => {
-    for (const [, payload] of cases) await login(payload);
-
-    const row = await env.DB.prepare("SELECT count(*) AS n FROM sessions").first<{ n: number }>();
-    expect(row?.n).toBe(0);
-  });
-
+describe("POST /api/login, the surface", () => {
   it("405s a GET rather than treating it as a login attempt", async () => {
     const res = await SELF.fetch(LOGIN);
 
@@ -153,7 +111,7 @@ describe("failed login", () => {
 
 describe("the session cookie as a credential", () => {
   it("authenticates /api/doc", async () => {
-    const raw = cookieValue(await login({ passphrase: PASSPHRASE }));
+    const raw = await operatorSession();
 
     const res = await SELF.fetch(DOC, { headers: { Cookie: `${SESSION_COOKIE}=${raw}` } });
 
@@ -161,7 +119,7 @@ describe("the session cookie as a credential", () => {
   });
 
   it("authorizes a write, recorded as pwa rather than agent", async () => {
-    const raw = cookieValue(await login({ passphrase: PASSPHRASE }));
+    const raw = await operatorSession();
 
     const res = await SELF.fetch(DOC, {
       method: "PUT",
@@ -177,7 +135,7 @@ describe("the session cookie as a credential", () => {
   });
 
   it("survives alongside other cookies in the header", async () => {
-    const raw = cookieValue(await login({ passphrase: PASSPHRASE }));
+    const raw = await operatorSession();
 
     const res = await SELF.fetch(DOC, {
       headers: { Cookie: `other=1; ${SESSION_COOKIE}=${raw}; trailing=2` },
@@ -195,7 +153,7 @@ describe("the session cookie as a credential", () => {
 
   it("rejects the stored hash presented as if it were the token", async () => {
     // The obvious break if lookup ever compared the presented value to itself.
-    const raw = cookieValue(await login({ passphrase: PASSPHRASE }));
+    const raw = await operatorSession();
 
     const res = await SELF.fetch(DOC, {
       headers: { Cookie: `${SESSION_COOKIE}=${await hashToken(raw)}` },
@@ -240,7 +198,7 @@ describe("bearer is first-class on every /api/* route", () => {
   });
 
   it("wins over a session cookie when both are presented", async () => {
-    const raw = cookieValue(await login({ passphrase: PASSPHRASE }));
+    const raw = await operatorSession();
     const request = new Request(DOC, {
       headers: { Authorization: `Bearer ${BEARER}`, Cookie: `${SESSION_COOKIE}=${raw}` },
     });
@@ -250,7 +208,7 @@ describe("bearer is first-class on every /api/* route", () => {
   });
 
   it("falls through to the cookie when the bearer is wrong", async () => {
-    const raw = cookieValue(await login({ passphrase: PASSPHRASE }));
+    const raw = await operatorSession();
     const request = new Request(DOC, {
       headers: { Authorization: "Bearer wrong", Cookie: `${SESSION_COOKIE}=${raw}` },
     });
@@ -282,8 +240,8 @@ describe("secretEquals", () => {
   });
 
   it("is false when either side is missing", async () => {
-    // Fail closed. An unconfigured KNAG_PASSPHRASE must reject every login, not
-    // accept every login.
+    // Fail closed. An unconfigured KNAG_BEARER_TOKEN must reject every bearer, not
+    // accept every bearer.
     expect(await secretEquals(undefined, "x")).toBe(false);
     expect(await secretEquals("x", undefined)).toBe(false);
     expect(await secretEquals("", "")).toBe(false);
@@ -302,7 +260,7 @@ const SESSIONS = "https://knag.test/api/sessions";
 
 /** A live session cookie, labelled so the list has something to distinguish rows by. */
 async function session(label: string): Promise<string> {
-  return cookieValue(await login({ passphrase: PASSPHRASE, device_label: label }));
+  return await operatorSession(label);
 }
 
 function asSession(url: string, raw: string, init: RequestInit = {}): Promise<Response> {
