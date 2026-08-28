@@ -101,7 +101,9 @@ everything else is chalk, ink or a hairline. `offline`, `not saved` and the dele
 control are amber and dim rather than red on purpose. **If you find yourself adding
 a third colour, something upstream has gone wrong.** Same for a second animation:
 the wipe is the only one, and the cursor blink in the mark is the mark, not the
-interface.
+interface. The editing caret is that same block (#228), drawn by the editor because a
+native caret cannot be made wide — it blinks because it is a caret, and it keeps
+blinking under reduced motion because every other caret on the device does.
 
 **One sound, too, and it is off by default.** The wipe is the only thing in the product
 that makes a noise — one per wipe, never one per line — and its length is *computed from

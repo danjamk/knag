@@ -13,6 +13,20 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-08-28
+
+The caret is the mark.
+
+### Changed
+
+- **The editing caret is the wordmark's block** (#228). Amber, half an em wide, the
+  height of the text, blinking on the mark's own timing — drawn by the editor, because
+  the one thing CSS lets anyone change about a native caret is its colour. It sits
+  under the text, so a letter it lands on is chalk over amber rather than hidden. The
+  native selection is untouched: the iOS drag handles are the reason this surface
+  exists, and CodeMirror's own `drawSelection` would have replaced them with imitations.
+  Reduced motion does not stop it, on purpose — every other caret on the device blinks.
+
 ## [1.5.3] — 2026-08-27
 
 One fix, found on a phone: the caret is the height of the text again.
@@ -1950,7 +1964,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.5.3...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/danjamk/knag/compare/v1.5.3...v1.6.0
 [1.5.3]: https://github.com/danjamk/knag/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/danjamk/knag/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/danjamk/knag/compare/v1.5.0...v1.5.1
