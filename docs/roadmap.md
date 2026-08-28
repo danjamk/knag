@@ -642,6 +642,30 @@ the link land you on **the page** rather than a "logged in" screen, and does an
 existing session survive a new link on the same device — it must, or every
 re-login costs a device row.
 
+✅ **Decided 2026-08-28: [ADR-008](adr/ADR-008-email-login.md), and #122 closes with it.**
+Email login — the mail carries a link *and* a six-digit code, so the desktop taps and the
+iPhone types, and ADR-001's wrong-jar objection is answered rather than overruled. Both
+spike questions are answered by construction: the link lands on the page, and a login on a
+device with a live session reuses it. Identity is an email address; an invite is the first
+login mail; recovery *is* the login flow; one owner per page and no sharing yet; a cap of
+25 in the code; an admin view that shows who is here and never what they wrote.
+
+**The build, in order — 1.8.0 is the first three:**
+
+| | Issue | What | Visible? |
+|---|---|---|---|
+| 1 | #230 | Users and ownership — `users`, `owner_id`, `sessions.user_id`, grants per person | no |
+| 2 | #231 | Email login — `login_codes`, link + code, Resend, passphrase retired | **yes — the phone finds the bugs here** |
+| 3 | #232 | Invite, revoke, change email, delete, and the admin view | operator only |
+| 4 | #233 | Scheduled prod backup; "hosting knag for others" in the README | no |
+| 5 | #234 | `settings` → `user_settings`, three releases; expand rides with #230 | no |
+
+🔴 **#231 is not merged until the iPhone has done the whole day-one path on dev**: invite
+link in Safari lands on the page, add to home screen, code login in the PWA, a second login
+reuses the session. Two design surfaces are new — the code-entry state and the admin table
+— and both get a brief; the login state is built against §7's one-field screen either way,
+and the admin table ships plain if the ruling is not back, because it has one viewer.
+
 ---
 
 ## Not scheduled

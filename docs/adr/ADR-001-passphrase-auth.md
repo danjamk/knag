@@ -1,6 +1,8 @@
 # ADR-001: Passphrase auth, not Cloudflare Access
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-008](ADR-008-email-login.md) on 2026-08-28 — the
+passphrase is replaced by an email login. The case against Access below stands and
+ADR-008 inherits it.
 **Date:** 2026-08-14
 
 ## Context
