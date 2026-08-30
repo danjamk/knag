@@ -206,13 +206,25 @@ test.describe("the dev badge", () => {
     // there is one shell for both environments and the service worker caches it — so
     // this is the assertion that the swap happened, on the tags iOS and the tab read.
     type Link = { getAttribute: (name: string) => string | null };
-    const hrefs = await knag.page
-      .locator('link[rel="icon"], link[rel="apple-touch-icon"]')
-      .evaluateAll((els: Link[]) => els.map((el) => el.getAttribute("href")));
-    expect(hrefs.length).toBeGreaterThanOrEqual(4);
-    for (const href of hrefs) expect(href, "an icon link still points at prod's mark").toContain("-dev");
-    expect(hrefs).toContain("/icons/knag-icon-dev-192.png");
-    expect(await knag.page.title()).toBe("knag · local");
+
+    // 🔴 **Retried, because the swap is deliberately late.** Both the icons and the tab
+    // title are set when `/health` answers (`app.ts`), and `/health` is fetched *after*
+    // the editor is on screen — so the fixture's login resolves before the swap has
+    // happened. Reading once was a snapshot of an asynchronous outcome: it passed on
+    // every quiet machine and failed twice on 2026-08-30, once in CI and once in the
+    // production gate, which is a deploy blocked by a test that was never waiting.
+    // `toPass` re-runs the block; nothing about what is asserted has changed.
+    await expect(async () => {
+      const hrefs = await knag.page
+        .locator('link[rel="icon"], link[rel="apple-touch-icon"]')
+        .evaluateAll((els: Link[]) => els.map((el) => el.getAttribute("href")));
+      expect(hrefs.length).toBeGreaterThanOrEqual(4);
+      for (const href of hrefs) {
+        expect(href, "an icon link still points at prod's mark").toContain("-dev");
+      }
+      expect(hrefs).toContain("/icons/knag-icon-dev-192.png");
+      expect(await knag.page.title()).toBe("knag · local");
+    }).toPass();
   });
 });
 
