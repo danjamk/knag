@@ -88,3 +88,44 @@ export function loginMail(input: {
     ].join("\n"),
   };
 }
+
+/**
+ * The invite (#232, ADR-008 §3): the first login mail, with invite framing and a
+ * seven-day link. 🔴 **Link only, no code.** A code is bound to the browser that asked
+ * for it, and the browser that asked was the operator's — a code here would be six
+ * digits nobody can type anywhere. The person's own code login comes on day one, from
+ * the home-screen app, after the link has shown them the page.
+ *
+ * This is the only onboarding text the product has, so the one thing worth saying is
+ * said here and nowhere in the app: on iPhone, add it to your home screen first.
+ */
+export function inviteMail(input: {
+  to: string;
+  from: string | null;
+  origin: string;
+  linkToken: string;
+  days: number;
+  environment: string;
+}): Mail {
+  const tag = input.environment === "prod" || input.environment === "local" ? "" : `[${input.environment}] `;
+  const link = `${input.origin}/login/${input.linkToken}`;
+  const who = input.from ? `${input.from} has` : "You have been";
+  return {
+    to: input.to,
+    subject: `${tag}You're invited to knag`,
+    text: [
+      `${who} invited you to knag — one plain-text page, always live, edited from any`,
+      "device and by your agent. Here is your link:",
+      "",
+      `  ${link}`,
+      "",
+      `It is good for ${input.days} days and works once. After that, type your email on the`,
+      "login screen and a fresh link comes back — that is the whole login, every time.",
+      "",
+      "On iPhone: open the link in Safari, then add knag to your home screen. The app has",
+      "its own login: enter your email there and type the six-digit code it mails you.",
+      "",
+      "If you were not expecting this, ignore it — nothing happens unless you open the link.",
+    ].join("\n"),
+  };
+}

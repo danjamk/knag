@@ -13,6 +13,46 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-08-30
+
+The operator can invite. The table says whether it is still free.
+
+### Added
+
+- **Invite, revoke, change email, delete — and the people pane** (#232, [ADR-008] §3,
+  §4, §8, §11, §12). A `hosting › people` row in the sheet, for the operator only: a plain
+  DM Mono table with one row per person — last seen, devices, pages, sittings, the agent's
+  share, wipes and items done over thirty days — and a totals row, under a `N of 25`
+  headline. **No page content, ever.** Invite is an address and a button; the mail is the
+  first login mail with invite framing and a **seven-day link and no code** — a code is
+  bound to the browser that asked, and the browser that asked was the operator's. Revoke
+  keeps their pages and kills every session and grant on their next request; delete is a
+  hard delete of every row they own. Tap an address to change it — the only recovery
+  lever there is — and a fresh invite goes to the new one. Revoke and delete confirm by
+  repetition, never by dialog. `MAX_USERS = 25` is a tripwire in the code, the way the
+  nine-page cap is; a revoke frees a place.
+- **The routes behind it**: `GET /api/me`; `GET`, `POST /api/users`; `PATCH`,
+  `DELETE /api/users/<id>` (`?hard` to delete). Session or bearer. 🔴 A member gets the
+  404 a missing route gets — same body, same status — so the surface is invisible to
+  anyone it is not for. All SQL in `store.ts`, all of it scoped by owner; the operator can
+  never be removed, by id or by self.
+- `sessions.last_seen_at` (migration 0012, additive), written by `authenticate()` only
+  when more than an hour stale, so a 4-second poll never becomes a D1 write per request.
+- A design brief for the pane, `docs/design/admin-view-brief.md`. It ships plain; the
+  ruling comes after.
+
+### Changed
+
+- **`settings` is no longer written** (#234, release two of three: stop writing the old).
+  1.7.0 mirrored the operator's agent instructions into the legacy table so a rollback
+  would still read current text; this release removes that write and carries no
+  migration that touches `settings`. The release after this drops the table — and this
+  one has to be live first, or the drop lands under a Worker still writing to it
+  ([ADR-002] §3).
+
+[ADR-008]: docs/adr/ADR-008-email-login.md
+[ADR-002]: docs/adr/ADR-002-two-accounts-and-migrations.md
+
 ## [1.8.0] — 2026-08-28
 
 Type your email, get a mail. The passphrase retires.
@@ -2025,7 +2065,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/danjamk/knag/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/danjamk/knag/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/danjamk/knag/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/danjamk/knag/compare/v1.5.3...v1.6.0

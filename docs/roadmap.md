@@ -148,8 +148,17 @@ Set 2026-08-19. The version numbers are meant to say something:
 | **1.6** | The caret is the mark's block — one feature from use, no design input | — |
 | **1.7** | Users and ownership (#230) — multi-user's first third, no visible change | 10 |
 | **1.8** | Email login (#231) — the passphrase retires | 10 |
-| **1.9** | **The product page** — lands before the first invitation, which is #232 | 9 |
-| **1.10** | Invite, revoke, change email, and the admin view (#232) | 10 |
+| **1.9** | Invite, revoke, change email, and the people pane (#232) | 10 |
+| **1.10** | **The product page** — lands before the first invitation is *sent* | 9 |
+
+🔴 **Amended 2026-08-30: #232 shipped as 1.9, ahead of the product page, for #230's
+reason one more time.** The invite endpoint existing does not send an invitation; the
+operator does, and the rule was always about the person on the other end of the mail
+landing on a page that explains what they were invited to. So the product page keeps its
+place ahead of the *first invitation* and moves to 1.10, and the build that makes
+invitations possible goes first because it waits on nothing but code. The brief for the
+pane it ships (`docs/design/admin-view-brief.md`) is with the design session; the pane
+ships plain, as the phase plan said it would.
 
 🔴 **Amended 2026-08-28, evening: #230 shipped as 1.7, ahead of the product page.** It
 changes nothing visible and waits on no design, so holding it behind a brief that is

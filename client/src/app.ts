@@ -125,6 +125,16 @@ const manageList = document.querySelector<HTMLUListElement>("[data-manage-list]"
 const manageNote = document.querySelector<HTMLElement>("[data-manage-note]");
 const manageError = document.querySelector<HTMLElement>("[data-manage-error]");
 const newPageForm = document.querySelector<HTMLFormElement>("[data-new-page]");
+const peopleGroup = document.querySelector<HTMLElement>("[data-people-group]");
+const peopleOpen = document.querySelector<HTMLElement>("[data-people-open]");
+const peopleCount = document.querySelector<HTMLElement>("[data-people-count]");
+const peoplePane = document.querySelector<HTMLElement>("[data-people-pane]");
+const peopleBack = document.querySelector<HTMLButtonElement>("[data-people-back]");
+const peopleCap = document.querySelector<HTMLElement>("[data-people-cap]");
+const peopleRows = document.querySelector<HTMLTableSectionElement>("[data-people-rows]");
+const peopleTotals = document.querySelector<HTMLTableSectionElement>("[data-people-totals]");
+const peopleError = document.querySelector<HTMLElement>("[data-people-error]");
+const inviteForm = document.querySelector<HTMLFormElement>("[data-invite]");
 
 /** Which rows a wipe takes. Mirrors `WipeScope` in the Worker's store. */
 type WipeScope = "completed" | "all";
@@ -2159,6 +2169,7 @@ function showManage(on: boolean): void {
 manageOpen?.addEventListener("click", () => {
   setSwitcher(false);
   devicesPane?.setAttribute("hidden", "");
+  peoplePane?.setAttribute("hidden", "");
   agentPane?.setAttribute("hidden", "");
   showManage(true);
   settingsDialog?.showModal();
@@ -2807,6 +2818,7 @@ function openHistory(): void {
   setLedge(false);
   devicesPane?.setAttribute("hidden", "");
   agentPane?.setAttribute("hidden", "");
+  peoplePane?.setAttribute("hidden", "");
   managePane?.setAttribute("hidden", "");
   showHistory(true);
   settingsDialog?.showModal();
@@ -3087,6 +3099,7 @@ agentText?.addEventListener("input", () => {
 settingsDialog?.addEventListener("close", () => {
   showDevices(false);
   showAgent(false);
+  showPeople(false);
   managePane?.setAttribute("hidden", "");
   settingsPane?.removeAttribute("hidden");
 });
@@ -3098,6 +3111,7 @@ settingsOpen?.addEventListener("click", () => {
   markChoices("[data-sound]", "sound", sound ? "on" : "off");
   showDevices(false);
   showAgent(false);
+  showPeople(false);
   // The row shows a value like every other row — `set` or `not set` — so it is read on
   // the way in rather than on the way into the pane.
   void loadAgent();
@@ -3107,6 +3121,249 @@ settingsOpen?.addEventListener("click", () => {
   // that claims to be current is worse than a dash.
   void loadSessions();
   void loadHistoryDepth();
+  void loadMe();
+});
+
+// ── People — the operator's table (#232) ─────────────────────────────────────
+//
+// 🔴 The row exists only for the operator. `/api/me` says who is asking, and the group
+// stays hidden for anyone else — the routes behind it answer a member with the 404 a
+// missing route gets, so a row shown to a member would open a table that cannot load.
+// Read on every sheet open, like the device count: a role is not a thing to cache.
+
+type PersonRow = {
+  id: number;
+  email: string | null;
+  role: "operator" | "member";
+  created_at: string;
+  revoked_at: string | null;
+  last_seen_at: string | null;
+  devices: number;
+  pages: number;
+  sittings: number;
+  agent_sittings: number;
+  wipes: number;
+  items_done: number;
+};
+
+let me: { id: number; role: string } | null = null;
+
+async function loadMe(): Promise<void> {
+  try {
+    const res = await fetch("/api/me", { credentials: "same-origin" });
+    me = res.ok ? ((await res.json()) as { id: number; role: string }) : null;
+  } catch {
+    me = null;
+  }
+  const operator = me?.role === "operator";
+  peopleGroup?.toggleAttribute("hidden", !operator);
+  peopleOpen?.toggleAttribute("hidden", !operator);
+  if (operator) void loadPeople();
+}
+
+function showPeopleError(message: string | null): void {
+  if (!peopleError) return;
+  peopleError.textContent = message ?? "";
+  peopleError.toggleAttribute("hidden", message === null);
+}
+
+function cell(text: string | number, className?: string): HTMLTableCellElement {
+  const td = document.createElement("td");
+  td.textContent = String(text);
+  if (className) td.className = className;
+  return td;
+}
+
+/**
+ * A row's controls. Confirmation is by repetition — a second tap on the same control
+ * within a few seconds — for the reason the whole-page wipe gives: a browser dialog
+ * moves the decision to a different surface than the one being looked at.
+ */
+const PEOPLE_ARM_MS = 4_000;
+
+function armed(button: HTMLButtonElement, label: string, run: () => void): void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  button.textContent = label;
+  button.addEventListener("click", () => {
+    if (button.hasAttribute("data-armed")) {
+      clearTimeout(timer);
+      button.removeAttribute("data-armed");
+      button.disabled = true;
+      run();
+      return;
+    }
+    button.setAttribute("data-armed", "");
+    button.textContent = "again to confirm";
+    timer = setTimeout(() => {
+      button.removeAttribute("data-armed");
+      button.textContent = label;
+    }, PEOPLE_ARM_MS);
+  });
+}
+
+function personRow(person: PersonRow): HTMLTableRowElement {
+  const tr = document.createElement("tr");
+  tr.dataset.person = String(person.id);
+  if (person.id === me?.id) tr.setAttribute("data-you", "");
+  if (person.revoked_at) tr.setAttribute("data-revoked", "");
+
+  // The address is the one thing here a person can change: tapping it makes it a field,
+  // and blur or Enter commits — the same contract as renaming a page. Never the
+  // operator's own, which is a secret on the Worker rather than a row to edit.
+  const who = document.createElement("td");
+  const address = person.email ?? "(no address yet)";
+  if (person.role === "member" && !person.revoked_at) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = address;
+    edit.className = "who";
+    edit.addEventListener("click", () => {
+      const input = document.createElement("input");
+      input.type = "email";
+      input.value = person.email ?? "";
+      input.setAttribute("aria-label", "new address");
+      const commit = () => {
+        const next = input.value.trim().toLowerCase();
+        if (next === "" || next === person.email) {
+          void loadPeople();
+          return;
+        }
+        void mutatePeople(`/api/users/${person.id}`, "PATCH", { email: next });
+      };
+      input.addEventListener("blur", commit);
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          input.blur();
+        }
+      });
+      who.replaceChildren(input);
+      input.focus();
+      input.select();
+    });
+    who.replaceChildren(edit);
+  } else {
+    who.textContent = address;
+  }
+  tr.append(who);
+
+  tr.append(
+    cell(person.revoked_at ? "revoked" : person.last_seen_at ? shortDate(person.last_seen_at) : "never"),
+    cell(person.devices),
+    cell(person.pages),
+    cell(person.sittings),
+    cell(person.agent_sittings),
+    cell(person.wipes),
+    cell(person.items_done),
+  );
+
+  const acts = document.createElement("td");
+  acts.className = "acts";
+  if (person.role === "member") {
+    const button = document.createElement("button");
+    button.type = "button";
+    if (person.revoked_at) {
+      button.dataset.deletePerson = String(person.id);
+      armed(button, "delete", () => void mutatePeople(`/api/users/${person.id}?hard`, "DELETE"));
+    } else {
+      button.dataset.revokePerson = String(person.id);
+      armed(button, "revoke", () => void mutatePeople(`/api/users/${person.id}`, "DELETE"));
+    }
+    acts.append(button);
+  } else {
+    acts.textContent = "you";
+  }
+  tr.append(acts);
+  return tr;
+}
+
+function paintPeople(body: { users: PersonRow[]; max: number } | null): void {
+  const live = body?.users.filter((p) => !p.revoked_at).length;
+  if (peopleCount) peopleCount.textContent = body ? String(live) : "—";
+  if (peopleCap) peopleCap.textContent = body ? `${live} of ${body.max}` : "—";
+  if (!peopleRows || !peopleTotals) return;
+
+  if (!body) {
+    peopleRows.replaceChildren();
+    peopleTotals.replaceChildren();
+    showPeopleError("could not read people");
+    return;
+  }
+
+  peopleRows.replaceChildren(...body.users.map(personRow));
+
+  const sum = (key: keyof PersonRow): number =>
+    body.users.reduce((n, p) => n + (typeof p[key] === "number" ? (p[key] as number) : 0), 0);
+  const totals = document.createElement("tr");
+  totals.append(
+    cell("all"),
+    cell(""),
+    cell(sum("devices")),
+    cell(sum("pages")),
+    cell(sum("sittings")),
+    cell(sum("agent_sittings")),
+    cell(sum("wipes")),
+    cell(sum("items_done")),
+    cell(""),
+  );
+  peopleTotals.replaceChildren(totals);
+}
+
+async function loadPeople(): Promise<void> {
+  try {
+    const res = await fetch("/api/users", { credentials: "same-origin" });
+    if (!res.ok) {
+      paintPeople(null);
+      return;
+    }
+    paintPeople((await res.json()) as { users: PersonRow[]; max: number });
+  } catch {
+    paintPeople(null);
+  }
+}
+
+/** Every change to a person goes through here, so the table is re-read exactly once each time. */
+async function mutatePeople(url: string, method: string, payload?: unknown): Promise<boolean> {
+  showPeopleError(null);
+  try {
+    const res = await fetch(url, {
+      method,
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+    });
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => null)) as { error?: string } | null;
+      showPeopleError(detail?.error ?? "could not do that");
+      await loadPeople();
+      return false;
+    }
+    await loadPeople();
+    return true;
+  } catch {
+    showPeopleError("offline — that did not save");
+    return false;
+  }
+}
+
+function showPeople(on: boolean): void {
+  settingsPane?.toggleAttribute("hidden", on);
+  peoplePane?.toggleAttribute("hidden", !on);
+  showPeopleError(null);
+  if (on) void loadPeople();
+}
+
+peopleOpen?.addEventListener("click", () => showPeople(true));
+peopleBack?.addEventListener("click", () => showPeople(false));
+
+inviteForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = inviteForm.querySelector<HTMLInputElement>('input[name="email"]');
+  const email = input?.value.trim() ?? "";
+  if (email === "") return;
+  void mutatePeople("/api/users", "POST", { email }).then((ok) => {
+    if (ok && input) input.value = "";
+  });
 });
 
 // Following the system means following it as it changes, not as it was at boot.

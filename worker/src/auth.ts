@@ -5,6 +5,7 @@ import {
   findLiveSession,
   findOperator,
   sweepExpiredSessions,
+  touchSession,
 } from "./store.js";
 
 /**
@@ -78,6 +79,14 @@ const SESSION_TTL_SECONDS = 31_536_000;
 const MAX_DEVICE_LABEL = 64;
 
 /**
+ * How stale `sessions.last_seen_at` may be before a request refreshes it (#232). An
+ * hour: the admin view answers "still here?" at the resolution of a day, and a 4-second
+ * poll that wrote on every request would spend the D1 budget answering a question
+ * nobody asks that often.
+ */
+export const LAST_SEEN_STALE_MS = 60 * 60 * 1000;
+
+/**
  * Read one cookie out of a `Cookie` header.
  *
  * Split on `;` and only on the FIRST `=` — a cookie value may legally contain `=`
@@ -121,6 +130,10 @@ export async function authenticate(request: Request, env: Env): Promise<Principa
     const tokenHash = await hashToken(cookie);
     const session = await findLiveSession(env, tokenHash);
     if (session) {
+      // Heard from — but written only when the record is an hour stale, so the polling
+      // budget (spec §14.4) never becomes a write budget. A bearer has no row to touch.
+      const seen = session.last_seen_at ? Date.parse(session.last_seen_at) : 0;
+      if (Date.now() - seen > LAST_SEEN_STALE_MS) await touchSession(env, tokenHash);
       return {
         id: session.user_id,
         role: session.role,
