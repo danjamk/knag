@@ -189,35 +189,51 @@ let sound = false;
 
 /** The version we believe we are editing. Every write carries it (spec §6). */
 /**
- * The page a request naming none resolves to.
- *
- * 🔴 Duplicated from `store.ts` rather than imported, and that is not the parser
- * mistake CLAUDE.md warns about. Importing it would pull `store.ts` — and with it `Env`
- * and the D1 types — into the client bundle. It is a *protocol* constant, the same kind
- * of thing `/api/doc` is, and the server is the authority: the client sends it and the
- * server decides. Nothing here depends on the number being right beyond "somewhere to
- * fall back to", and a wrong value would 404 loudly on the first read rather than
- * silently write to the wrong page.
- */
-const DEFAULT_PAGE_ID = 1;
-
-/**
  * Which page this device is on, and what it knows about the rest (#154).
  *
  * 🔴 `pageId` is a **hint** until a read confirms it. It comes out of localStorage,
  * and the page may have been deleted from another device since — so every path that uses
  * it has to survive a 404 by falling back to the default page rather than showing an
- * error. That is `openDefaultPage` below, and it is the only place a fallback is allowed.
+ * error. That fallback is `openPage(null)`, and it is the only one allowed.
+ *
+ * 🔴 **`null` means "ask the server which page is mine"** — `docUrl` then names no page
+ * and `defaultPageFor(owner)` answers (#240). There is deliberately **no client-side
+ * constant for the default page**. There used to be, `DEFAULT_PAGE_ID = 1`, described as
+ * a protocol constant the server was the authority on; #230 made that false without
+ * making it fail here, because page 1 is the *operator's* seed page and the operator is
+ * the only person the browser suite ever logs in as. Everyone else fell back to a page
+ * they did not own, got a 404 the fallback had no handler for, and saw a blank screen.
+ * A number here cannot be right for two people, so there is no number.
  */
-let pageId = DEFAULT_PAGE_ID;
+let pageId: number | null = null;
 let pageName = "today";
 let pages: PageSummary[] = [];
 
 type PageSummary = { id: number; name: string; has_template: boolean };
 
-/** The document URL for the page in hand. Every read and write goes through this. */
+/**
+ * The document URL for the page in hand — and for "whichever is mine" when there is
+ * none. Every read and write goes through this.
+ */
 function docUrl(path = "/api/doc"): string {
-  return `${path}?page=${pageId}`;
+  return pageId === null ? path : `${path}?page=${pageId}`;
+}
+
+/**
+ * Take the page the server just answered with as the page we are on (#240).
+ *
+ * The one place `pageId` becomes a number it was not told. A read that named no page
+ * comes back naming one, and that answer — not a guess — is what gets remembered, so the
+ * next boot on this device asks for it directly.
+ */
+function adoptPage(doc: Doc): void {
+  if (typeof doc.id !== "number") return;
+  if (doc.name !== undefined) pageName = doc.name;
+  if (doc.id !== pageId) {
+    pageId = doc.id;
+    writePageId(globalThis.localStorage, doc.id);
+  }
+  if (pageLabel) pageLabel.textContent = pageName;
 }
 
 let baseVersion = 0;
@@ -376,6 +392,10 @@ async function load(): Promise<Doc | null> {
 }
 
 function render(doc: Doc): void {
+  // 🔴 Every rendered document names its own page, so this is the chokepoint where a
+  // read that named none learns which one it got (#240). A response without an `id` —
+  // a write's receipt — leaves the page in hand alone.
+  adoptPage(doc);
   // Assigned verbatim. An empty body is a valid document and renders as an empty
   // editor — never an error, never a placeholder that could be saved back over it
   // (spec §14.5).
@@ -747,11 +767,11 @@ async function poll(): Promise<void> {
     }
     // 🔴 Deleted from another device while this tab sat open — the exact thing a
     // day-long tab on a phone is for. Falling back is right here and nowhere else: the
-    // reader did not ask for anything, so landing on today beats a stuck poll that
-    // quietly stops noticing edits.
-    if (res.status === 404 && pageId !== DEFAULT_PAGE_ID) {
+    // reader did not ask for anything, so landing on their own default beats a stuck
+    // poll that quietly stops noticing edits.
+    if (res.status === 404 && pageId !== null) {
       setStatus("that page is gone");
-      await openPage(DEFAULT_PAGE_ID, "today");
+      await openPage(null);
       await loadPages();
       return;
     }
@@ -1124,14 +1144,19 @@ type WipeMemory = {
  * correct migration: the offer expires at local midnight anyway, so the worst case is one
  * undo lost on the day of the upgrade, and reading a keyless memory into whatever page
  * happens to be open is exactly the bug this fixes.
+ *
+ * 🔴 `null` when the page has no id yet (#240) — before the first read answers, there is
+ * nothing to key on. There is also nothing to remember or restore at that moment: a wipe
+ * needs a rendered page, and rendering is what adopts the id.
  */
-function wipeMemoryKey(id: number): string {
-  return `knag:last-wipe:${id}`;
+function wipeMemoryKey(id: number | null): string | null {
+  return id === null ? null : `knag:last-wipe:${id}`;
 }
 
 function rememberWipe(memory: WipeMemory): void {
+  const key = wipeMemoryKey(pageId);
   try {
-    globalThis.localStorage?.setItem(wipeMemoryKey(pageId), JSON.stringify(memory));
+    if (key) globalThis.localStorage?.setItem(key, JSON.stringify(memory));
   } catch {
     // Private mode, or a full quota. The wipe still happened and is still in history;
     // only the one-tap undo is lost, which is not worth failing the wipe over.
@@ -1140,8 +1165,9 @@ function rememberWipe(memory: WipeMemory): void {
 }
 
 function forgetWipe(): void {
+  const key = wipeMemoryKey(pageId);
   try {
-    globalThis.localStorage?.removeItem(wipeMemoryKey(pageId));
+    if (key) globalThis.localStorage?.removeItem(key);
   } catch {
     // Nothing to do — `readWipe` treats anything unparseable as absent.
   }
@@ -1149,9 +1175,11 @@ function forgetWipe(): void {
 }
 
 function readWipe(): WipeMemory | null {
+  const key = wipeMemoryKey(pageId);
+  if (!key) return null;
   let raw: string | null = null;
   try {
-    raw = globalThis.localStorage?.getItem(wipeMemoryKey(pageId)) ?? null;
+    raw = globalThis.localStorage?.getItem(key) ?? null;
   } catch {
     return null;
   }
@@ -2068,7 +2096,7 @@ async function loadPages(): Promise<void> {
  * than landing on today. This is the *only* place a fallback is allowed; every other path
  * treats a missing page as missing (#152).
  */
-async function openPage(id: number, name?: string): Promise<void> {
+async function openPage(id: number | null, name?: string): Promise<void> {
   // Flush first. Switching repaints from a different document entirely, and an unsaved
   // edit still on the debounce would have its save race the new page's render — and
   // `baseVersion` would already belong to the other page by the time it landed.
@@ -2076,8 +2104,13 @@ async function openPage(id: number, name?: string): Promise<void> {
 
   pageId = id;
   if (name !== undefined) pageName = name;
-  writePageId(globalThis.localStorage, id);
-  if (pageLabel) pageLabel.textContent = pageName;
+  // 🔴 `null` writes nothing to storage and nothing to the label: we do not yet know
+  // which page this is. The read below names it, `adoptPage` records it, and the stored
+  // hint is replaced then — by the server's answer rather than by a guess (#240).
+  if (id !== null) {
+    writePageId(globalThis.localStorage, id);
+    if (pageLabel) pageLabel.textContent = pageName;
+  }
 
   let doc: Doc | null = null;
   try {
@@ -2086,9 +2119,12 @@ async function openPage(id: number, name?: string): Promise<void> {
       showEditor(false);
       return;
     }
-    if (res.status === 404 && id !== DEFAULT_PAGE_ID) {
+    // A 404 on a page we named is recoverable — ask for our own default instead. A 404
+    // on the default is not, and cannot be: `defaultPageFor` creates one rather than
+    // missing, so there is nothing to ask again for.
+    if (res.status === 404 && id !== null) {
       setStatus("that page is gone");
-      await openPage(DEFAULT_PAGE_ID, "today");
+      await openPage(null);
       await loadPages();
       return;
     }
@@ -2211,6 +2247,9 @@ function paintManage(): void {
   const editing = document.activeElement;
   if (editing instanceof HTMLInputElement && manageList.contains(editing)) return;
 
+  // The one page that cannot be deleted, computed rather than assumed — see the row below.
+  const undeletable = pages.length ? Math.min(...pages.map((page) => page.id)) : 0;
+
   manageList.replaceChildren(
     ...pages.map((page) => {
       const li = document.createElement("li");
@@ -2242,7 +2281,12 @@ function paintManage(): void {
       // 🔴 The default page has no delete control at all, rather than a disabled one.
       // It cannot be deleted — that is structural, not a permission — and a control that
       // is present and refuses is a control that has to explain itself.
-      if (page.id !== DEFAULT_PAGE_ID) {
+      //
+      // Which page that is comes from the list itself: `deletePage` refuses the owner's
+      // oldest live page, and oldest means lowest id (`oldestLivePage`). Not the first
+      // row — the list is in drag order (#195) — and never a constant, which is what
+      // made this the operator's page for everybody (#240).
+      if (page.id !== undeletable) {
         const remove = document.createElement("button");
         remove.type = "button";
         remove.textContent = "delete";
@@ -2395,7 +2439,7 @@ manageList?.addEventListener("click", (event) => {
     // and recovering it is clearing a column. Principle 4, made true in the schema
     // (#154) rather than merely asserted.
     void mutatePages(`/api/pages/${id}`, "DELETE").then(async (ok) => {
-      if (ok && id === pageId) await openPage(DEFAULT_PAGE_ID, "today");
+      if (ok && id === pageId) await openPage(null);
     });
   }
 });
@@ -3573,10 +3617,14 @@ view = readView(globalThis.localStorage);
 // default page and then switched would show today's document for a frame on a device
 // that has not looked at today in a week.
 //
-// A stored id is only a hint. If that page has since been deleted from another device
-// the read below 404s, and the fallback lands on the default page rather than on an
-// error screen.
-pageId = readPageId(globalThis.localStorage) ?? DEFAULT_PAGE_ID;
+// A stored id is only a hint. If that page has since been deleted from another device —
+// or belongs to somebody else, which is what a shared browser and a second login make
+// possible (#240) — the read below 404s, and the fallback asks the server for this
+// caller's own default rather than showing an error screen.
+//
+// No stored id means exactly that question, asked directly: `null` sends `/api/doc` with
+// no page and the answer names one.
+pageId = readPageId(globalThis.localStorage);
 
 let doc: Doc | null;
 try {
@@ -3586,8 +3634,10 @@ try {
   // boot fails loudly, because silently opening a different document on a bad connection
   // is the one outcome worse than not opening at all.
   if (!(error instanceof PageGone)) throw error;
-  pageId = DEFAULT_PAGE_ID;
-  writePageId(globalThis.localStorage, DEFAULT_PAGE_ID);
+  // 🔴 Ask, do not assume. The stored page is not ours — deleted, or somebody else's —
+  // and the only thing that knows which page is is the server (#240). Nothing is written
+  // to storage here: `render` adopts the id that comes back, which is the real one.
+  pageId = null;
   doc = await load();
 }
 if (doc) {

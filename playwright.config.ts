@@ -60,8 +60,37 @@ export function sessionRowSql(token: string, label: string): string {
   );
 }
 
+/**
+ * A second **person** — not a second device (#240). A member and a live session for them,
+ * as SQL for the local D1, so a spec can boot the app as somebody who is not the operator.
+ *
+ * 🔴 Their `today` is deliberately **not** created here. `defaultPageFor` heals a person
+ * with no page, and "a member who has never read" is the exact state that heal exists for
+ * — creating one would test the fixture instead.
+ */
+export function memberRowsSql(email: string, token: string, label: string): string {
+  const hash = createHash("sha256").update(token).digest("hex");
+  const now = new Date();
+  const expires = new Date(now.getTime() + 31_536_000_000);
+  return [
+    `INSERT INTO users (email, role, created_at) VALUES ('${email}', 'member', '${now.toISOString()}')`,
+    "INSERT INTO sessions (user_id, token_hash, public_id, created_at, expires_at, device_label) " +
+      `SELECT id, '${hash}', '${hash.slice(0, 32)}', '${now.toISOString()}', '${expires.toISOString()}', '${label}' ` +
+      `FROM users WHERE email = '${email}'`,
+  ].join("; ");
+}
+
+/**
+ * 🔴 Members are cleared at seed time, and that is not only tidiness. The local D1
+ * persists between runs, `people.spec.ts` invites somebody on every run, and `MAX_USERS`
+ * is 25 — so without this the suite quietly poisons itself after a dozen runs and the
+ * failure looks like a broken cap rather than a dirty database.
+ */
 const SEED_SQL = [
   "DELETE FROM sessions WHERE device_label = 'playwright' OR device_label LIKE 'elsewhere-%'",
+  "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE role = 'member')",
+  "DELETE FROM pages WHERE owner_id IN (SELECT id FROM users WHERE role = 'member')",
+  "DELETE FROM users WHERE role = 'member'",
   sessionRowSql(TEST_SESSION_TOKEN, "playwright"),
 ].join("; ");
 

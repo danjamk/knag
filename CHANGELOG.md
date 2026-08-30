@@ -13,6 +13,26 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.9.1] — 2026-08-30
+
+Anyone who is not the operator can now open the app.
+
+### Fixed
+
+- **The client fell back to page 1, which is the operator's page** (#240). `app.ts` kept a
+  `DEFAULT_PAGE_ID = 1` and used it as *the page to fall back to* — a constant that #230
+  made wrong without making it fail, because the default page is `defaultPageFor(owner)`
+  and page 1 is only the operator's. For anybody else the fallback was a page they did not
+  own: a 404, then a second 404 the code had no handler for, and a blank screen at `/`.
+  Found on prod by opening an invite link in a browser that already held a session.
+  There is now **no client-side constant for the default page** — a request that names no
+  page asks the server, and the answer names the page it got, which the device then
+  remembers.
+- A browser spec that boots as a **member** (`member.spec.ts`). This is the coverage that
+  was missing: every other spec logs in as the operator, whose default genuinely is page 1,
+  so all 244 of them agreed with the bug. The local D1's test members are now cleared at
+  seed time too — they accumulated across runs and would eventually have hit `MAX_USERS`.
+
 ## [1.9.0] — 2026-08-30
 
 The operator can invite. The table says whether it is still free.
@@ -2065,7 +2085,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/danjamk/knag/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/danjamk/knag/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/danjamk/knag/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/danjamk/knag/compare/v1.6.0...v1.7.0
