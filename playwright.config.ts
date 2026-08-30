@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -21,9 +22,48 @@ import { defineConfig, devices } from "@playwright/test";
  * `page.goto`. Reasoning and measurements: `scripts/browser-tests.sh` and #69.
  */
 
-/** Fixed so tests can log in. Local only — `wrangler dev` never leaves the machine. */
-export const TEST_PASSPHRASE = "playwright-passphrase-do-not-use-in-production";
 export const TEST_BEARER = "playwright-bearer-do-not-use-in-production";
+
+/**
+ * How the suite logs in (#231, ADR-008 §9): a session row seeded straight into the local
+ * D1 before the server starts, and its raw token set as the cookie by the fixture. There
+ * is no passphrase any more, and the email flow's second half is a mail — which under
+ * `wrangler dev` goes to the server's stdout, where Playwright deliberately does not
+ * look (#107). The form's two states are exercised by `login.spec.ts` up to the point
+ * where a mail would be read; the session itself is seeded.
+ *
+ * 🔴 `user_id = 1` is migration 0009's seed row for the operator — a fixture fact, the
+ * way `worker/test/users.ts` uses it, and nothing the Worker resolves by number.
+ *
+ * Local only — `wrangler dev` never leaves the machine.
+ */
+export const TEST_SESSION_TOKEN = "playwright-session-do-not-use-in-production";
+export const TEST_OPERATOR_EMAIL = "operator@knag.test";
+
+/**
+ * A session row, as SQL, for the local D1. `devices.spec.ts` uses the same shape to make
+ * a second device mid-test, through `wrangler d1 execute --local` — which is also why
+ * this is a function here rather than a string in the command below.
+ *
+ * 🔴 Anything computed from the clock is computed **where the SQL runs**, never at
+ * import: Playwright loads this file once in its main process and again in each worker,
+ * and a label minted at import time would differ between the process that seeded it and
+ * the one looking for it.
+ */
+export function sessionRowSql(token: string, label: string): string {
+  const hash = createHash("sha256").update(token).digest("hex");
+  const now = new Date();
+  const expires = new Date(now.getTime() + 31_536_000_000);
+  return (
+    "INSERT INTO sessions (user_id, token_hash, public_id, created_at, expires_at, device_label) VALUES " +
+    `(1, '${hash}', '${hash.slice(0, 32)}', '${now.toISOString()}', '${expires.toISOString()}', '${label}')`
+  );
+}
+
+const SEED_SQL = [
+  "DELETE FROM sessions WHERE device_label = 'playwright' OR device_label LIKE 'elsewhere-%'",
+  sessionRowSql(TEST_SESSION_TOKEN, "playwright"),
+].join("; ");
 
 const PORT = 8788;
 
@@ -56,11 +96,12 @@ export default defineConfig({
     // Secure cookie there (spec §5). That path has been untested until now.
     command: [
       "pnpm exec wrangler d1 migrations apply knag-dev --local --config worker/wrangler.jsonc",
+      `pnpm exec wrangler d1 execute knag-dev --local --config worker/wrangler.jsonc --command "${SEED_SQL}"`,
       "pnpm build",
       [
         "pnpm exec wrangler dev --config worker/wrangler.jsonc",
         `--port ${PORT}`,
-        `--var KNAG_PASSPHRASE:${TEST_PASSPHRASE}`,
+        `--var KNAG_OPERATOR_EMAIL:${TEST_OPERATOR_EMAIL}`,
         `--var KNAG_BEARER_TOKEN:${TEST_BEARER}`,
         "--var KNAG_ENV:local",
         "--var KNAG_VERSION:0.0.0-browser",

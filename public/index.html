@@ -1784,8 +1784,13 @@
       .pane-back:active { background: var(--press-tint); }
 
       /* ── Login ─────────────────────────────────────────────────────────────
-         One passphrase, an optional device label. No sign-up and no onboarding —
-         there is nothing to onboard. */
+         One email, an optional device label, then one code (#231). No sign-up and no
+         onboarding — there is nothing to onboard. Two states, one form: `data-step`
+         decides which inputs show, and each state is still one field and one button. */
+      [data-login][data-step="email"] .step-code,
+      [data-login][data-step="code"] .step-email { display: none; }
+      [data-login] [data-login-sent] { font-family: var(--font-mono); color: var(--dim); }
+      [data-login] [data-login-restart] { background: none; border: none; color: var(--dim); }
       [data-login] {
         display: flex;
         flex-direction: column;
@@ -1852,25 +1857,47 @@
     </style>
   </head>
   <body>
-    <form data-login hidden>
+    <!-- Email login (#231, ADR-008 §2). One field either way: `data-step` is `email`
+         until a mail has been sent for, then `code`. The same form, the same shape —
+         what changes is which input is showing. No sign-up, no onboarding; the one line
+         of onboarding the product has is in the mail. -->
+    <form data-login data-step="email" hidden>
       <span class="wordmark">knag<span class="block" aria-hidden="true"></span></span>
-      <!-- autocomplete="current-password" so the browser and the iOS Keychain offer
-           to save it. Retyping a long random passphrase on a phone is the friction
-           that decides whether this app gets opened. -->
+      <!-- autocomplete="email" so the browser offers the address it already knows;
+           inputmode keeps iOS on the keyboard with an @ on it. -->
       <input
-        type="password"
-        name="passphrase"
-        placeholder="passphrase"
-        autocomplete="current-password"
+        class="step-email"
+        type="email"
+        name="email"
+        placeholder="email"
+        autocomplete="email"
+        inputmode="email"
+        autocapitalize="off"
+        autocorrect="off"
         required
       />
       <input
+        class="step-email"
         type="text"
         name="device_label"
         placeholder="device label (optional)"
         autocomplete="off"
       />
-      <button type="submit">Log in</button>
+      <!-- The second state. `one-time-code` is what makes iOS offer the code straight
+           off the mail; six digits, and the mail shows them as 3 + 3. -->
+      <span class="step-code" data-login-sent>check your email for a code</span>
+      <input
+        class="step-code"
+        type="text"
+        name="code"
+        placeholder="code"
+        autocomplete="one-time-code"
+        inputmode="numeric"
+        pattern="[0-9 ]*"
+        maxlength="7"
+      />
+      <button type="submit" data-login-submit>Send me a link</button>
+      <button type="button" class="step-code" data-login-restart>different email</button>
       <span data-error role="alert"></span>
     </form>
 

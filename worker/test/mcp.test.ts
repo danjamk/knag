@@ -8,7 +8,7 @@ import {
   writePage,
   writeSetting,
 } from "../src/store.js";
-import { OPERATOR } from "./users.js";
+import { OPERATOR, operatorSession } from "./users.js";
 
 /**
  * The MCP server (spec §10, §14.6), driven over real JSON-RPC through `SELF.fetch`.
@@ -19,7 +19,6 @@ import { OPERATOR } from "./users.js";
  */
 
 const BEARER = "test-bearer-do-not-use-in-production";
-const PASSPHRASE = "test-passphrase-do-not-use-in-production";
 const MCP = "https://knag.test/mcp";
 
 /** 🔴 Both types, or the transport 406s. Accept is a list and both are required. */
@@ -96,13 +95,7 @@ async function toolNamed(name: string): Promise<ToolSpec> {
 const SEEDED_VERSION = 1;
 
 async function loginCookie(): Promise<string> {
-  const res = await SELF.fetch("https://knag.test/api/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passphrase: PASSPHRASE, device_label: "browser" }),
-  });
-  expect(res.status).toBe(200);
-  return (res.headers.get("Set-Cookie") ?? "").split(";")[0] ?? "";
+  return `${SESSION_COOKIE}=${await operatorSession("browser")}`;
 }
 
 describe("auth", () => {

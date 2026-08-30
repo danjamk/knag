@@ -3183,59 +3183,118 @@ window.addEventListener("online", () => void probeConnection());
 /** The consent hand-off, if this page was reached from one. See `safeNext`. */
 const readNext = (): string | null => safeNext(location.search);
 
+/**
+ * Email login (#231, ADR-008 §2). Two submits on one form: the first asks for a mail and
+ * moves the form to its `code` step; the second types the code. Either way the session
+ * arrives as a server-set cookie on the response — nothing here touches
+ * `document.cookie`, and nothing ever should: a client-set cookie dies after 7 days of
+ * Safari inactivity (spec §4).
+ *
+ * The link in the mail never comes through here: it is a top-level navigation to
+ * `/login/<token>`, which the Worker answers with the cookie and a redirect to the page.
+ * `?login=expired` is where a spent or expired link lands, and the form says so.
+ */
+const loginStep = (step: "email" | "code"): void => {
+  loginForm?.setAttribute("data-step", step);
+  const submit = loginForm?.querySelector<HTMLButtonElement>("[data-login-submit]");
+  if (submit) submit.textContent = step === "email" ? "Send me a link" : "Log in";
+  const field = loginForm?.querySelector<HTMLInputElement>(step === "email" ? 'input[name="email"]' : 'input[name="code"]');
+  if (field) {
+    field.required = true;
+    field.focus();
+  }
+  const other = loginForm?.querySelector<HTMLInputElement>(step === "email" ? 'input[name="code"]' : 'input[name="email"]');
+  if (other) other.required = false;
+};
+
+loginForm?.querySelector("[data-login-restart]")?.addEventListener("click", () => {
+  if (loginError) loginError.textContent = "";
+  loginForm.querySelector<HTMLInputElement>('input[name="code"]')?.setAttribute("value", "");
+  loginStep("email");
+});
+
+/** After the session lands: consent hand-off if that is why we are here, else the page. */
+async function loggedIn(next: string | null): Promise<void> {
+  loginForm?.reset();
+  loginStep("email");
+
+  // Straight back to consent when that is why we are here — no flash of the editor in
+  // between, and no document fetched only to be navigated away from.
+  if (next) {
+    location.assign(next);
+    return;
+  }
+
+  const authedDoc = await load();
+  if (authedDoc) {
+    // 🔴 Before `render`, not after. Rows size themselves from `scrollHeight`, and a
+    // hidden element reports 0 — painting into a hidden container clips every row to
+    // nothing. See `autoGrow`.
+    showEditor(true);
+    render(authedDoc);
+    schedulePoll();
+  }
+}
+
 loginForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = loginForm.querySelector("button");
+  const button = loginForm.querySelector<HTMLButtonElement>("[data-login-submit]");
   const data = new FormData(loginForm);
+  const step = loginForm.getAttribute("data-step") === "code" ? "code" : "email";
 
   if (loginError) loginError.textContent = "";
   if (button) button.disabled = true;
 
   try {
-    const res = await fetch("/api/login", {
+    if (step === "email") {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: data.get("email"),
+          device_label: data.get("device_label") || undefined,
+          next: readNext() ?? undefined,
+        }),
+      });
+      if (res.ok) {
+        // The same answer whoever you are (spec §4.2, one endpoint over). The mail is
+        // the only place the difference shows.
+        loginStep("code");
+        return;
+      }
+      if (loginError) loginError.textContent = "that is not an email address";
+      return;
+    }
+
+    const res = await fetch("/api/login/code", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        passphrase: data.get("passphrase"),
-        device_label: data.get("device_label") || undefined,
-      }),
+      body: JSON.stringify({ code: data.get("code") }),
     });
 
     if (res.ok) {
-      // The cookie arrives on this response — server-set, which is the whole point
-      // (spec §4). Nothing here touches document.cookie, and nothing ever should: a
-      // client-set cookie dies after 7 days of Safari inactivity.
-      loginForm.reset();
-
-      // Straight back to consent when that is why we are here — no flash of the
-      // editor in between, and no document fetched only to be navigated away from.
-      const next = readNext();
-      if (next) {
-        location.assign(next);
-        return;
-      }
-
-      const authedDoc = await load();
-      if (authedDoc) {
-        // 🔴 Before `render`, not after. Rows size themselves from `scrollHeight`,
-        // and a hidden element reports 0 — painting into a hidden container clips
-        // every row to nothing. See `autoGrow`.
-        showEditor(true);
-        render(authedDoc);
-        schedulePoll();
-      }
+      const { next } = (await res.json()) as { next?: string | null };
+      await loggedIn(safeNext(next ? `?next=${encodeURIComponent(next)}` : "") ?? readNext());
       return;
     }
 
     // One opaque 401 for every failure, so there is nothing more specific to say and
-    // saying more would be inventing it.
-    if (loginError) loginError.textContent = "wrong passphrase";
+    // saying more would be inventing it. Five wrong codes and the mail is spent; the
+    // way out is the same either way.
+    if (loginError) loginError.textContent = "wrong code — or ask for a new one";
   } catch {
     if (loginError) loginError.textContent = "could not reach knag";
   } finally {
     if (button) button.disabled = false;
   }
 });
+
+// A link that was already used or had expired lands here (login.ts). Say so once, then
+// leave the URL clean so a reload does not say it again.
+if (new URLSearchParams(location.search).get("login") === "expired") {
+  if (loginError) loginError.textContent = "that link has expired — enter your email for a new one";
+  history.replaceState(null, "", location.pathname);
+}
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 

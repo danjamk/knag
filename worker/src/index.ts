@@ -1,15 +1,9 @@
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
-import {
-  type Principal,
-  authenticate,
-  clearSession,
-  issueSession,
-  secretEquals,
-  unauthorized,
-} from "./auth.js";
+import { type Principal, authenticate, clearSession, unauthorized } from "./auth.js";
 import { type Env, buildInfo } from "./env.js";
 import { isCompleted, parse, serialize } from "./blocks.js";
 import { loadHistory, reportingZone, resolveRange } from "./history.js";
+import { consumeLink, requestLogin, verifyCode } from "./login.js";
 import { handleMcp } from "./mcp.js";
 import { handleAuthorize } from "./oauth.js";
 import {
@@ -76,7 +70,7 @@ export const DEV_ICONS = [
 /**
  * knag — one plain-text document, always live.
  *
- * Live: `/health`, the document API (spec §5), auth (§4) — passphrase login, session
+ * Live: `/health`, the document API (spec §5), auth (§4) — email login, session
  * cookie, bearer — and the MCP server at `/mcp` (§10, §14.6).
  *
  * Routing note: `run_worker_first` in wrangler.jsonc lists exactly the paths that
@@ -134,17 +128,31 @@ const router = {
       return request.method === "HEAD" ? new Response(null, response) : response;
     }
 
-    // The one unauthenticated /api/* route, necessarily — it is how a principal comes
-    // into existence. Rate-limited by a Cloudflare WAF rule rather than in code
-    // (spec §4.2); dev sits on *.workers.dev with no such rule in front of it.
-    if (url.pathname === "/api/login") {
+    // The unauthenticated routes, necessarily — they are how a principal comes into
+    // existence (#231, ADR-008 §2). `/api/login` is rate-limited by a Cloudflare WAF rule
+    // rather than in code (spec §4.2) and by a per-person throttle in `login.ts`; dev
+    // sits on *.workers.dev with no WAF rule in front of it.
+    if (url.pathname === "/api/login" || url.pathname === "/api/login/code") {
       if (request.method !== "POST") {
         return Response.json(
           { error: "Method not allowed" },
           { status: 405, headers: { Allow: "POST" } },
         );
       }
-      return login(request, env);
+      return url.pathname === "/api/login" ? requestLogin(request, env) : verifyCode(request, env);
+    }
+
+    // The link in the mail. A top-level GET, so the session cookie (if any) arrives and
+    // the one this mints is set on a navigation. 🔴 `/login/*` is in `run_worker_first`
+    // in both wrangler env blocks; without that the static shell answers it with a 200.
+    if (url.pathname.startsWith("/login/")) {
+      if (request.method !== "GET") {
+        return Response.json(
+          { error: "Method not allowed" },
+          { status: 405, headers: { Allow: "GET" } },
+        );
+      }
+      return consumeLink(request, env, url.pathname.slice("/login/".length));
     }
 
     if (url.pathname === "/api/doc/clear-completed") {
@@ -560,58 +568,6 @@ export default {
     return oauthProvider(url.origin).fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;
-
-/**
- * Exchange the passphrase for a session cookie.
- *
- * 🔴 Every failure path returns the same opaque 401 with the same shape. A login
- * endpoint that distinguishes "no passphrase field" from "wrong passphrase" from
- * "server has no passphrase configured" is a login endpoint that helps enumerate
- * its own state (spec §4.2).
- */
-async function login(request: Request, env: Env): Promise<Response> {
-  let payload: unknown;
-  try {
-    payload = await request.json();
-  } catch {
-    return loginFailed(request, "malformed body");
-  }
-
-  const { passphrase, device_label: deviceLabel } = (payload ?? {}) as Record<string, unknown>;
-
-  if (typeof passphrase !== "string") {
-    return loginFailed(request, "no passphrase presented");
-  }
-  if (!(await secretEquals(passphrase, env.KNAG_PASSPHRASE))) {
-    return loginFailed(request, "passphrase mismatch");
-  }
-
-  // The passphrase is the operator's credential and nobody else's, until #231 replaces
-  // it. Resolved by role; a missing operator row is a skipped migration, and it reads as
-  // the same opaque 401 as every other failure here.
-  const operator = await findOperator(env);
-  if (!operator) return loginFailed(request, "no operator row");
-
-  const cookie = await issueSession(
-    request,
-    env,
-    operator.id,
-    typeof deviceLabel === "string" ? deviceLabel : null,
-  );
-
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
-}
-
-/**
- * One 401 for every way a login can fail. The reason is logged, never returned —
- * observability is enabled on this Worker, so the operator can see what the caller
- * cannot.
- */
-function loginFailed(request: Request, reason: string): Response {
-  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  console.warn(`login failed from ${ip}: ${reason}`);
-  return unauthorized();
-}
 
 /**
  * Wipe the page — the checked items, or all of it (spec §5, §14.2, #58).

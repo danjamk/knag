@@ -88,7 +88,8 @@ export default defineConfig({
           KNAG_DEPLOYED_AT: "1970-01-01T00:00:00Z",
           KNAG_ENV: "test",
           KNAG_TZ: "America/Chicago",
-          KNAG_PASSPHRASE: "test-passphrase-do-not-use-in-production",
+          KNAG_OPERATOR_EMAIL: "operator@knag.test",
+          KNAG_MAIL_FROM: "knag <knag@knag.test>",
           KNAG_BEARER_TOKEN: "test-bearer-do-not-use-in-production",
 
           // Consumed by the test suite, not by the Worker.

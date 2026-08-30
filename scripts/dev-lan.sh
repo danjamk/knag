@@ -34,9 +34,10 @@ PORT="${1:-8788}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
-# A passphrase for this session only. Not a secret and not written anywhere — the real
-# ones live in Worker secrets and never come near a local run.
-PASSPHRASE="${KNAG_LAN_PASSPHRASE:-knag-on-the-phone}"
+# The operator's address for this session only (#231). Not a secret and not written
+# anywhere — the real one lives in a Worker secret and never comes near a local run. No
+# mail is sent locally: the login code is printed in this terminal by wrangler dev.
+OPERATOR_EMAIL="${KNAG_LAN_EMAIL:-you@example.com}"
 
 IP=""
 for iface in en0 en1 en2; do
@@ -80,7 +81,7 @@ echo "  On the iPhone, in Safari:"
 echo
 echo "      https://${IP}:${PORT}"
 echo
-echo "  Passphrase:  ${PASSPHRASE}"
+echo "  Email:  ${OPERATOR_EMAIL}   (the code appears HERE, in this terminal — no mail is sent)"
 echo
 echo "  Self-signed certificate — iOS will warn once. Show Details -> visit anyway."
 echo "  This is the LOCAL database. The real dev page is untouched."
@@ -92,5 +93,5 @@ exec pnpm exec wrangler dev \
   --ip 0.0.0.0 \
   --port "${PORT}" \
   --local-protocol https \
-  --var "KNAG_PASSPHRASE:${PASSPHRASE}" \
+  --var "KNAG_OPERATOR_EMAIL:${OPERATOR_EMAIL}" \
   --var "KNAG_BEARER_TOKEN:knag-on-the-phone-bearer"

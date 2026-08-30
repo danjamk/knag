@@ -89,7 +89,7 @@
   "assets": {
     "directory": "../public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/mcp", "/health", "/manifest.json", "/.well-known/*", "/oauth/*"],
+    "run_worker_first": ["/api/*", "/mcp", "/health", "/manifest.json", "/.well-known/*", "/oauth/*", "/login/*"],
     "not_found_handling": "single-page-application"
   },
 
@@ -109,13 +109,21 @@
     // Local timezone for history boundaries. D1 stores UTC; "what did I finish
     // Tuesday" is a local-time question and files to the wrong day after ~7pm
     // local if answered in UTC. See spec §14.3.
-    "KNAG_TZ": "America/Chicago"
+    "KNAG_TZ": "America/Chicago",
+
+    // The login mail's sender (#231). Also under env.prod, where it is an address on the
+    // zone Resend has verified. Dev uses Resend's own test sender, which delivers only to
+    // the Resend account's address — exactly the operator, and nobody else — and does not
+    // spend the real domain's reputation on a *.workers.dev host. `[dev]` is in the
+    // subject either way.
+    "KNAG_MAIL_FROM": "knag <onboarding@resend.dev>"
   },
 
   // 🔴 Dev is reachable at a *.workers.dev hostname with no WAF rate-limit rule in
   // front of it — the rule is scoped to the danjamkuhn.com zone, which lives on the
   // prod account. Consequences, both mandatory:
-  //   1. The dev KNAG_PASSPHRASE must be DIFFERENT from prod's.
+  //   1. Dev's KNAG_BEARER_TOKEN must be DIFFERENT from prod's, and dev's login mails
+  //      say [dev] in the subject so a link from one cannot be mistaken for the other.
   //   2. Dev holds test content only. Never paste anything real into it.
   "workers_dev": true,
   "preview_urls": false,
@@ -165,7 +173,7 @@
       "assets": {
         "directory": "../public",
         "binding": "ASSETS",
-        "run_worker_first": ["/api/*", "/mcp", "/health", "/manifest.json", "/.well-known/*", "/oauth/*"],
+        "run_worker_first": ["/api/*", "/mcp", "/health", "/manifest.json", "/.well-known/*", "/oauth/*", "/login/*"],
         "not_found_handling": "single-page-application"
       },
 
@@ -173,7 +181,8 @@
         "KNAG_VERSION": "",
         "KNAG_DEPLOYED_AT": "",
         "KNAG_ENV": "",
-        "KNAG_TZ": "America/Chicago"
+        "KNAG_TZ": "America/Chicago",
+        "KNAG_MAIL_FROM": "knag <knag@danjamkuhn.com>"
       },
 
       // Prod's only hostname. `custom_domain: true` means WRANGLER creates the custom
@@ -200,6 +209,7 @@
   }
 
   // Secrets (`wrangler secret put --env <env>`), never in this file — it is committed:
-  //   KNAG_PASSPHRASE     — PWA login (spec §4, ADR-001). Different per environment.
+  //   KNAG_OPERATOR_EMAIL — the operator's address (ADR-008); claimed by the first login request
+  //   RESEND_API_KEY      — the login mail (ADR-008 §9). One key can serve both environments.
   //   KNAG_BEARER_TOKEN   — agent / MCP / any non-browser client. Different per environment.
 }

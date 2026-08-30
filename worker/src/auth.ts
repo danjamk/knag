@@ -83,7 +83,7 @@ const MAX_DEVICE_LABEL = 64;
  * Split on `;` and only on the FIRST `=` — a cookie value may legally contain `=`
  * (base64url does not, but nothing here should depend on that holding forever).
  */
-function readCookie(header: string | null, name: string): string | null {
+export function readCookie(header: string | null, name: string): string | null {
   if (!header) return null;
   for (const part of header.split(";")) {
     const eq = part.indexOf("=");
@@ -213,7 +213,7 @@ export function clearSession(request: Request): string {
   return attributes.join("; ");
 }
 
-function isSecureContext(request: Request): boolean {
+export function isSecureContext(request: Request): boolean {
   const url = new URL(request.url);
   if (url.protocol === "https:") return true;
   return url.hostname !== "localhost" && url.hostname !== "127.0.0.1";

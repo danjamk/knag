@@ -97,8 +97,8 @@ The dev D1 id is committed in `worker/wrangler.jsonc` — a database id is not a
 Cloudflare credential at all. That is the whole of what this repo can give you.
 
 Reaching a real deployment needs three things it cannot: a Cloudflare account, a
-`CLOUDFLARE_API_TOKEN` in `.env.local`, and the `KNAG_PASSPHRASE` / `KNAG_BEARER_TOKEN`
-secrets set on the Worker. Copy `.env.example` to `.env` and fill in your own account id
+`CLOUDFLARE_API_TOKEN` in `.env.local`, and the `KNAG_OPERATOR_EMAIL`, `RESEND_API_KEY`
+and `KNAG_BEARER_TOKEN` secrets set on the Worker. Copy `.env.example` to `.env` and fill in your own account id
 and hosts; `make preflight` then tells you whether the credential you have points where
 you think it does.
 
@@ -155,17 +155,29 @@ rule whose violation does not produce a failed deploy: it produces a Worker writ
 column that no longer exists, against the only copy of the page. See
 [ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md).
 
-Secrets are never in `wrangler.jsonc`, and differ per environment:
+Secrets are never in `wrangler.jsonc`. Three of them, per environment
+([ADR-008](docs/adr/ADR-008-email-login.md)):
 
 ```bash
-pnpm exec wrangler --config worker/wrangler.jsonc secret put KNAG_PASSPHRASE
-pnpm exec wrangler --config worker/wrangler.jsonc --env prod secret put KNAG_PASSPHRASE
+pnpm exec wrangler --config worker/wrangler.jsonc secret put KNAG_OPERATOR_EMAIL   # your address
+pnpm exec wrangler --config worker/wrangler.jsonc secret put RESEND_API_KEY        # the login mail
+pnpm exec wrangler --config worker/wrangler.jsonc secret put KNAG_BEARER_TOKEN     # agents
+# and the same three with --env prod
 ```
 
+**Logging in is your email address.** Type it, get a mail carrying a link and a
+six-digit code; tap the link on a desktop, type the code on a phone. The first request
+that names `KNAG_OPERATOR_EMAIL` claims the operator row — after that the address lives
+in the database, not the secret. Mail goes out through [Resend](https://resend.com):
+verify the sending domain there (three DNS records) and set `KNAG_MAIL_FROM` in
+`worker/wrangler.jsonc` to an address on it. Without `RESEND_API_KEY`, a local
+`wrangler dev` prints the code in the terminal instead of sending anything.
+
 **One manual step Cloudflare cannot infer:** add a WAF rate-limiting rule on
-`POST /api/login` in the zone dashboard. A single passphrase field on a public URL is
-brute-forceable, and the free tier includes one rule. It covers a **custom domain only**
-— which is why a `*.workers.dev` dev host needs a different passphrase and holds test
+`POST /api/login` in the zone dashboard — it is a send-mail-to-this-address endpoint on
+a public URL, and the free tier includes one rule. The Worker also throttles each
+address to one mail a minute and five an hour. The WAF rule covers a **custom domain
+only** — which is why a `*.workers.dev` dev host tags its mails `[dev]` and holds test
 content only. See [docs/spec.md](docs/spec.md) §4.2.
 
 ## Agent access
@@ -190,8 +202,8 @@ https://<your-knag-host>/mcp
 ```
 
 The connector registers itself, sends you to knag's consent screen, and the screen sends
-you to the ordinary login if you are not already signed in — so the passphrase is only
-ever typed into the real login form.
+you to the ordinary login if you are not already signed in — so you only ever log in
+through the real login form.
 
 **From Claude Code**, which can carry a header and does not need the handshake:
 
@@ -232,9 +244,10 @@ quoted inline, so nothing in this repo depends on reading it.
 ## Status
 
 Personal software, run by one person, in the open because there is no reason not to be.
-It works and it is used daily, but it assumes a Cloudflare account, one operator and a
-shared passphrase — see [ADR-001](docs/adr/ADR-001-passphrase-auth.md) for exactly when
-that stops being reasonable. No support, no roadmap promises, and issues are for my own
+It works and it is used daily, but it assumes a Cloudflare account and one operator
+hosting a few people they know — see [ADR-008](docs/adr/ADR-008-email-login.md) for the
+shape of that, and [ADR-001](docs/adr/ADR-001-passphrase-auth.md) for why it is not
+Cloudflare Access. No support, no roadmap promises, and issues are for my own
 tracking.
 
 ## License

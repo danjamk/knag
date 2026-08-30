@@ -1,6 +1,6 @@
+import { execFileSync } from "node:child_process";
 import type { Locator } from "@playwright/test";
-import { TEST_PASSPHRASE } from "../playwright.config.js";
-import { request } from "@playwright/test";
+import { sessionRowSql } from "../playwright.config.js";
 import { type Knag, expect, test } from "./fixtures.js";
 
 /**
@@ -38,29 +38,31 @@ async function css(locator: Locator, property: string): Promise<string> {
 }
 
 /**
- * Log in a *second* device without disturbing this one.
+ * A *second* device, without disturbing this one.
  *
  * 🔴 Not `page.request`, which shares the page's cookie jar — logging in through it
  * replaces the browser's own session, so the new device silently becomes the current
  * one. Two tests here passed for that wrong reason before this existed: the row was
  * present, but it was the caller's own row, which is precisely the row that must not
  * offer a revoke control.
+ *
+ * Since #231 there is no passphrase to post, and the email flow ends in a mail no test
+ * can read — so the other device is a session row written straight into the local D1,
+ * the way `playwright.config.ts` seeds this browser's own, through `wrangler d1 execute
+ * --local` while the dev server is up. A few seconds per call for wrangler to start;
+ * three calls a file.
+ *
+ * 🔴 Unique per call, and across runs. The database persists between local runs, and a
+ * fixed label matched seven rows by the last test once — a strict-mode violation on the
+ * revoke click. The random suffix is what makes it a fact about this call.
  */
-async function loginElsewhere(baseURL: string, label: string): Promise<string> {
-  // 🔴 Unique per call. Sessions last a year and the fixture logs in for every test, so
-  // the table accumulates across the whole file — a fixed label matched seven rows by
-  // the last test and the click failed on a strict-mode violation. Uniqueness is what
-  // makes each assertion about *this* test's device rather than about a shared table.
-  //
-  // 🔴 And unique across **runs**, not just within one. The counter resets with the
-  // process; the database does not. `ipad-3` from three separate runs is three rows, and
-  // the same strict-mode violation returns — it just takes a few runs instead of a few
-  // tests. It fired the day two spec files were added, because every file's fixture logs
-  // in and the suite got longer. The suffix is what makes it a fact about this run.
-  const unique = `${label}-${++elsewhere}-${Math.random().toString(36).slice(2, 8)}`;
-  const context = await request.newContext({ baseURL });
-  await context.post("/api/login", { data: { passphrase: TEST_PASSPHRASE, device_label: unique } });
-  await context.dispose();
+async function loginElsewhere(_baseURL: string, label: string): Promise<string> {
+  const unique = `elsewhere-${label}-${++elsewhere}-${Math.random().toString(36).slice(2, 8)}`;
+  execFileSync(
+    "pnpm",
+    ["exec", "wrangler", "d1", "execute", "knag-dev", "--local", "--config", "worker/wrangler.jsonc", "--command", sessionRowSql(`playwright-${unique}`, unique)],
+    { stdio: "ignore" },
+  );
   return unique;
 }
 

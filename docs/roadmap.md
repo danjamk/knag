@@ -147,8 +147,9 @@ Set 2026-08-19. The version numbers are meant to say something:
 | **1.5** | The design halves of 8b and 8c — the `agent ›` pane, the grip | 8b, 8c |
 | **1.6** | The caret is the mark's block — one feature from use, no design input | — |
 | **1.7** | Users and ownership (#230) — multi-user's first third, no visible change | 10 |
-| **1.8** | **The product page** — lands before the first invitation, which is #232 | 9 |
-| **1.9** | Email login (#231), then invite and the admin view (#232) | 10 |
+| **1.8** | Email login (#231) — the passphrase retires | 10 |
+| **1.9** | **The product page** — lands before the first invitation, which is #232 | 9 |
+| **1.10** | Invite, revoke, change email, and the admin view (#232) | 10 |
 
 🔴 **Amended 2026-08-28, evening: #230 shipped as 1.7, ahead of the product page.** It
 changes nothing visible and waits on no design, so holding it behind a brief that is
