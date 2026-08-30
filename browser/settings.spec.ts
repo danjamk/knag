@@ -197,9 +197,10 @@ test.describe("the sheet says what is per device (#194)", () => {
     // does not follow. The sheet did not say so and the question came up after a few
     // days of use. #149 cut the first group label because `the page` named nothing the
     // reader could not see; this one names the one thing they cannot, and the two labels
-    // are the whole information architecture — the order is the boundary.
+    // are the whole information architecture — the order is the boundary. The third
+    // (#232) is the operator's and appears only on the operator's sheet, which this is.
     const groups = knag.page.locator("[data-settings-pane] .group");
-    await expect(groups).toHaveText(["this device", "you"]);
+    await expect(groups).toHaveText(["this device", "you", "hosting"]);
 
     // The preferences sit between the two labels, not above the first one.
     const pane = knag.page.locator("[data-settings-pane]");
