@@ -1,4 +1,5 @@
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
+import { handleMe, handleUsers } from "./admin.js";
 import { type Principal, authenticate, clearSession, unauthorized } from "./auth.js";
 import { type Env, buildInfo } from "./env.js";
 import { isCompleted, parse, serialize } from "./blocks.js";
@@ -378,6 +379,17 @@ const router = {
         );
       }
       return revokeSession(request, env, principal, decodeURIComponent(tail.slice(1)));
+    }
+
+    // Who am I — the one thing the sheet needs before it can decide whether to show the
+    // operator's row (#232). Any principal.
+    if (url.pathname === "/api/me") return handleMe(request, env);
+
+    // 🔴 The operator's routes (#232). Gated inside `handleUsers` on `role`, and a
+    // member gets exactly the 404 below — same body, same status — so the surface is
+    // invisible to anyone it is not for. All SQL, as ever, in store.ts.
+    if (url.pathname === "/api/users" || url.pathname.startsWith("/api/users/")) {
+      return handleUsers(request, env, url);
     }
 
     return Response.json({ error: "Not found" }, { status: 404 });

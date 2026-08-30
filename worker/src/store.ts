@@ -1020,6 +1020,153 @@ export async function createUser(
   return row;
 }
 
+// ── The operator's view of everyone (#232, ADR-008 §8, §11, §12) ────────────
+
+/**
+ * How many people this deployment will hold, the operator included. A tripwire in the
+ * code, the way `MAX_PAGES` is: spec §14.4's arithmetic puts ~4k requests a day per
+ * person against a 100k/day free tier, and a number the operator has to remember is a
+ * hope. Workers Paid would move this to roughly eighty by changing one constant.
+ */
+export const MAX_USERS = 25;
+
+/** People who count against the cap: live ones. A revoked person costs no requests. */
+export async function countLiveUsers(env: Env): Promise<number> {
+  const row = await env.DB.prepare("SELECT count(*) AS n FROM users WHERE revoked_at IS NULL").first<{
+    n: number;
+  }>();
+  return row?.n ?? 0;
+}
+
+/**
+ * A user by id, revoked or not. The admin view is the one reader that needs to see a
+ * revoked person — to delete them — so this is the one lookup that does not filter on
+ * `revoked_at`. Nothing on a request path resolves a principal through it.
+ */
+export async function findUserAny(env: Env, id: number): Promise<UserRow | null> {
+  return await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).bind(id).first<UserRow>();
+}
+
+/**
+ * Change email (ADR-008 §4) — the operator's only recovery lever. The person lost the
+ * address, not the account: identity is `users.id`, so their pages stay put. Returns
+ * `false` when the address is already someone's; the unique NOCASE index is what
+ * refuses it and the caller turns that into a 409.
+ */
+export async function updateUserEmail(env: Env, id: number, email: string): Promise<boolean> {
+  try {
+    const result = await env.DB.prepare("UPDATE users SET email = ? WHERE id = ?").bind(email, id).run();
+    return (result.meta.changes ?? 0) > 0;
+  } catch (error) {
+    if (String(error).includes("UNIQUE")) return false;
+    throw error;
+  }
+}
+
+/**
+ * Revoke a person: stamp `revoked_at`, and take every session and pending login code
+ * with it. The stamp is what does the work — `findLiveSession` and `findUser` both
+ * carry `revoked_at IS NULL`, so a session row that somehow survived would still not
+ * resolve, and an OAuth token they hold dies at `findUser` on its next request. The
+ * deletes are hygiene, not the mechanism.
+ *
+ * Their pages stay: revoke is "out", not "gone". Delete is below.
+ */
+export async function revokeUser(env: Env, id: number, now: Date = new Date()): Promise<boolean> {
+  const [stamped] = await env.DB.batch([
+    env.DB.prepare("UPDATE users SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").bind(
+      now.toISOString(),
+      id,
+    ),
+    env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM login_codes WHERE user_id = ?").bind(id),
+  ]);
+  return (stamped?.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Delete a person and every row they own — "deletion on request" (ADR-008 §12). Hard,
+ * in one batch: cleared items through their revisions, revisions through their pages,
+ * the pages, sessions, login codes, settings, and the row itself. Order matters only for
+ * the subqueries, which is why the leaves go first.
+ *
+ * 🔴 Never the operator. The route refuses it before this is reached, and this refuses
+ * it again by predicate: a deployment with no operator has nobody who can log in.
+ */
+export async function deleteUserHard(env: Env, id: number): Promise<boolean> {
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `DELETE FROM cleared_items WHERE revision_id IN
+         (SELECT r.id FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.owner_id = ?)`,
+    ).bind(id),
+    env.DB.prepare("DELETE FROM revisions WHERE page_id IN (SELECT id FROM pages WHERE owner_id = ?)").bind(id),
+    env.DB.prepare("DELETE FROM pages WHERE owner_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM login_codes WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM user_settings WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM users WHERE id = ? AND role <> 'operator'").bind(id),
+  ]);
+  return (results[results.length - 1]?.meta.changes ?? 0) > 0;
+}
+
+/** One row of the admin table. Counts, dates and an address — never page content. */
+export type UserStats = {
+  id: number;
+  email: string | null;
+  role: UserRole;
+  created_at: string;
+  revoked_at: string | null;
+  /** The newest of their devices' `last_seen_at`, falling back to its `created_at`. */
+  last_seen_at: string | null;
+  devices: number;
+  pages: number;
+  /**
+   * `revisions` rows in the window by a person or their agent — coalescing makes a row
+   * a sitting. `system` rows (a new page's baseline) are nobody's and are not counted.
+   */
+  sittings: number;
+  /** Of those, the agent's. */
+  agent_sittings: number;
+  wipes: number;
+  items_done: number;
+};
+
+/**
+ * Everyone, with what the free-tier question needs (ADR-008 §11): how many devices
+ * poll, how much gets written, and by whom. Every number is scoped to the person's own
+ * pages through `owner_id`; nothing here reads a `body`.
+ *
+ * 🔴 The window is `since`, computed by the caller, so a test can pin it and so the
+ * route says "30 days" in one place. Expired sessions are excluded the way
+ * `listLiveSessions` excludes them: the sweep runs on login only.
+ */
+export async function listUserStats(env: Env, since: Date, now: Date = new Date()): Promise<UserStats[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT u.id, u.email, u.role, u.created_at, u.revoked_at,
+            (SELECT max(coalesce(s.last_seen_at, s.created_at)) FROM sessions s
+              WHERE s.user_id = u.id) AS last_seen_at,
+            (SELECT count(*) FROM sessions s
+              WHERE s.user_id = u.id AND s.expires_at > ?1) AS devices,
+            (SELECT count(*) FROM pages p
+              WHERE p.owner_id = u.id AND p.deleted_at IS NULL) AS pages,
+            (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id
+              WHERE p.owner_id = u.id AND r.created_at >= ?2 AND r.source <> 'system') AS sittings,
+            (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id
+              WHERE p.owner_id = u.id AND r.created_at >= ?2 AND r.source = 'agent') AS agent_sittings,
+            (SELECT count(*) FROM revisions r JOIN pages p ON p.id = r.page_id
+              WHERE p.owner_id = u.id AND r.created_at >= ?2
+                AND r.event_type = 'clear_completed') AS wipes,
+            (SELECT count(*) FROM cleared_items c
+               JOIN revisions r ON r.id = c.revision_id JOIN pages p ON p.id = r.page_id
+              WHERE p.owner_id = u.id AND c.cleared_at >= ?2) AS items_done
+       FROM users u
+      ORDER BY u.role = 'operator' DESC, u.created_at ASC, u.id ASC`,
+  )
+    .bind(now.toISOString(), since.toISOString())
+    .all<UserStats>();
+  return results;
+}
+
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
 /** Drop sessions that have already expired. Called on login; no cron trigger. */
@@ -1074,19 +1221,34 @@ export async function findLiveSession(
   env: Env,
   tokenHash: string,
   now: Date = new Date(),
-): Promise<{
-  device_label: string | null;
-  public_id: string | null;
-  user_id: number;
-  role: UserRole;
-} | null> {
+): Promise<LiveSession | null> {
   return await env.DB.prepare(
-    `SELECT s.device_label, s.public_id, s.user_id, u.role
+    `SELECT s.device_label, s.public_id, s.user_id, s.last_seen_at, u.role
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > ? AND u.revoked_at IS NULL`,
   )
     .bind(tokenHash, now.toISOString())
-    .first<{ device_label: string | null; public_id: string | null; user_id: number; role: UserRole }>();
+    .first<LiveSession>();
+}
+
+export type LiveSession = {
+  device_label: string | null;
+  public_id: string | null;
+  user_id: number;
+  last_seen_at: string | null;
+  role: UserRole;
+};
+
+/**
+ * Record that a device was heard from (#232). The caller decides *whether* — `auth.ts`
+ * calls this only when the row is more than an hour stale, so a 4-second poll costs
+ * one write an hour rather than one a request. Keyed by token hash because that is
+ * what the request proved possession of.
+ */
+export async function touchSession(env: Env, tokenHash: string, now: Date = new Date()): Promise<void> {
+  await env.DB.prepare("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?")
+    .bind(now.toISOString(), tokenHash)
+    .run();
 }
 
 /** One row of the device list. Never carries `token_hash` — see the migration. */
@@ -1203,12 +1365,12 @@ export async function readSetting(env: Env, userId: number, key: string): Promis
  * Upsert. An empty value is stored as empty rather than deleted — absent and blank read
  * the same.
  *
- * 🔴 **Write both, read new** — release one of #234's three. The second statement mirrors
- * the operator's value into the legacy `settings` table, and only the operator's: that
- * table has no user dimension, so it can only ever hold the one person's text it always
- * held. The predicate resolves "the operator" by role in SQL rather than by a number
- * handed in, so a member's write cannot land there whatever the caller passes. The next
- * release deletes this statement; the one after drops the table.
+ * 🔴 **Writes `user_settings` only** — release two of #234's three. 1.7.0 wrote both
+ * tables so a rollback would still read current text; this release stops writing the
+ * legacy `settings` table and carries no migration, which is exactly what makes it look
+ * skippable and exactly why it is not (ADR-002 §3): the Worker live during the contract
+ * migration must be one that no longer writes the column being dropped. The release
+ * after this one drops `settings`.
  */
 export async function writeSetting(
   env: Env,
@@ -1216,18 +1378,12 @@ export async function writeSetting(
   key: string,
   value: string,
 ): Promise<void> {
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    ).bind(userId, key, value, now),
-    env.DB.prepare(
-      `INSERT INTO settings (key, value, updated_at)
-       SELECT ?, ?, ? WHERE (SELECT role FROM users WHERE id = ?) = 'operator'
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    ).bind(key, value, now, userId),
-  ]);
+  await env.DB.prepare(
+    `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  )
+    .bind(userId, key, value, new Date().toISOString())
+    .run();
 }
 
 // ── Users, by address ────────────────────────────────────────────────────────
@@ -1237,6 +1393,17 @@ export async function findUserByEmail(env: Env, email: string): Promise<UserRow 
   return await env.DB.prepare(
     `SELECT ${USER_COLUMNS} FROM users WHERE email = ? COLLATE NOCASE AND revoked_at IS NULL`,
   )
+    .bind(email)
+    .first<UserRow>();
+}
+
+/**
+ * The same lookup without the `revoked_at` filter — for the invite (#232), which has to
+ * refuse an address that is here in either state. Nothing on a request path resolves a
+ * principal through it.
+ */
+export async function findUserByEmailAny(env: Env, email: string): Promise<UserRow | null> {
+  return await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE email = ? COLLATE NOCASE`)
     .bind(email)
     .first<UserRow>();
 }

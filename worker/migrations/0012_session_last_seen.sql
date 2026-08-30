@@ -1,0 +1,11 @@
+-- When a device was last heard from (#232, ADR-008 §11). Additive: a nullable column
+-- the Worker live during the window never reads.
+--
+-- 🔴 Written only when more than an hour stale (`auth.ts`), never on every poll — a
+-- 4-second poll that wrote a row each time would turn the polling budget (spec §14.4)
+-- into a D1 write budget. NULL means "not since this column existed"; the admin view
+-- falls back to `created_at`, which is the last thing known for certain.
+--
+-- `users.last_seen_at` (0009) stays as it was declared and is derived from this rather
+-- than written: a person's last-seen is the newest of their devices'.
+ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;

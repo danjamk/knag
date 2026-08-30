@@ -208,11 +208,14 @@ describe("sessions and settings are per person", () => {
     expect(await (await SELF.fetch(url, { headers: as(cookie) })).json()).toEqual({ text: "friend's" });
     expect(await readSetting(env, user.id, AGENT_INSTRUCTIONS.key)).toBe("friend's");
 
-    // 🔴 The legacy `settings` table mirrors the operator's text only (#234, write both).
+    // 🔴 The legacy `settings` table is no longer written (#234, release two of three:
+    // stop writing the old). 1.7.0 mirrored the operator's text here; this release does
+    // not, and the one after drops the table. A row appearing here again means the
+    // mirror write came back and the contract migration would land under a live writer.
     const legacy = await env.DB.prepare("SELECT value FROM settings WHERE key = ?")
       .bind(AGENT_INSTRUCTIONS.key)
       .first<{ value: string }>();
-    expect(legacy?.value).toBe("operator's");
+    expect(legacy).toBeNull();
   });
 
   it("a revoked person's session stops resolving, without touching the row", async () => {

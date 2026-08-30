@@ -148,6 +148,13 @@ it is what keeps `/mcp` free of ambient authority, which is the premise of
 logging a foreign `Origin` rather than blocking it (spec §10). Do not "fix" it
 by letting the cookie through.
 
+**The operator gate is one comparison and the refusal is a 404.** `/api/users*`
+(#232, `worker/src/admin.ts`) checks `principal.role === "operator"` and answers anyone
+else with the exact body and status a missing route gets — never a 403, which would
+confirm there is something to be forbidden from. Session or bearer both pass it, since
+the static bearer *is* the operator. Nothing on those routes reads a page body, and
+nothing ever will: the view exists to answer "is this still free?".
+
 Since [ADR-005](docs/adr/ADR-005-mcp-oauth.md) there are **two** bearer
 credentials and the rule is unchanged by both. `KNAG_BEARER_TOKEN` is compared
 locally and reaches Claude Code; an OAuth access token can only be validated by

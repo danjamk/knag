@@ -1,6 +1,6 @@
 import { authenticate, hashToken, isSecureContext, issueSession, readCookie, unauthorized } from "./auth.js";
 import type { Env } from "./env.js";
-import { loginMail, sendMail } from "./mail.js";
+import { inviteMail, loginMail, sendMail } from "./mail.js";
 import {
   claimOperatorEmail,
   consumeLoginCode,
@@ -12,6 +12,7 @@ import {
   recordLoginAttempt,
   sweepExpiredLoginCodes,
   type LoginCodeRow,
+  type UserRow,
 } from "./store.js";
 
 /**
@@ -41,8 +42,11 @@ import {
 /** The request cookie's name. Ten minutes; cleared when the code is spent. */
 export const LOGIN_COOKIE = "knag_login";
 
-/** How long a code and its link stay good. #232's invite passes a week instead. */
+/** How long a code and its link stay good. An invite's link (below) gets a week. */
 export const CODE_TTL_MS = 10 * 60 * 1000;
+
+/** How long an invite link stays good (ADR-008 §3). Long enough to be read on a weekend. */
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Wrong codes before the row is dead. Five, against a keyspace of a million, bound to one browser. */
 export const MAX_ATTEMPTS = 5;
@@ -71,7 +75,7 @@ function sixDigits(): string {
  * that explains what is wrong with an address is describing its own rules to a stranger,
  * and the only address that matters is one already in `users`.
  */
-function normaliseEmail(raw: unknown): string | null {
+export function normaliseEmail(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const email = raw.trim().toLowerCase();
   if (email.length < 3 || email.length > 254 || !email.includes("@") || /\s/.test(email)) return null;
@@ -201,6 +205,52 @@ export async function consumeLink(request: Request, env: Env, token: string): Pr
   const headers = new Headers({ Location: new URL(row.next ?? "/", request.url).toString() });
   if (session) headers.append("Set-Cookie", session);
   return new Response(null, { status: 302, headers });
+}
+
+/**
+ * Send someone their invite (#232, ADR-008 §3) — the first login mail, with a seven-day
+ * link and no code. The row is a normal `login_codes` row so the link is consumed by the
+ * same `consumeLink` as any other, and `consumeLoginCode`'s single-use guard applies.
+ *
+ * 🔴 The code and request halves are filled with random bytes that are hashed and then
+ * dropped. Both columns are NOT NULL and UNIQUE, and a row with no code has to satisfy
+ * them with values nothing can ever match — never a fixed sentinel, which the unique
+ * index would refuse on the second invite and which would be a known value in the
+ * table besides.
+ *
+ * Not throttled: the operator sent it, and change-email sends it again on purpose.
+ */
+export async function sendInvite(
+  env: Env,
+  input: { origin: string; user: UserRow; invitedBy: string | null },
+  now: Date = new Date(),
+): Promise<void> {
+  if (!input.user.email) return;
+  const linkToken = randomHex(32);
+  await createLoginCode(
+    env,
+    {
+      userId: input.user.id,
+      linkHash: await hashToken(linkToken),
+      codeHash: await hashToken(randomHex(32)),
+      requestHash: await hashToken(randomHex(32)),
+      deviceLabel: null,
+      next: null,
+      ttlMs: INVITE_TTL_MS,
+    },
+    now,
+  );
+  await sendMail(
+    env,
+    inviteMail({
+      to: input.user.email,
+      from: input.invitedBy,
+      origin: input.origin,
+      linkToken,
+      days: INVITE_TTL_MS / 86_400_000,
+      environment: env.KNAG_ENV || "local",
+    }),
+  );
 }
 
 /**
