@@ -2025,7 +2025,7 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.8.0...HEAD
 [1.8.0]: https://github.com/danjamk/knag/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/danjamk/knag/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/danjamk/knag/compare/v1.5.3...v1.6.0
