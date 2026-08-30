@@ -80,6 +80,16 @@ default by it. It was never an identity (#152 — it replaced `DOC_ID`, which me
 only row there can be" because `documents` carried `CHECK (id = 1)`), and now it is not a
 default either. **The operator is a `role`, never `id = 1`**, for the same reason.
 
+🔴 **The client had its own copy of that constant and it shipped to production** (#240).
+`app.ts` kept `DEFAULT_PAGE_ID = 1` as "somewhere to fall back to", justified in a comment
+as a protocol constant the server was the authority on. #230 made it false and nothing
+failed: page 1 is the *operator's* page, and the operator is the only person the browser
+suite ever logs in as, so 244 tests agreed with the bug while every other person got a
+404 on the fallback and a blank screen. **A client that needs the default asks for it** —
+`/api/doc` with no `page` — and remembers the id that comes back. There is no number for
+"the default page" anywhere outside `defaultPageFor`, and a test that only runs as the
+operator cannot see a per-owner bug: `browser/member.spec.ts` boots as somebody else.
+
 🔴 **Missing and not-yours are the same `null` from the store and the same 404 from the
 route.** Whole-document write is the only write this product has, so falling back to a
 default would let a caller overwrite a page it never named — and a 404 that differed for
