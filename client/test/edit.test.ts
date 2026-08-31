@@ -134,6 +134,36 @@ describe("checkbox shorthand (spec §7, ADR-003 §4)", () => {
     expect(applyShorthand("a -- b", 4)).toBeNull();
   });
 
+  it("🔴 converts an en dash and an em dash too — autocorrect gets there first (#242)", () => {
+    // Autocorrect is on in the editing surface on purpose (ADR-003 §6), and Apple's
+    // autocorrect rewrites two hyphens into a dash character while you type. So on a Mac
+    // and on iOS the space lands after the hyphens are already gone, and matching only a
+    // literal `--` meant the shortcut did nothing on the two platforms knag is used on.
+    //
+    // 🔴 These three cases are the entire coverage this can have. Substitution happens in
+    // the OS input stack, above WebKit — Playwright types characters straight into the
+    // page, so a browser test types a literal `--` forever and would agree with the bug.
+    expect(applyShorthand("— ", 2)).toEqual({ text: "- [ ] ", caret: 6 });
+    expect(applyShorthand("– ", 2)).toEqual({ text: "- [ ] ", caret: 6 });
+
+    // The caret offset differs — `— ` is two characters where `-- ` is three — which is
+    // why the check comes from the match's own width rather than a constant.
+    expect(applyShorthand("  — buy milk", 4)).toEqual({ text: "  - [ ] buy milk", caret: 8 });
+    expect(applyShorthand("— buy milk", 2)).toEqual({ text: "- [ ] buy milk", caret: 6 });
+
+    // And the same rule about the caret being anywhere else still holds.
+    expect(applyShorthand("— ", 1)).toBeNull();
+    expect(applyShorthand("a — b", 3)).toBeNull();
+  });
+
+  it("🔴 reverts to two hyphens whatever was typed (#242)", () => {
+    // What is undone is the shortcut, not the keystrokes. Someone who typed `--` and had
+    // it turned into `—` by autocorrect and then into a checkbox wanted two hyphens; a
+    // revert that handed back an em dash would give them a character they never chose.
+    expect(revertShorthand("- [ ] ", 6)).toEqual({ text: "-- ", caret: 3 });
+    expect(revertShorthand("  - [ ] milk", 8)).toEqual({ text: "  -- milk", caret: 5 });
+  });
+
   it("🔴 does not fire on a single dash", () => {
     // A single `- ` stays a literal dash. Rendering it as a bullet would be the first
     // place the display differs from the bytes.

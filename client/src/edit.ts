@@ -157,8 +157,26 @@ export function splitLine(line: string, offset: number): LineSplit {
 
 // ── Checkbox shorthand (spec §7) ─────────────────────────────────────────────
 
-/** `--` then a space, at the start of a line, with only indentation before it. */
-const SHORTHAND = /^(\s*)-- /;
+/**
+ * `--` then a space, at the start of a line, with only indentation before it.
+ *
+ * 🔴 **An en dash and an em dash count too, and that is not a nicety** (#242). Autocorrect
+ * is on in the editing surface on purpose (ADR-003 §6, restored in #112), and Apple's
+ * autocorrect includes *smart dashes*, which rewrite two hyphens into `–` or `—` while
+ * you type. So on the two platforms this product is mostly used on, the space arrives
+ * after the hyphens are already gone and a literal `--` never reaches here. The shortcut
+ * was broken from 1.0.0 until this was noticed from use, seven months of releases later.
+ *
+ * The alternative — turning autocorrect off — is the decision #112 went out of its way to
+ * make, and it would cost every substitution a person wants while typing sentences to buy
+ * back one shortcut. Matching what the platform actually produces is cheaper and truer.
+ *
+ * 🔴 **No browser test can cover this and none should be written to.** Text substitution
+ * happens in the OS input stack, above WebKit; Playwright types characters straight into
+ * the page, so the WebKit suite types a literal `--` forever. `client/test/edit.test.ts`
+ * covers all three dashes as *units*, which is where the coverage belongs.
+ */
+const SHORTHAND = /^(\s*)(?:--|–|—) /;
 /** What that becomes, and what a revert has to recognise. */
 const CONVERTED = /^(\s*)- \[ \] /;
 
@@ -186,11 +204,16 @@ export function applyShorthand(text: string, caret: number): Shorthand {
   if (!match) return null;
 
   const indent = match[1] ?? "";
-  // Only at the moment the space lands. Anywhere else and the user is editing text
-  // that merely happens to begin with two dashes.
-  if (caret !== indent.length + 3) return null;
+  // 🔴 The width of what matched, not a constant. `-- ` is three characters and `— ` is
+  // two, so a hardcoded offset silently stops matching the moment autocorrect has been
+  // through the line — which is the whole of #242, one layer down.
+  const typed = match[0].length;
 
-  const rest = text.slice(indent.length + 3);
+  // Only at the moment the space lands. Anywhere else and the user is editing text
+  // that merely happens to begin with a dash.
+  if (caret !== typed) return null;
+
+  const rest = text.slice(typed);
   return { text: `${indent}- [ ] ${rest}`, caret: indent.length + 6 };
 }
 
@@ -201,6 +224,12 @@ export function applyShorthand(text: string, caret: number): Shorthand {
  * takes a character away from you is worse than no shortcut. The caller is
  * responsible for only calling it when the previous keystroke was the conversion;
  * this just performs the inverse.
+ *
+ * 🔴 **It reverts to `-- ` whatever was typed** (#242), including when autocorrect had
+ * already turned it into `— `. What is being undone is the *shortcut*, not the
+ * keystrokes: the person wanted two dashes and a space, which is what they get, and it
+ * is what they would have had without smart dashes in the way. Reverting to an em dash
+ * would hand back a character they never chose and then let autocorrect keep it.
  */
 export function revertShorthand(text: string, caret: number): Shorthand {
   const match = CONVERTED.exec(text);
