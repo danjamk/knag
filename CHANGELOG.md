@@ -13,6 +13,36 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- 🔴 **Production backups were being written to a public repository.** Every prod deploy
+  since 2026-08-18 uploaded a cleartext dump of every page belonging to every person using
+  this deployment as a GitHub Actions **artifact** — and the scheduled backup added the
+  same thing nightly. This repository is public: the artifact list is readable with no
+  authentication at all, and downloading needs only read access to a repo that grants it
+  to everyone. Twenty-eight dumps were live. They were pulled to `backups/` and deleted on
+  2026-08-31, and both workflows now write to the private **`knag-backups` R2 bucket** in
+  the production account instead.
+
+  R2 rather than anywhere else for a reason beyond privacy: it is what lets a laptop hold
+  a copy without holding a dangerous credential. `wrangler d1 export` is a POST that
+  creates a job, so pulling a backup straight from D1 needs **D1: Edit** on production —
+  the token [ADR-002] §1b exists to keep off this machine. Reading an object needs
+  **R2: Read**, which can do nothing but read. So the job writes and `make backup-pull`
+  reads.
+
+### Added
+
+- **`make backup-pull`** (`DAY=YYYY-MM-DD`, default today) — fetch a production backup out
+  of R2 onto this machine with a read-only token. Keys are dated because
+  `wrangler r2 object` has no `list`, so the date is the index.
+- **What actually protects the data**, in `docs/deployment.md`: the three layers and what
+  each one covers. 🔴 Including the number that was wrong everywhere — **D1 Time Travel is
+  7 days on the free plan**, not 30. Thirty is the paid figure; this deployment is on the
+  free tier by design, so everything older than a week depends entirely on the R2 backup.
+
+[ADR-002]: docs/adr/ADR-002-two-accounts-and-migrations.md
+
 ### Added
 
 - **A scheduled production backup** (#233, [ADR-008] §12). `backup-prod.yml` exports the
