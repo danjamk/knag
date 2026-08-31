@@ -23,14 +23,19 @@ import {
  *
  * Not a feature bolted onto a notes app. knag is one plain-text page precisely so that
  * an agent can read all of it and rewrite all of it without an object graph in the way,
- * and this file is where that pays out. It is also, for now, the **only** way to reach
- * history: there is no history browser and the brand system argues there should not be
- * one, so these four tools are the interface, not a convenience over it.
+ * and this file is where that pays out. It is the way an agent reaches history — the app
+ * has had its own history pane since 1.2.0 (#91), which reads the same route these tools
+ * do, so this is no longer the only door but it is still the one an agent uses.
  *
- * Built against `claude-shared/docs/standards/mcp.md`. knag sits at the simple end:
- * bearer rather than OAuth 2.1 (one operator, no third-party client, no consent screen)
- * and no Resources. The rules that apply in full are §2 request isolation, §3 tool
- * design, §4 annotations, §5 server instructions, §6 structured output and §9 security.
+ * Built against the house MCP standard. knag sits at the simple end: no Resources, and
+ * the rules that apply in full are request isolation, tool design, annotations, server
+ * instructions, structured output and security.
+ *
+ * 🔴 **Two credentials reach here, not one** (ADR-005, ADR-008 §6). `KNAG_BEARER_TOKEN`
+ * is the operator's and is compared locally; an OAuth access token carries whoever
+ * consented, which since 1.7.0 can be any member. Both arrive as `Authorization: Bearer`,
+ * and neither is a cookie — `/mcp` refuses the cookie on purpose, which is what keeps it
+ * free of ambient authority (spec §10).
  */
 
 /**
@@ -630,7 +635,7 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
         "",
         "Defaults to the last seven days. `since=2026-08-14&until=2026-08-14` returns that whole day.",
         "",
-        "There is no history screen in the app, so this is how history gets read. An entry with an empty diff and a `cleared_count` above zero is a wipe: it snapshots the page as it stood before, so its own diff is empty by construction and the `cleared` lines are the record.",
+        "An entry with an empty diff and a `cleared_count` above zero is a wipe: it snapshots the page as it stood before, so its own diff is empty by construction and the `cleared` lines are the record.",
       ].join("\n"),
       inputSchema: {
         since: z.string().optional().describe(`Start of the range. ${HISTORY_BOUNDARY}`),

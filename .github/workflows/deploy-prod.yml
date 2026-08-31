@@ -28,7 +28,7 @@ jobs:
   # table in docs/deployment.md.
   #
   # Why it exists: `pnpm check` is a typecheck and a unit suite, and there are three
-  # bugs on record that 263 unit tests could not see — a CSS specificity conflict, a
+  # bugs on record that the unit suite could not see — a CSS specificity conflict, a
   # toolbar that reflowed, and rows clipped to zero height. All three were found by a
   # human on an iPhone. Without this job, the only thing standing between those and
   # production is remembering to look at a different workflow's result first.

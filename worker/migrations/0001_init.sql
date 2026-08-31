@@ -1,7 +1,7 @@
 -- knag — initial schema.
 --
--- Naming follows claude-shared/docs/guides/database-conventions.md:
--- plural tables, `is_` boolean prefix, `_at` timestamps, idx_{table}_{column}.
+-- Naming follows the house conventions: plural tables, `is_` boolean prefix,
+-- `_at` timestamps, idx_{table}_{column}.
 --
 -- All access to these tables goes through worker/src/store.ts. No SQL anywhere
 -- else in the tree — that chokepoint is what keeps a future schema change to one

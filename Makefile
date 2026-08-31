@@ -13,7 +13,7 @@ export
 #
 # 🔴 dev is the default everywhere, and prod is reached only by saying so. The real
 # guard is not this variable — it is that the prod Cloudflare token is not on this
-# machine (ADR-0002). A `make deploy ENV=prod` from here fails closed because the
+# machine (ADR-002). A `make deploy ENV=prod` from here fails closed because the
 # dev token cannot see prod's D1. This default just means a slip is boring.
 ENV ?= dev
 
@@ -130,7 +130,9 @@ typecheck: ## Typecheck without emitting
 
 # 🔴 Migrations are ADDITIVE ONLY. This runs before the deploy, so between the two
 # the CURRENTLY DEPLOYED Worker is running against the new schema. Anything
-# destructive takes two releases — expand, then contract. See ADR-0002 §3.
+# destructive takes THREE releases — expand, stop writing the old thing, then contract.
+# See ADR-002 §3; the middle one carries no migration, which is what makes it look
+# skippable and is exactly why it is not.
 migrate: ## Apply D1 migrations (ENV=local|dev|prod)
 ifeq ($(ENV),local)
 	@$(WRANGLER) d1 migrations apply knag-dev --local
@@ -153,7 +155,7 @@ preflight: ## Assert the active Cloudflare credential matches ENV
 deploy: check build preflight ## Deploy the Worker (bakes version + timestamp into /health)
 	@if [ "$(ENV)" = "prod" ]; then \
 		echo "$(YELLOW)Prod deploys run in CI — the prod token is not on this machine$(RESET)"; \
-		echo "$(YELLOW)by design (ADR-0002). Use: Actions → Deploy to production.$(RESET)"; \
+		echo "$(YELLOW)by design (ADR-002). Use: Actions → Deploy to production.$(RESET)"; \
 		echo ""; \
 		read -p "Deploy prod from here anyway? [y/N] " c && [ "$$c" = "y" ]; \
 	fi

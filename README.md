@@ -34,10 +34,10 @@ That is the whole product, and every part of it serves that:
 *knag* — archaic, a peg driven into a wall to hang things on. It also reads as "nag."
 Both meanings are the product.
 
-It is **not** a note system, not a task manager, not a second brain. There is one page,
-it is always the same page, and there is no search, no tags, no folders, no due dates
-and no notifications. There never will be — [the *Out* list](docs/spec.md#12-scope) is
-load-bearing.
+It is **not** a note system, not a task manager, not a second brain. There are up to nine
+pages, they are always the same nine pages, and there is no search, no tags, no folders,
+no due dates and no notifications. There never will be — [the *Out*
+list](docs/spec.md#12-scope) is load-bearing.
 
 ## What it is
 
@@ -47,7 +47,7 @@ receipt.
 
 | | |
 |---|---|
-| **One page** | Plain text. Bytes in, bytes out — indentation, blank lines, trailing whitespace and CRLF all survive a round trip. |
+| **A handful of pages** | Plain text, up to nine of them. Bytes in, bytes out — indentation, blank lines, trailing whitespace and CRLF all survive a round trip. The cap is in the code, because a number you have to remember is a hope. |
 | **Always live** | Polled sync across every device, with optimistic concurrency. Open it on the phone, keep typing on the laptop. |
 | **Checkboxes** | `- [ ] milk` is a checkbox at any indentation. Checked rows dim and strike **and stay** — that is the nag working. |
 | **Ordinary editing** | Select, copy, cut and delete across lines, the way you can everywhere else. One document rather than one field per line — [ADR-007](docs/adr/ADR-007-one-editing-surface.md). |
@@ -92,9 +92,17 @@ make migrate ENV=local
 make dev
 ```
 
+Then open the printed URL, type **`you@example.com`**, and read the six-digit code out of
+the terminal — locally there is no mail service, so the login mail is printed to the log
+instead. That address is what `pnpm dev` passes as `KNAG_OPERATOR_EMAIL`; any other
+address is a stranger and gets nothing, which is the same thing the deployed app does.
+
 The dev D1 id is committed in `worker/wrangler.jsonc` — a database id is not a secret.
 `make migrate ENV=local` targets a **local** SQLite file, so `make dev` needs no
 Cloudflare credential at all. That is the whole of what this repo can give you.
+
+To use it from a phone on the same wifi, `bash scripts/dev-lan.sh` serves the same local
+database over https with a self-signed certificate, and prints the code the same way.
 
 Reaching a real deployment needs three things it cannot: a Cloudflare account, a
 `CLOUDFLARE_API_TOKEN` in `.env.local`, and the `KNAG_OPERATOR_EMAIL`, `RESEND_API_KEY`
@@ -215,8 +223,9 @@ claude mcp add --transport http --scope user knag https://<your-knag-host>/mcp \
 Use `--scope user` rather than the default, so the connector is available in every
 project. **Never `--scope project`:** that writes the token into `.mcp.json` in the repo.
 
-There is no history screen in the app, so `knag_history` is currently how history gets
-read.
+The app has had its own history pane since 1.2.0, reading the same route; `knag_history`
+is how an *agent* reaches it, and it is the only way to reach further back than the pane
+shows.
 
 ## Docs
 
@@ -236,10 +245,74 @@ read.
 | [ADR-007](docs/adr/ADR-007-one-editing-surface.md) | One editing surface, owned by CodeMirror. Amends ADR-003's mechanism while upholding its intent. |
 | [ADR-008](docs/adr/ADR-008-email-login.md) | Email login for a few invited people — a link and a code — superseding ADR-001's passphrase while keeping its case against Access. |
 | [docs/reviews/](docs/reviews/) | The brief written for outside review of the editing surface, and the review that came back. ADR-007 is the decision; these are the argument. |
+| [docs/design/](docs/design/) | Briefs and rulings. Every visual decision — colour, type, motion, icons — is made in a separate Claude Design session and arrives as a written response; a brief is the question, a response is the answer. [holistic-response.md](docs/design/holistic-response.md) is the most cited. |
 
 The spec refers to a set of house standards — a private, personal collection covering
 Node, Cloudflare, MCP and release practice. Where one of its rules matters here it is
 quoted inline, so nothing in this repo depends on reading it.
+
+## Hosting knag for other people
+
+knag is invite-only and has no sign-up page. One person — the **operator** — deploys it
+and invites everyone else by address, from a `people` pane the app shows to nobody else.
+That is the whole model, and the numbers behind it are small on purpose: **25 people**
+(`MAX_USERS`), nine pages each, on Cloudflare's free tier. The arithmetic is in
+[spec §14.4](docs/spec.md): a device polling all day is ~4k requests, and the free tier is
+100k a day, so the cap is about leaving room rather than about capacity. Moving it is one
+constant and $5 a month.
+
+**What a fork has to replace.** Everything in `worker/wrangler.jsonc` names *this*
+deployment's resources. None of it is a secret and all of it is wrong for you:
+
+| In `worker/wrangler.jsonc` | Replace with |
+|---|---|
+| `d1_databases[].database_id` — **twice**, top level and `env.prod` | your own D1 databases (`wrangler d1 create`) |
+| `kv_namespaces[].id` — **twice** | your own KV namespaces (`wrangler kv namespace create`). This one is easy to miss and fails on the *first OAuth handshake in production*, long after the deploy looked fine |
+| `name` — twice | your Worker names |
+| `env.prod.routes` | your domain, or delete it and use a `*.workers.dev` hostname |
+| `KNAG_MAIL_FROM` — twice | an address on a domain **you** have verified in Resend |
+| `KNAG_TZ` — twice | your zone. It sets the day boundary for history and the wipe, and it is **one value for the whole deployment** — everyone you invite gets your midnight |
+
+**Three secrets**, per environment, via `wrangler secret put`:
+`KNAG_OPERATOR_EMAIL` (yours — the first login that names it claims the operator row),
+`RESEND_API_KEY`, and `KNAG_BEARER_TOKEN` (the agent credential; make it different in each
+environment).
+
+**Mail** goes through [Resend](https://resend.com) — free tier, 3,000 a month, which at
+twenty-five people logging in once a device is two orders of magnitude of headroom. Verify
+a sending domain (three DNS records), set the key, done. Without it nothing sends and the
+Worker logs a configuration error; there is no other way in, because the login link exists
+only in the mail.
+
+**The two-account split is a choice, not a requirement.** This deployment keeps dev and
+prod on separate Cloudflare accounts so a stray credential cannot reach production
+([ADR-002](docs/adr/ADR-002-two-accounts-and-migrations.md)). One account works fine —
+use the top-level config and ignore `env.prod`. Full provisioning, including the exact
+API token permissions, is in [docs/deployment.md](docs/deployment.md).
+
+## What the operator can see
+
+If someone invites you to their knag, this is the honest answer.
+
+**The admin view shows counts and dates, never content.** Per person: the address, when
+they joined, when a device was last seen, how many devices and pages they have, and — over
+thirty days — how many editing sessions, how many of those were their agent, how many
+wipes, and how many items they finished. **No page text, ever**, and that is enforced in
+the query rather than in the interface ([ADR-008](docs/adr/ADR-008-email-login.md) §11).
+The view exists to answer one question: *is this still inside the free tier?*
+
+**But the operator holds the database.** They can read any page directly through
+Cloudflare, and the nightly backup is a plain dump of everyone's pages. No design decision
+changes that, and no claim in this repo should be read as if it did. **Host with people
+you would tell your shopping list to, and do not put anything in knag you would not.**
+
+**What the operator can do:** invite, change your address — the only recovery lever there
+is, since losing the address is the one thing you cannot fix yourself — revoke you, which
+keeps your pages and ends every session, or delete you, which removes every row you own.
+
+**What nobody can do:** read your page in the app. Pages have exactly one owner and there
+is no sharing — not withheld, not built ([ADR-008](docs/adr/ADR-008-email-login.md) §7).
+Two people who want one list share an account.
 
 ## Status
 
