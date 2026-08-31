@@ -13,7 +13,29 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.9.2] — 2026-08-31
+
+The checkbox shortcut works on the devices it is used on, and the backups are not on a
+public repository any more.
+
 ### Fixed
+
+- **`-- ` did not become a checkbox on a Mac or an iPhone, and had not since 1.0.0**
+  (#242). Autocorrect is on in the editing surface deliberately — [ADR-003] §6, restored
+  in #112 when CodeMirror arrived — and Apple's autocorrect includes *smart dashes*, which
+  rewrite two hyphens into `–` or `—` while you type. The space then landed after the
+  hyphens were already gone, and the shorthand matched a literal `--` only. It now accepts
+  what the platform actually produces, and takes the caret offset from the match's own
+  width rather than a constant, because `— ` is two characters where `-- ` is three.
+  A `Backspace` still reverts to two hyphens whatever was typed: what is being undone is
+  the shortcut, not the keystrokes.
+
+  🔴 **No browser test can cover this and none was written.** Substitution happens in the
+  OS input stack, above WebKit — Playwright types characters straight into the page, so a
+  browser test types a literal `--` forever and would agree with the bug. The unit tests
+  cover all three dashes, which is where that coverage belongs. Found from use, seven
+  months of releases after it broke.
+
 
 - 🔴 **Production backups were being written to a public repository.** Every prod deploy
   since 2026-08-18 uploaded a cleartext dump of every page belonging to every person using
@@ -40,19 +62,13 @@ summarises the phase rather than pretending it was written as it happened.
   each one covers. 🔴 Including the number that was wrong everywhere — **D1 Time Travel is
   7 days on the free plan**, not 30. Thirty is the paid figure; this deployment is on the
   free tier by design, so everything older than a week depends entirely on the R2 backup.
-
-[ADR-002]: docs/adr/ADR-002-two-accounts-and-migrations.md
-
-### Added
-
 - **A scheduled production backup** (#233, [ADR-008] §12). `backup-prod.yml` exports the
-  prod D1 every morning at 09:00 UTC and keeps each dump as a dated artifact for 30 days.
+  prod D1 every morning at 09:00 UTC and writes it to the private `knag-backups` R2 bucket.
   Until now a prod backup happened only when a prod deploy did — manual, and weeks apart —
   which was defensible while the only document at risk was the operator's own. The job
   fails on an empty export rather than going green with a file that has a schema and no
   rows, and `docs/deployment.md` records both the reviewer trap and the 60-day schedule
-  expiry, neither of which announces itself. No version bump: nothing that ships to a
-  browser changed.
+  expiry, neither of which announces itself.
 - **The two README sections a hosted person needs** (#233): *Hosting knag for other
   people* — the seven things a fork must replace in `wrangler.jsonc`, including the KV
   namespace whose absence fails the first OAuth handshake in production and which no
@@ -60,7 +76,7 @@ summarises the phase rather than pretending it was written as it happened.
   view's "no page content, ever" does not: the operator holds the database, and every
   backup is a plain dump of everyone's pages.
 
-### Fixed
+### Fixed, in the documentation
 
 - **The Quick start did not reach a logged-in app.** `pnpm dev` passed no
   `KNAG_OPERATOR_EMAIL`, so a fresh clone got a running Worker and a login screen it could
@@ -82,6 +98,7 @@ summarises the phase rather than pretending it was written as it happened.
   screen in the app". There has been one since 1.2.0.
 
 [ADR-002]: docs/adr/ADR-002-two-accounts-and-migrations.md
+[ADR-003]: docs/adr/ADR-003-single-mode-editor.md
 
 ## [1.9.1] — 2026-08-30
 
@@ -2155,7 +2172,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.2...HEAD
+[1.9.2]: https://github.com/danjamk/knag/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/danjamk/knag/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/danjamk/knag/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/danjamk/knag/compare/v1.7.0...v1.8.0
