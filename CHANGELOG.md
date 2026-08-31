@@ -15,7 +15,8 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [1.9.2] — 2026-08-31
 
-The checkbox shortcut works on the devices it is used on. Production is backed up nightly.
+The checkbox shortcut works on the devices it is used on, and the backups are not on a
+public repository any more.
 
 ### Fixed
 
@@ -35,16 +36,39 @@ The checkbox shortcut works on the devices it is used on. Production is backed u
   cover all three dashes, which is where that coverage belongs. Found from use, seven
   months of releases after it broke.
 
+
+- 🔴 **Production backups were being written to a public repository.** Every prod deploy
+  since 2026-08-18 uploaded a cleartext dump of every page belonging to every person using
+  this deployment as a GitHub Actions **artifact** — and the scheduled backup added the
+  same thing nightly. This repository is public: the artifact list is readable with no
+  authentication at all, and downloading needs only read access to a repo that grants it
+  to everyone. Twenty-eight dumps were live. They were pulled to `backups/` and deleted on
+  2026-08-31, and both workflows now write to the private **`knag-backups` R2 bucket** in
+  the production account instead.
+
+  R2 rather than anywhere else for a reason beyond privacy: it is what lets a laptop hold
+  a copy without holding a dangerous credential. `wrangler d1 export` is a POST that
+  creates a job, so pulling a backup straight from D1 needs **D1: Edit** on production —
+  the token [ADR-002] §1b exists to keep off this machine. Reading an object needs
+  **R2: Read**, which can do nothing but read. So the job writes and `make backup-pull`
+  reads.
+
 ### Added
 
+- **`make backup-pull`** (`DAY=YYYY-MM-DD`, default today) — fetch a production backup out
+  of R2 onto this machine with a read-only token. Keys are dated because
+  `wrangler r2 object` has no `list`, so the date is the index.
+- **What actually protects the data**, in `docs/deployment.md`: the three layers and what
+  each one covers. 🔴 Including the number that was wrong everywhere — **D1 Time Travel is
+  7 days on the free plan**, not 30. Thirty is the paid figure; this deployment is on the
+  free tier by design, so everything older than a week depends entirely on the R2 backup.
 - **A scheduled production backup** (#233, [ADR-008] §12). `backup-prod.yml` exports the
-  prod D1 every morning at 09:00 UTC and keeps each dump as a dated artifact for 30 days.
+  prod D1 every morning at 09:00 UTC and writes it to the private `knag-backups` R2 bucket.
   Until now a prod backup happened only when a prod deploy did — manual, and weeks apart —
   which was defensible while the only document at risk was the operator's own. The job
   fails on an empty export rather than going green with a file that has a schema and no
   rows, and `docs/deployment.md` records both the reviewer trap and the 60-day schedule
-  expiry, neither of which announces itself. No version bump: nothing that ships to a
-  browser changed.
+  expiry, neither of which announces itself.
 - **The two README sections a hosted person needs** (#233): *Hosting knag for other
   people* — the seven things a fork must replace in `wrangler.jsonc`, including the KV
   namespace whose absence fails the first OAuth handshake in production and which no
@@ -52,7 +76,7 @@ The checkbox shortcut works on the devices it is used on. Production is backed u
   view's "no page content, ever" does not: the operator holds the database, and every
   backup is a plain dump of everyone's pages.
 
-### Fixed
+### Fixed, in the documentation
 
 - **The Quick start did not reach a logged-in app.** `pnpm dev` passed no
   `KNAG_OPERATOR_EMAIL`, so a fresh clone got a running Worker and a login screen it could

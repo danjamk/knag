@@ -147,6 +147,13 @@ endif
 backup: preflight ## Dump D1 to a timestamped file in backups/ (ENV=dev|prod)
 	@bash scripts/backup.sh "$(ENV)" "$(D1_NAME)"
 
+# 🔴 No `preflight` here, and that is the point rather than an omission. Every other
+# target asserts that the *active* credential matches ENV; this one deliberately uses a
+# different credential — a read-only R2 token — precisely so that reaching production
+# from a laptop does not require a token that can write to it.
+backup-pull: ## Fetch a prod backup out of R2 into backups/ (DAY=YYYY-MM-DD, default today)
+	@bash scripts/backup-pull.sh "$(DAY)"
+
 preflight: ## Assert the active Cloudflare credential matches ENV
 	@bash scripts/preflight.sh "$(ENV)" "$(CF_ACCOUNT)"
 

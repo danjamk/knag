@@ -143,16 +143,22 @@ jobs:
           # account id names a resource, it does not grant anything.
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
-      # 🔴 This one is not a warning waiting to happen — it is the restore point for a
-      # prod database, and it runs on every deploy. A node20 action that stops being
-      # runnable takes the backup step with it, and the failure lands *between* the
-      # backup and the migration, which is the worst place in this file to lose a step.
-      - uses: actions/upload-artifact@v7
-        with:
-          name: prod-d1-backup
-          path: backups/knag-prod.sql
-          retention-days: 30
-          if-no-files-found: warn
+      # 🔴 **To R2, never to a GitHub artifact** — same reason as `backup-prod.yml`, and
+      # this is where the exposure came from: every prod deploy since 2026-08-18 uploaded
+      # a cleartext dump of everyone's pages to a public repository's artifacts, where the
+      # listing is readable with no authentication and the download needs only read access
+      # to a repo that grants it to everyone.
+      #
+      # This step is the restore point for the migration in the next step, so it fails the
+      # job rather than warning: no backup, no deploy.
+      - name: Put the pre-deploy backup in R2
+        run: |
+          pnpm exec wrangler r2 object put \
+            "knag-backups/prod/pre-deploy/knag-prod-$(date -u +%Y-%m-%dT%H-%M-%SZ)-${GITHUB_SHA::7}.sql" \
+            --file backups/knag-prod.sql --remote --content-type "application/sql"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
       # 🔴 Migrations run BEFORE the deploy, so between this step and the next the
       # currently-deployed Worker is running against the new schema. That is why

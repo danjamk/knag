@@ -95,7 +95,9 @@ Worth stating plainly, since minting it is a real expansion of blast radius over
 token exists anywhere":
 
 - Overwrite or delete the dev Worker.
-- Read, write, or delete the dev D1 database. D1 Time Travel reaches back 30 days.
+- Read, write, or delete the dev D1 database. D1 Time Travel reaches back **7 days** on
+  the free plan — see *What actually protects the data* below; 30 is the paid number and
+  this deployment is not on it.
 - Overwrite the dev Worker's secrets (`KNAG_OPERATOR_EMAIL`, `RESEND_API_KEY`,
   `KNAG_BEARER_TOKEN`). It **cannot
   read** them — Cloudflare never returns a secret value.
@@ -187,6 +189,12 @@ deploy itself, which is a zone operation:
 | Account Settings | Read | Account | ✅ | ✅ |
 | **Workers Routes** | **Edit** | **Zone** | — | ✅ |
 | **Zone** | **Read** | **Zone** | — | ✅ |
+| **Workers R2 Storage** | **Edit** | Account | — | ✅ |
+
+`Workers R2 Storage: Edit` is what writes the backup to the `knag-backups` bucket, in both
+`backup-prod.yml` and `deploy-prod.yml`. The deploy's backup runs *before* its migration,
+so a token without it does not merely skip a backup — it stops the deploy, which is the
+correct order of events.
 
 **Zone Resources: none** is correct for dev, which is a `*.workers.dev` hostname with no
 zone. For prod it is wrong, and wrong in the worst place in the sequence: `migrate` runs
@@ -275,12 +283,75 @@ decision rather than drift.
 | `concurrency` | `cancel-in-progress: false` | `cancel-in-progress: false` | **Not** a difference, and must not become one. A half-applied migration is worse than a queued deploy |
 | **Scheduled backup** (`backup-prod.yml`) | none | daily, 09:00 UTC | The one workflow with no dev counterpart (#233). Dev is redeployed — and so backed up — on every merge to `main`, and holds test content anyway. Prod deploys are manual and weeks apart, and since [ADR-008](adr/ADR-008-email-login.md) §12 the prod D1 holds other people's pages: a backup that only happens when someone deploys is not a backup policy |
 
+## What actually protects the data
+
+Three layers, and they cover different things. Knowing which is which is the difference
+between a five-second recovery and a panic.
+
+| | Covers | Window | Costs |
+|---|---|---|---|
+| **D1 Time Travel** | a bad migration, an unqualified `DELETE`, a wipe that should not have happened | **7 days** (free plan; 30 on paid) | nothing — always on, no configuration |
+| **The nightly R2 backup** | everything older than the Time Travel window, and a readable copy | as long as the bucket keeps it | pennies |
+| **`make backup-pull`** | losing the Cloudflare account itself | whatever you have pulled | one read-only token |
+
+🔴 **Time Travel is the first thing to reach for and it is not a file.** It restores the
+database in place, to any *minute*, with no snapshot to choose:
+
+```bash
+pnpm exec wrangler d1 time-travel restore knag --env prod --timestamp <unix>
+```
+
+It is destructive — it overwrites in place — and it cannot recover something that was
+already wrong before the point you restore to. **Seven days is the free-plan window**, and
+this deployment is on the free plan by design (spec §14.4). That is the single most
+important number on this page, because everything older than a week depends entirely on
+the layer below.
+
 ### The scheduled prod backup
 
-`backup-prod.yml` exports the prod D1 every morning at 09:00 UTC and keeps each dump as a
-dated artifact for 30 days. It is **in addition to** the export inside `deploy-prod.yml`,
-which is the restore point for the deploy about to happen; this one is the restore point
-for an ordinary day. Both stay.
+`backup-prod.yml` exports the prod D1 every morning at 09:00 UTC and writes it to the
+**`knag-backups` R2 bucket** in the production account, under
+`prod/knag-prod-YYYY-MM-DD.sql`. It is **in addition to** the export inside
+`deploy-prod.yml`, which writes to `prod/pre-deploy/` and is the restore point for the
+deploy about to happen; this one is the restore point for an ordinary day. Both stay.
+
+🔴 **Never a GitHub artifact, and this is not a preference.** The first version of this
+job uploaded the dump as a workflow artifact, and so had `deploy-prod.yml` since
+2026-08-18. This repository is **public**: the artifact list is readable with no
+authentication at all, and downloading needs only read access to a repo that grants it to
+everyone. Twenty-eight cleartext dumps of every page belonging to every person using this
+deployment were sitting in the open before anyone asked where the backups went. They were
+pulled to `backups/` and deleted on 2026-08-31.
+
+R2 is the right destination for a reason beyond privacy: **it is what lets a laptop hold a
+copy without holding a dangerous credential.** `wrangler d1 export` is a POST that creates
+a job, so pulling a backup straight out of D1 needs **D1: Edit** on production — the exact
+token [ADR-002](adr/ADR-002-two-accounts-and-migrations.md) §1b keeps off this machine.
+Reading an object out of a bucket needs **Workers R2 Storage: Read**, which can do nothing
+but read what somebody else wrote. So the job writes, and `make backup-pull` reads:
+
+```bash
+make backup-pull                 # today's
+make backup-pull DAY=2026-08-29  # any day
+```
+
+The keys are dated rather than listed, because `wrangler r2 object` has `get`, `put` and
+`delete` and no `list` — the date is the index.
+
+🔴 **Two one-time steps, and both block a run rather than degrading it.**
+
+1. **Add `Workers R2 Storage: Edit` to the production API token.** Without it the nightly
+   job fails at the last step and — more urgently — `deploy-prod.yml` fails at its
+   *backup* step, which is before the migration and therefore blocks every prod deploy.
+   That ordering is deliberate: no backup, no deploy.
+2. **Set a lifecycle rule on `knag-backups`** so objects expire. Thirty days matches what
+   the artifacts did, and it is what makes ADR-008 §12's promise honest — *delete removes
+   every row they own* is not true if a backup keeps them forever:
+
+       wrangler r2 bucket lifecycle add knag-backups expire-30d prod/ --expire-days 30
+
+   Run it with a token that can edit the bucket, or set it in the dashboard under
+   R2 → knag-backups → Settings → Object lifecycle rules.
 
 It runs on `workflow_dispatch` too — do that before anything destructive, rather than
 trusting that last night's run happened.
