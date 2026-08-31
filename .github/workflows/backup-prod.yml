@@ -88,18 +88,29 @@ jobs:
             exit 1
           fi
 
-      # Dated, so a listing reads as a history rather than as one name overwritten. 30
-      # days matches the deploy backup's retention and is the window in which anyone
-      # notices something is wrong with a page.
-      - name: Name the artifact by date
+      # 🔴 **To R2, never to a GitHub artifact.** This dump is every page of every person
+      # using this deployment, in cleartext. Artifacts on a **public repository** are
+      # reachable by anyone with read access to the repo — which for a public repo is
+      # everyone — and the artifact list is readable with no authentication at all. The
+      # first version of this file uploaded one nightly; 27 of them were sitting in the
+      # open before anyone asked where the backups went.
+      #
+      # R2 is in the prod account, private by default, and holds the same data D1 already
+      # holds — so it adds no trust boundary that was not already crossed. It also keeps
+      # the dangerous credential where it already lives: the token stays in Actions, and a
+      # laptop that wants a copy uses a **read-only** R2 token (`make backup-pull`)
+      # rather than the D1:Edit one that `d1 export` requires.
+      #
+      # Dated key, so the bucket reads as a history rather than one object overwritten.
+      - name: Name the object by date
         id: stamp
         run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: prod-d1-backup-${{ steps.stamp.outputs.day }}
-          path: backups/knag-prod.sql
-          retention-days: 30
-          # 🔴 `error`, not `warn`. This job has exactly one output; producing none of it
-          # and going green is the failure mode the whole file exists to prevent.
-          if-no-files-found: error
+      - name: Put it in R2
+        run: |
+          pnpm exec wrangler r2 object put \
+            "knag-backups/prod/knag-prod-${{ steps.stamp.outputs.day }}.sql" \
+            --file backups/knag-prod.sql --remote --content-type "application/sql"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
