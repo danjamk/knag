@@ -13,6 +13,46 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **A scheduled production backup** (#233, [ADR-008] §12). `backup-prod.yml` exports the
+  prod D1 every morning at 09:00 UTC and keeps each dump as a dated artifact for 30 days.
+  Until now a prod backup happened only when a prod deploy did — manual, and weeks apart —
+  which was defensible while the only document at risk was the operator's own. The job
+  fails on an empty export rather than going green with a file that has a schema and no
+  rows, and `docs/deployment.md` records both the reviewer trap and the 60-day schedule
+  expiry, neither of which announces itself. No version bump: nothing that ships to a
+  browser changed.
+- **The two README sections a hosted person needs** (#233): *Hosting knag for other
+  people* — the seven things a fork must replace in `wrangler.jsonc`, including the KV
+  namespace whose absence fails the first OAuth handshake in production and which no
+  document mentioned — and *What the operator can see*, which says the thing the admin
+  view's "no page content, ever" does not: the operator holds the database, and every
+  backup is a plain dump of everyone's pages.
+
+### Fixed
+
+- **The Quick start did not reach a logged-in app.** `pnpm dev` passed no
+  `KNAG_OPERATOR_EMAIL`, so a fresh clone got a running Worker and a login screen it could
+  not pass — while `dev-lan.sh` and the browser suite both set it. It is set now, and the
+  README says to read the code out of the terminal.
+- **Documentation that had become wrong**, found by an audit of the repo as a public
+  project: the README described one page and no history pane (nine pages since 1.1.0, the
+  pane since 1.2.0); `docs/deployment.md` omitted the two **zone**-scoped permissions the
+  prod token needs, which fails a deploy *after* the migrations have applied, and still
+  described prod as unprovisioned; the `Makefile` said destructive changes take two
+  releases when [ADR-002] §3 has a section titled *"It is three releases, not two"*;
+  `ADR-005` gated consent on "the passphrase session" and called the endpoint
+  `/authorize`, which returns the PWA shell. Corrected in place and dated, per the
+  amendment convention.
+- **Two references to a private sibling repository** survived the 2026-08-16 sweep, which
+  covered `docs/` and not `worker/`: `migrations/0001_init.sql` and `src/mcp.ts`. Both are
+  dead links in a public repo and a hint about what is next door.
+- The `knag_history` tool description shipped to Claude claimed "there is no history
+  screen in the app". There has been one since 1.2.0.
+
+[ADR-002]: docs/adr/ADR-002-two-accounts-and-migrations.md
+
 ## [1.9.1] — 2026-08-30
 
 Anyone who is not the operator can now open the app.

@@ -55,7 +55,7 @@ jobs:
   # ~50 seconds, so making every typecheck pay for it would make the fast gate slow —
   # and a slow gate is one people stop running.
   #
-  # It is not optional either. Three bugs have shipped that 263 unit tests could not
+  # It is not optional either. Three bugs have shipped that the unit suite could not
   # see: a CSS specificity conflict, a toolbar that reflowed, and rows clipped to
   # zero height. All three were found by a human on an iPhone. This job is what
   # stops the next one costing that.

@@ -1,0 +1,105 @@
+name: Back up production
+
+# A prod backup that does not wait for a deploy (#233, ADR-008 §12).
+#
+# 🔴 The obligation changed when other people arrived. `make backup` runs when a human
+# runs it, and the backup inside `deploy-prod.yml` runs when a human deploys — both of
+# which are weeks apart and neither of which is a schedule. That was defensible while the
+# only document at risk was the operator's own. Since ADR-008 the prod D1 holds other
+# people's pages, and spec §17 said what that means before it happened: holding other
+# people's data turns `make backup` from a habit into an obligation.
+#
+# What this is NOT: a substitute for the backup in `deploy-prod.yml`. That one is the
+# restore point for the deploy about to happen and runs immediately before the migration.
+# This one is the restore point for an ordinary Tuesday. Both stay.
+#
+# 🔴 This file is the one workflow with no counterpart in dev, and that is deliberate
+# rather than drift — dev holds test content and is redeployed (and so backed up) on every
+# merge to `main`. It is listed as a divergence in docs/deployment.md; an unlisted
+# difference between the two pipelines is indistinguishable from a mistake.
+
+on:
+  schedule:
+    # 09:00 UTC daily — early morning in America/Chicago, which is `KNAG_TZ` and so the
+    # zone the document's own day boundaries use (spec §14.3). A backup taken before
+    # anyone has typed is a backup of a whole finished day.
+    #
+    # 🔴 GitHub disables scheduled workflows in a repository with no pushes for 60 days,
+    # silently, and a quiet month is exactly when nobody is watching. Nothing in this repo
+    # can prevent that — it is a property of the host — so it is written down instead, in
+    # docs/deployment.md, next to the one command that answers "when did this last run".
+    - cron: "0 9 * * *"
+  # Runs on request too: before anything destructive, and to prove the credential still
+  # works without waiting a day to find out.
+  workflow_dispatch:
+
+# Never two at once. A queued backup is fine; two exports racing the same database for
+# an artifact of the same name is not.
+concurrency:
+  group: backup-prod
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    # The prod credential lives on this environment and nowhere else — not in a clone, not
+    # on the laptop (ADR-002 §1b). This job needs it for exactly one call.
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Byte-for-byte the export `deploy-prod.yml` runs before it migrates. Same command,
+      # same flags, same binding — if one of them ever needs changing, they both do.
+      - name: Export prod D1
+        run: |
+          mkdir -p backups
+          pnpm exec wrangler --config worker/wrangler.jsonc --env prod \
+            d1 export knag --remote --output backups/knag-prod.sql
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Set explicitly so wrangler skips the GET /accounts lookup, which a token
+          # scoped tightly to one account can fail. A variable, not a secret: an account
+          # id names a resource, it does not grant anything.
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      # 🔴 Fail loudly on an empty export. `d1 export` exits 0 having written a file with
+      # a schema and no rows if the query returns nothing, and a green run holding an
+      # empty backup is worse than a red one: it is the same signal as a good backup,
+      # every day, until the day someone needs it.
+      - name: Assert the export is not empty
+        run: |
+          bytes=$(wc -c < backups/knag-prod.sql | tr -d ' ')
+          echo "backup is ${bytes} bytes"
+          if [ "$bytes" -lt 1024 ]; then
+            echo "::error::The prod export is ${bytes} bytes — that is not a database."
+            exit 1
+          fi
+          if ! grep -q "INSERT INTO" backups/knag-prod.sql; then
+            echo "::error::The prod export contains no rows."
+            exit 1
+          fi
+
+      # Dated, so a listing reads as a history rather than as one name overwritten. 30
+      # days matches the deploy backup's retention and is the window in which anyone
+      # notices something is wrong with a page.
+      - name: Name the artifact by date
+        id: stamp
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prod-d1-backup-${{ steps.stamp.outputs.day }}
+          path: backups/knag-prod.sql
+          retention-days: 30
+          # 🔴 `error`, not `warn`. This job has exactly one output; producing none of it
+          # and going green is the failure mode the whole file exists to prevent.
+          if-no-files-found: error

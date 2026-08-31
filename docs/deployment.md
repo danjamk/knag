@@ -54,9 +54,10 @@ make verify ENV=dev
 ```
 
 In CI it is the step list in `deploy-dev.yml` and `deploy-prod.yml`, which mirror each
-other deliberately — with one job in front of prod's, the browser suite, which is the
-single listed divergence between them. **A change to one belongs in both unless it is a deliberate
-divergence** — the divergences are listed at the end of this document.
+other deliberately — the most visible difference being the browser suite that gates prod
+and not dev. **A change to one belongs in both unless it is a deliberate divergence** —
+every divergence is enumerated at the end of this document, and an unlisted difference is
+indistinguishable from drift.
 
 ## Provisioning the dev pipeline
 
@@ -155,22 +156,42 @@ the same reasoning as `ci.yml`, and takes no inputs: it deploys whatever `main` 
 
 ## Provisioning the prod pipeline
 
-**Not done.** As of this writing the `production` environment does not exist, there is no
-prod token, and `deploy-prod.yml` has never executed. The dev pipeline exists partly so
-that when prod is provisioned, the sequence has already run somewhere a few dozen times.
+**Done — prod has been live since 2026-08-19** and `deploy-prod.yml` has executed many
+times since. This section is kept as the recipe, because it is what a fork needs and what
+a rebuild would need; the checkboxes below describe steps that are complete here.
 
 What it needs, mirroring the above:
 
-- [ ] A prod-scoped Cloudflare API token — same three permissions, **prod account only**
-- [ ] The `production` GitHub Environment, with a required reviewer (unlike dev)
-- [ ] `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable on it
-- [ ] The prod D1 database and OAuth KV namespace created, and their ids pasted into the
-      `env.prod` block of `worker/wrangler.jsonc` — both are still
-      `REPLACE_WITH_PROD_…` placeholders
-- [ ] `KNAG_OPERATOR_EMAIL`, `RESEND_API_KEY` and `KNAG_BEARER_TOKEN` set as prod Worker
+- [x] A prod-scoped Cloudflare API token — **prod account only**, and see the permissions
+      note below, which is where this differs from dev
+- [x] The `production` GitHub Environment. 🔴 **No required reviewer** — see the warning
+      under the scheduled backup: one would queue every nightly backup forever
+- [x] `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable on it
+- [x] The prod D1 database and OAuth KV namespace created, and their ids pasted into the
+      `env.prod` block of `worker/wrangler.jsonc`
+- [x] `KNAG_OPERATOR_EMAIL`, `RESEND_API_KEY` and `KNAG_BEARER_TOKEN` set as prod Worker
       secrets — the bearer **different** from dev's; the Resend key may be shared
-- [ ] DNS for `knag.danjamkuhn.com`, then uncomment the `routes` entry in `env.prod`
-- [ ] A WAF rate-limiting rule on `POST /api/login` in the zone
+- [x] DNS for the custom domain — `custom_domain: true` in the `routes` entry means
+      wrangler creates the domain and its DNS record during the deploy, so there is no
+      separate DNS step
+- [x] A WAF rate-limiting rule on `POST /api/login` in the zone
+
+🔴 **The prod token needs two permissions the dev token does not, and copying dev's
+recipe fails after the migrations have already run.** The custom domain is created by the
+deploy itself, which is a zone operation:
+
+| Permission | Level | Scope | dev | prod |
+|---|---|---|---|---|
+| Workers Scripts | Edit | Account | ✅ | ✅ |
+| D1 | Edit | Account | ✅ | ✅ |
+| Account Settings | Read | Account | ✅ | ✅ |
+| **Workers Routes** | **Edit** | **Zone** | — | ✅ |
+| **Zone** | **Read** | **Zone** | — | ✅ |
+
+**Zone Resources: none** is correct for dev, which is a `*.workers.dev` hostname with no
+zone. For prod it is wrong, and wrong in the worst place in the sequence: `migrate` runs
+before `deploy`, so a token that cannot create the route fails *after* the schema has
+already changed.
 
 🔴 **The prod token never lands on this machine.** If you find yourself pasting it into
 `.env.local` to test something, that is the moment the guarantee stops holding. Deploy
@@ -180,10 +201,12 @@ from Actions instead.
 
 Once, before the first deploy of 1.8.0 to an environment:
 
-1. In Resend, add and verify the sending domain (`danjamkuhn.com` — three DNS records
-   on the Cloudflare zone). One Resend account serves both environments; the sender in
-   `worker/wrangler.jsonc`'s `KNAG_MAIL_FROM` is the same in both and dev's subjects
-   carry `[dev]`.
+1. In Resend, add and verify the sending domain (three DNS records on the Cloudflare
+   zone). One Resend account serves both environments, but **the sender differs and is
+   declared per environment** in `worker/wrangler.jsonc`'s `KNAG_MAIL_FROM`: prod sends
+   from the verified domain, dev from Resend's `onboarding@resend.dev`, which delivers
+   **only to the Resend account's own address** — enough to test the flow, useless for
+   inviting anyone. Dev's subjects also carry `[dev]`.
 2. `wrangler secret put RESEND_API_KEY` and `wrangler secret put KNAG_OPERATOR_EMAIL`
    (`--env prod` for prod, from Actions' point of view: the prod token is not on this
    machine, so set prod's from the Cloudflare dashboard).
@@ -241,8 +264,8 @@ decision rather than drift.
 
 | | dev | prod | Why |
 |---|---|---|---|
-| **Browser suite gates the deploy** | no | **yes** | `pnpm check` is a typecheck and a unit suite. Three bugs are on record that 263 unit tests could not see, all three found by a human on an iPhone. Dev is the rehearsal and self-corrects on the next merge; a bad prod deploy is what this pipeline exists to prevent, and prod is manual so you can wait ten minutes |
-| Browser suite runs **serial** in the prod gate, **sharded** in `ci.yml` | — | serial | `ci.yml` runs on every push and shards four ways to land near three minutes (#202). The prod gate runs a few times a week and is the last thing before the only copy of the document: one runner, every file, in order, is the strongest form of the check |
+| **Browser suite gates the deploy** | no | **yes** | `pnpm check` is a typecheck and a unit suite. Three bugs are on record that the unit suite could not see, all three found by a human on an iPhone. Dev is the rehearsal and self-corrects on the next merge; a bad prod deploy is what this pipeline exists to prevent, and prod is manual so you can wait ten minutes |
+| Browser suite runs **serial** in the prod gate, **sharded** in `ci.yml` | — | serial | `ci.yml` runs on every pull request and shards four ways to land near three minutes (#202). The prod gate runs a few times a week and is the last thing before the only copy of the document: one runner, every file, in order, is the strongest form of the check |
 | Trigger | `push` to `main` | `workflow_dispatch` | Dev tracking `main` is the point. A release names code; deploying prod is a decision to adopt it |
 | Required reviewer | none | yes (optional but intended) | Dev is not a decision |
 | `skip_migrations` input | **absent** | present | Dev is where the migration path gets exercised. An input that lets you skip it defeats the rehearsal |
@@ -250,3 +273,36 @@ decision rather than drift.
 | Host | `vars.DEV_HOST` | hard coded | The dev hostname stays out of tracked files (see step 3) |
 | `--env` flag | none | `--env prod` | The top level of `wrangler.jsonc` **is** dev, so every command that forgets a flag does the safe thing |
 | `concurrency` | `cancel-in-progress: false` | `cancel-in-progress: false` | **Not** a difference, and must not become one. A half-applied migration is worse than a queued deploy |
+| **Scheduled backup** (`backup-prod.yml`) | none | daily, 09:00 UTC | The one workflow with no dev counterpart (#233). Dev is redeployed — and so backed up — on every merge to `main`, and holds test content anyway. Prod deploys are manual and weeks apart, and since [ADR-008](adr/ADR-008-email-login.md) §12 the prod D1 holds other people's pages: a backup that only happens when someone deploys is not a backup policy |
+
+### The scheduled prod backup
+
+`backup-prod.yml` exports the prod D1 every morning at 09:00 UTC and keeps each dump as a
+dated artifact for 30 days. It is **in addition to** the export inside `deploy-prod.yml`,
+which is the restore point for the deploy about to happen; this one is the restore point
+for an ordinary day. Both stay.
+
+It runs on `workflow_dispatch` too — do that before anything destructive, rather than
+trusting that last night's run happened.
+
+Two failure modes it is built against:
+
+- **An empty export that goes green.** `wrangler d1 export` exits 0 having written a file
+  with a schema and no rows, which looks exactly like a good backup every day until
+  someone needs one. The job fails if the dump is under 1 kB or contains no `INSERT`.
+- **The schedule being switched off.** 🔴 **GitHub disables scheduled workflows in a
+  repository with no pushes for 60 days, silently** — and a quiet month is precisely when
+  nobody is looking. Nothing in the repo can prevent it, so the check is manual and it is
+  one command:
+
+      gh run list --workflow backup-prod.yml --limit 5
+
+  If the newest run is older than yesterday, the schedule is off. Any push re-enables it.
+
+🔴 **Do not add a required reviewer to the `production` environment while this exists.**
+The job needs that environment because the prod token lives there and nowhere else — so a
+reviewer requirement would put every nightly backup into "waiting for approval" and leave
+it there. The backups would stop, the run list would fill with pending runs rather than
+failures, and nothing would look broken. The table above lists a reviewer as *intended*
+for deploys; if that ever happens, this workflow needs its own environment holding a
+read-only D1 token first.

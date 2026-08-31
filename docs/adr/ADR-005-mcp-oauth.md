@@ -7,6 +7,11 @@ auth rather than OAuth 2.1 (single operator, no third-party client, no consent
 screen)"
 **Amends:** the house MCP standard, §1 — see *What the standard got
 wrong*
+**Amended by** [ADR-008](ADR-008-email-login.md), 2026-08-28 — **wherever this document
+says *passphrase*, read *email login session*.** The mechanism changed; the decision did
+not. Consent is still gated on the browser session knag already has, and `/oauth/authorize`
+still refuses the bearer for the reason §2 gives. Two other things below were wrong and are
+corrected in place, dated: the endpoint's path, and whether it needs a rate limit of its own.
 
 ## Context
 
@@ -87,7 +92,7 @@ The bearer stays. `mcp.md` §1 is right that it is the fallback when a connector
 OAuth dance fails, and it is what Claude Code uses today. Two independent ways in,
 neither depending on the other.
 
-### 2. Consent is gated by the existing passphrase session — not Cloudflare Access
+### 2. Consent is gated by the existing browser session — not Cloudflare Access
 
 pagevault reached for Cloudflare Access as its consent IdP because it already had
 one. **knag deliberately does not** (ADR-001), and nothing here reopens that:
@@ -95,10 +100,19 @@ Access still cannot front `/mcp`, and the reasons ADR-001 rejected it — sessio
 capped at a month, a login redirect that authenticates the wrong iOS cookie jar —
 are unchanged.
 
-knag already has a browser login. `/authorize` is reached by **the operator's own
+knag already has a browser login. `/oauth/authorize` is reached by **a person's own
 browser** during the OAuth redirect, which is exactly the context a session cookie
-works in. So the consent step reuses the login that already exists, and a
-passphrase is never typed into anything but the real login form.
+works in. So the consent step reuses the login that already exists, and no credential is
+ever typed into anything but the real login form.
+
+🔴 **The path is `/oauth/authorize`, not `/authorize`.** Written as the latter throughout
+this document's first draft; `run_worker_first` routes `/oauth/*` only, so a literal
+`/authorize` is answered by the static PWA shell. Corrected 2026-08-31.
+
+🔴 **"The operator's own browser" was true when this was written and is not now.** Since
+ADR-008 §6 any member's session can consent, and the grant carries the person who did
+(`oauth.ts`), so a friend connecting Claude.ai lands on their own pages. The rule that a
+grant is minted from a *session* and never from a header is what did not change.
 
 ### 3. `/mcp` still refuses the session cookie
 
@@ -106,7 +120,7 @@ This looks like a contradiction with the above and is not. The OAuth access toke
 is a **bearer token**, so `/mcp` continues to accept only `Authorization: Bearer`
 and continues to refuse the cookie.
 
-The cookie appears at `/authorize`, in a browser, once, to establish consent. It
+The cookie appears at `/oauth/authorize`, in a browser, once, to establish consent. It
 never authenticates a tool call. So the property #14 established survives exactly
 as written: **`/mcp` grants no ambient authority**, which is what makes logging a
 foreign `Origin` rather than blocking it the honest read of the spec (mcp.md §8)
@@ -121,10 +135,15 @@ works in dev and serves HTML in prod.
 
 ## Consequences
 
-**The passphrase is now protecting more.** It gates the document, and it gates the
-authority to mint an OAuth grant. `/authorize` needs the same rate-limit treatment
-`/api/login` gets (spec §4.2), and it is a second reason the WAF rule is not
+**The login is now protecting more.** It gates the document, and it gates the
+authority to mint an OAuth grant — a second reason the WAF rule on `/api/login` is not
 optional in prod.
+
+🔴 **Reversed in implementation, and this is the write-back.** This paragraph originally
+said `/oauth/authorize` needs the same rate-limit treatment `/api/login` gets. It does
+not, and `oauth.ts` says why: that endpoint **accepts no credential**. A visitor without
+a session is redirected to the login form, so the only thing worth guessing is still
+behind `/api/login`, which the WAF rule already covers. Corrected 2026-08-31.
 
 **A new binding.** `@cloudflare/workers-oauth-provider` wants KV for token
 storage. knag has had exactly one binding — D1 — and named environments do not
