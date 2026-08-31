@@ -250,3 +250,36 @@ decision rather than drift.
 | Host | `vars.DEV_HOST` | hard coded | The dev hostname stays out of tracked files (see step 3) |
 | `--env` flag | none | `--env prod` | The top level of `wrangler.jsonc` **is** dev, so every command that forgets a flag does the safe thing |
 | `concurrency` | `cancel-in-progress: false` | `cancel-in-progress: false` | **Not** a difference, and must not become one. A half-applied migration is worse than a queued deploy |
+| **Scheduled backup** (`backup-prod.yml`) | none | daily, 09:00 UTC | The one workflow with no dev counterpart (#233). Dev is redeployed — and so backed up — on every merge to `main`, and holds test content anyway. Prod deploys are manual and weeks apart, and since [ADR-008](adr/ADR-008-email-login.md) §12 the prod D1 holds other people's pages: a backup that only happens when someone deploys is not a backup policy |
+
+### The scheduled prod backup
+
+`backup-prod.yml` exports the prod D1 every morning at 09:00 UTC and keeps each dump as a
+dated artifact for 30 days. It is **in addition to** the export inside `deploy-prod.yml`,
+which is the restore point for the deploy about to happen; this one is the restore point
+for an ordinary day. Both stay.
+
+It runs on `workflow_dispatch` too — do that before anything destructive, rather than
+trusting that last night's run happened.
+
+Two failure modes it is built against:
+
+- **An empty export that goes green.** `wrangler d1 export` exits 0 having written a file
+  with a schema and no rows, which looks exactly like a good backup every day until
+  someone needs one. The job fails if the dump is under 1 kB or contains no `INSERT`.
+- **The schedule being switched off.** 🔴 **GitHub disables scheduled workflows in a
+  repository with no pushes for 60 days, silently** — and a quiet month is precisely when
+  nobody is looking. Nothing in the repo can prevent it, so the check is manual and it is
+  one command:
+
+      gh run list --workflow backup-prod.yml --limit 5
+
+  If the newest run is older than yesterday, the schedule is off. Any push re-enables it.
+
+🔴 **Do not add a required reviewer to the `production` environment while this exists.**
+The job needs that environment because the prod token lives there and nowhere else — so a
+reviewer requirement would put every nightly backup into "waiting for approval" and leave
+it there. The backups would stop, the run list would fill with pending runs rather than
+failures, and nothing would look broken. The table above lists a reviewer as *intended*
+for deploys; if that ever happens, this workflow needs its own environment holding a
+read-only D1 token first.

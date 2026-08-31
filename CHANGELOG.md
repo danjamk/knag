@@ -13,6 +13,17 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **A scheduled production backup** (#233, [ADR-008] §12). `backup-prod.yml` exports the
+  prod D1 every morning at 09:00 UTC and keeps each dump as a dated artifact for 30 days.
+  Until now a prod backup happened only when a prod deploy did — manual, and weeks apart —
+  which was defensible while the only document at risk was the operator's own. The job
+  fails on an empty export rather than going green with a file that has a schema and no
+  rows, and `docs/deployment.md` records both the reviewer trap and the 60-day schedule
+  expiry, neither of which announces itself. No version bump: nothing that ships to a
+  browser changed.
+
 ## [1.9.1] — 2026-08-30
 
 Anyone who is not the operator can now open the app.
