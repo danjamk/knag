@@ -13,6 +13,47 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.9.3] — 2026-09-05
+
+A deploy that skipped the `--var` flags believed it was running on a laptop, and a
+laptop is where knag prints login codes to the log.
+
+### Fixed
+
+- **A blank `KNAG_ENV` read as `local`, and `local` is the environment that prints login
+  codes** (#248). The var is baked at deploy by `--var`, which only the Makefile and the
+  two deploy workflows pass; a plain `wrangler deploy` shipped the committed default,
+  which was `""`. Every reader spelled the fallback `env.KNAG_ENV || "local"`, so such a
+  deploy would take `sendMail`'s local branch — and that branch writes the six-digit code
+  into the log, the one thing [ADR-008] §9 says must never reach a real deployment's
+  observability. It also reported `local` at `/health`, which is the field that exists so
+  a deploy to the wrong environment can be told from one that failed.
+
+  Blank now fails closed. `envName()` answers `unknown` rather than `local`, so the code
+  is withheld and the misconfiguration is logged as one; `unknown` also shows up in
+  `/health` and in every login subject line, rather than only in a log nobody is reading
+  at the time. `local` became a value the local entry points pass out loud — `pnpm dev`
+  and `scripts/dev-lan.sh` both send `--var KNAG_ENV:local` — and the test config already
+  bound `test`, so nothing legitimate arrives empty.
+
+  Nothing was affected in dev or prod: both deploy workflows bake the var, so neither has
+  ever shipped a blank one. It was reachable only by a deploy nothing performs today —
+  which is exactly what a Deploy to Cloudflare button would perform (#247).
+
+### Changed
+
+- **The committed defaults now name an environment instead of nothing.** The top level is
+  `selfhost` — the value true of a deploy that passed no flag, which is somebody else's
+  install — and `env.prod` is `prod`. This deployment never sees either; `make deploy` and
+  both workflows write over them.
+- **`selfhost` wears the prod tile and no subject tag.** Both marks exist to tell two
+  installs apart, and a self-hosted knag is somebody's only one — the hollow dev tile
+  would name it the spare. `local` keeps the mark, since dev-lan on a phone sits beside
+  prod on the same home screen. The rule is one predicate now, `wearsDevMark`, rather than
+  a comparison written out at the call site.
+
+[ADR-008]: docs/adr/ADR-008-email-login.md
+
 ## [1.9.2] — 2026-08-31
 
 The checkbox shortcut works on the devices it is used on, and the backups are not on a
@@ -2172,7 +2213,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.2...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.3...HEAD
+[1.9.3]: https://github.com/danjamk/knag/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/danjamk/knag/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/danjamk/knag/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/danjamk/knag/compare/v1.8.0...v1.9.0

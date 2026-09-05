@@ -1,5 +1,5 @@
 import { authenticate, hashToken, isSecureContext, issueSession, readCookie, unauthorized } from "./auth.js";
-import type { Env } from "./env.js";
+import { type Env, envName } from "./env.js";
 import { inviteMail, loginMail, sendMail } from "./mail.js";
 import {
   claimOperatorEmail,
@@ -155,7 +155,7 @@ export async function requestLogin(request: Request, env: Env): Promise<Response
       linkToken,
       code,
       minutes: CODE_TTL_MS / 60_000,
-      environment: env.KNAG_ENV || "local",
+      environment: envName(env),
     }),
   );
 
@@ -248,7 +248,7 @@ export async function sendInvite(
       origin: input.origin,
       linkToken,
       days: INVITE_TTL_MS / 86_400_000,
-      environment: env.KNAG_ENV || "local",
+      environment: envName(env),
     }),
   );
 }

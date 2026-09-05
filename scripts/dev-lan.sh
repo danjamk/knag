@@ -93,5 +93,6 @@ exec pnpm exec wrangler dev \
   --ip 0.0.0.0 \
   --port "${PORT}" \
   --local-protocol https \
+  --var "KNAG_ENV:local" \
   --var "KNAG_OPERATOR_EMAIL:${OPERATOR_EMAIL}" \
   --var "KNAG_BEARER_TOKEN:knag-on-the-phone-bearer"
