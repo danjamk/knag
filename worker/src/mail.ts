@@ -1,4 +1,4 @@
-import type { Env } from "./env.js";
+import { type Env, envName } from "./env.js";
 
 /**
  * Mail, behind one function (ADR-008 §9).
@@ -13,6 +13,12 @@ import type { Env } from "./env.js";
  * `wrangler dev` on a phone shows you your own code and how the unit suite reads it. On
  * a deployed environment a missing key is a configuration error and is logged as one —
  * a login code must never reach the observability log of a real deployment.
+ *
+ * 🔴 "Deployed" is **anything that is not explicitly `local` or `test`**, a blank
+ * `KNAG_ENV` included. It reads blank as `unknown` through `envName()` rather than as
+ * `local` (#248), because the var is baked by a `--var` flag that a plain `wrangler
+ * deploy` does not pass — and the branch below is the one place where guessing wrong
+ * writes the code into a real log.
  */
 export type Mail = { to: string; subject: string; text: string };
 
@@ -28,7 +34,7 @@ const RESEND = "https://api.resend.com/emails";
 export async function sendMail(env: Env, mail: Mail): Promise<void> {
   const key = env.RESEND_API_KEY;
   if (!key) {
-    const environment = env.KNAG_ENV || "local";
+    const environment = envName(env);
     if (environment === "local" || environment === "test") {
       outbox.push(mail);
       if (outbox.length > OUTBOX_MAX) outbox.shift();
@@ -57,6 +63,21 @@ export async function sendMail(env: Env, mail: Mail): Promise<void> {
  * your email *there* — the link opens in Safari, which is a different cookie jar from the
  * home-screen app, so the code is what logs the app itself in.
  */
+/**
+ * The subject prefix, shared by both mails below.
+ *
+ * The tag exists so a link from one environment cannot be mistaken for a link from
+ * another, which is only possible where there are two. `prod`, `local` and a self-hosted
+ * install each have one, so none of them is tagged. `dev` is — and so is `unknown`, so
+ * that a deploy which shipped without `--var KNAG_ENV` says so in every subject line it
+ * sends rather than only in `/health` (#248).
+ */
+const UNTAGGED = new Set(["prod", "local", "selfhost"]);
+
+function subjectTag(environment: string): string {
+  return UNTAGGED.has(environment) ? "" : `[${environment}] `;
+}
+
 export function loginMail(input: {
   to: string;
   origin: string;
@@ -65,7 +86,7 @@ export function loginMail(input: {
   minutes: number;
   environment: string;
 }): Mail {
-  const tag = input.environment === "prod" || input.environment === "local" ? "" : `[${input.environment}] `;
+  const tag = subjectTag(input.environment);
   const link = `${input.origin}/login/${input.linkToken}`;
   return {
     to: input.to,
@@ -107,7 +128,7 @@ export function inviteMail(input: {
   days: number;
   environment: string;
 }): Mail {
-  const tag = input.environment === "prod" || input.environment === "local" ? "" : `[${input.environment}] `;
+  const tag = subjectTag(input.environment);
   const link = `${input.origin}/login/${input.linkToken}`;
   const who = input.from ? `${input.from} has` : "You have been";
   return {
