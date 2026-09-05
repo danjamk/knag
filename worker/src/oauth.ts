@@ -1,6 +1,6 @@
 import type { AuthRequest, ClientInfo, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { type Principal, authenticate } from "./auth.js";
-import type { Env } from "./env.js";
+import { type Env, envName } from "./env.js";
 
 /**
  * `/oauth/authorize` — the consent screen (ADR-005, #64).
@@ -108,7 +108,7 @@ async function completeGrant(
     props: { id: principal.id },
   });
 
-  console.log(`oauth grant completed for client ${oauthReq.clientId} on ${env.KNAG_ENV || "local"}`);
+  console.log(`oauth grant completed for client ${oauthReq.clientId} on ${envName(env)}`);
   return Response.redirect(redirectTo, 303);
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "knag",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "private": true,
   "description": "One plain-text document, always live, edited from any device and by the agent",
   "license": "MIT",
@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "esbuild client/src/app.ts --bundle --minify --format=esm --target=es2022 --outfile=public/app.js",
-    "dev": "wrangler dev --config worker/wrangler.jsonc --var KNAG_OPERATOR_EMAIL:you@example.com",
+    "dev": "wrangler dev --config worker/wrangler.jsonc --var KNAG_ENV:local --var KNAG_OPERATOR_EMAIL:you@example.com",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:security": "vitest run worker/test/auth.test.ts worker/test/mcp.test.ts worker/test/oauth.test.ts client/test/nav.test.ts",

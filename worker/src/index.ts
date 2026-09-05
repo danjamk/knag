@@ -48,6 +48,23 @@ export function devManifest(
 }
 
 /**
+ * Whether this environment's install wears the dev mark.
+ *
+ * The mark answers "which of my two installs is this" — dev is the ITP test subject,
+ * prod is the dogfood, and on that iPad opening the wrong one restarts a seven-day
+ * clock (#196). So it is off wherever there is only one install to open: `prod`, and
+ * `selfhost`, which is somebody else's whole deployment (#247, #248). Handing that one
+ * the hollow tile would name the only knag they have as the spare.
+ *
+ * `local` keeps the mark — dev-lan on a phone sits beside prod on the same home screen,
+ * which is the exact case the mark exists for. So does `unknown`: a deploy that shipped
+ * without `--var KNAG_ENV` should look wrong.
+ */
+export function wearsDevMark(environment: string): boolean {
+  return environment !== "prod" && environment !== "selfhost";
+}
+
+/**
  * The dev mark (#196): prod's block, unfilled — the cursor before it has anything to
  * say. Same outer bounds, same amber, the middle is board. Ruled 2026-08-25; the files
  * are the design session's and drop into `public/icons/` beside the prod set.
@@ -106,8 +123,9 @@ const router = {
     // 🔴 The manifest goes through the Worker so dev can say its own name (#196). Two
     // installs of the same app on one home screen — dev is the ITP test subject, prod
     // is the dogfood — were identical tiles both called `knag`, and on that iPad opening
-    // the wrong one restarts a seven-day clock. Prod passes the static file through
-    // untouched; anything else gets `name` and `short_name` rewritten to `knag <env>`.
+    // the wrong one restarts a seven-day clock. An environment that is somebody's only
+    // install passes the static file through untouched — see `wearsDevMark` — and every
+    // other one gets `name` and `short_name` rewritten to `knag <env>`.
     //
     // The icons swap too, since 2026-08-25 (#196) — in `devManifest`, `sw.js`'s SHELL
     // and the client's icon links together, or a cold offline start on dev renders the
@@ -119,13 +137,11 @@ const router = {
       const asset = env.ASSETS ? await env.ASSETS.fetch(new Request(request.url)) : null;
       if (!asset?.ok) return asset ?? Response.json({ error: "Not found" }, { status: 404 });
       const environment = buildInfo(env).environment;
-      const response =
-        environment === "prod"
-          ? asset
-          : Response.json(
-              devManifest((await asset.json()) as Record<string, unknown>, environment),
-              { headers: { "Cache-Control": asset.headers.get("Cache-Control") ?? "no-cache" } },
-            );
+      const response = wearsDevMark(environment)
+        ? Response.json(devManifest((await asset.json()) as Record<string, unknown>, environment), {
+            headers: { "Cache-Control": asset.headers.get("Cache-Control") ?? "no-cache" },
+          })
+        : asset;
       return request.method === "HEAD" ? new Response(null, response) : response;
     }
 

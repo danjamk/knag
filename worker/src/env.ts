@@ -41,7 +41,8 @@ export interface Env {
   KNAG_DEPLOYED_AT: string;
 
   /**
-   * `dev` or `prod`, baked at deploy.
+   * `dev` or `prod`, baked at deploy. Read it through `envName()`, never directly —
+   * a blank value must not read as `local`.
    *
    * 🔴 Declared in **both** wrangler env blocks. Named environments do not inherit
    * vars, so one added only at the top level works in dev and reports the wrong
@@ -77,6 +78,25 @@ export interface Env {
 }
 
 /**
+ * Which environment this is, from the one var that says so.
+ *
+ * 🔴 **Blank is `unknown`, never `local`** (#248). `KNAG_ENV` is baked at deploy by
+ * `--var`, which only the Makefile and the two deploy workflows pass — a `wrangler
+ * deploy` that skips them ships the config's default, and that default used to be
+ * `""`. Every reader spelled the fallback `env.KNAG_ENV || "local"`, so a deployed
+ * Worker with a blank var believed it was running on a laptop. That is not a
+ * cosmetic error: `sendMail` prints the login code to the log when it thinks it is
+ * local, which is the one thing that file says must never reach a real deployment.
+ *
+ * Blank now fails closed. `local` is a value the local entry points pass explicitly
+ * (`pnpm dev`, `scripts/dev-lan.sh`) and the test config binds as `test`, so nothing
+ * legitimate arrives here empty.
+ */
+export function envName(env: Env): string {
+  return env.KNAG_ENV || "unknown";
+}
+
+/**
  * What `/health` reports, so `make health` can compare it to the checkout — and so a
  * human can answer "is my change live, and on which environment" without a curl.
  *
@@ -94,6 +114,6 @@ export function buildInfo(env: Env): {
     ok: true,
     version: env.KNAG_VERSION || "dev",
     deployed_at: env.KNAG_DEPLOYED_AT || "",
-    environment: env.KNAG_ENV || "local",
+    environment: envName(env),
   };
 }

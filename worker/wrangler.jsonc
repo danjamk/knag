@@ -100,11 +100,20 @@
     "KNAG_VERSION": "",
     "KNAG_DEPLOYED_AT": "",
 
-    // dev or prod, baked at deploy. Blank here and in tests, which report "local".
-    // 🔴 Also declared under env.prod below — named environments do not inherit
-    // vars, and one declared in only one place reports the wrong environment in the
-    // other. That is the exact failure this variable exists to catch.
-    "KNAG_ENV": "",
+    // dev or prod, baked at deploy by `--var`. 🔴 Also declared under env.prod below —
+    // named environments do not inherit vars, and one declared in only one place
+    // reports the wrong environment in the other. That is the exact failure this
+    // variable exists to catch.
+    //
+    // 🔴 NOT BLANK, and that is the fix in #248. Only the Makefile and the two deploy
+    // workflows pass `--var`; a plain `wrangler deploy` ships whatever is written here,
+    // and what was written here was `""`. Every reader spelled the fallback
+    // `KNAG_ENV || "local"`, so such a deploy believed it was running on a laptop — and
+    // `mail.ts` prints login codes to the log when it thinks that. The value below is
+    // the one true of a deploy that passed no flag: somebody else's install, from the
+    // Deploy to Cloudflare button (#247). This deployment's own dev never sees it,
+    // because `make deploy` and deploy-dev.yml both bake `dev` over the top.
+    "KNAG_ENV": "selfhost",
 
     // Local timezone for history boundaries. D1 stores UTC; "what did I finish
     // Tuesday" is a local-time question and files to the wrong day after ~7pm
@@ -180,7 +189,9 @@
       "vars": {
         "KNAG_VERSION": "",
         "KNAG_DEPLOYED_AT": "",
-        "KNAG_ENV": "",
+        // Baked by deploy-prod.yml; this is what a hand-run `wrangler deploy --env prod`
+        // would otherwise leave blank. See the top-level block, and #248.
+        "KNAG_ENV": "prod",
         "KNAG_TZ": "America/Chicago",
         "KNAG_MAIL_FROM": "knag <knag@danjamkuhn.com>"
       },
