@@ -5,6 +5,7 @@ import {
   AGENT_INSTRUCTIONS,
   DEFAULT_PAGE_ID,
   defaultPageFor,
+  wipe,
   writePage,
   writeSetting,
 } from "../src/store.js";
@@ -339,6 +340,19 @@ describe("tools/list", () => {
     expect((await toolNamed("knag_write")).description).toContain("Read immediately before");
     expect((await toolNamed("knag_read")).description).toContain("before every knag_write");
   });
+
+  it("🔴 tells knag_history's reader where a wipe's lines are, and what cleared is not", async () => {
+    // #251. The description used to end on "the `cleared` lines are the record", which
+    // sends a reader to a checked-only set as though it were the wiped page and never
+    // says the content is on the following entry. An agent read exactly that and
+    // reported a workout's notes and intensity as lost while they sat in the response.
+    // Pinned here because prose is the whole fix — nothing else fails when it drifts.
+    const description = (await toolNamed("knag_history")).description ?? "";
+
+    expect(description).toContain("two entries on the same timestamp");
+    expect(description).toContain("`cleared` is not the contents of the wiped page");
+    expect(description).toContain("Address an entry by `id`");
+  });
 });
 
 describe("knag_read", () => {
@@ -578,6 +592,60 @@ describe("knag_history", () => {
 
     expect(days.map((day) => day.date)).toEqual(["2026-03-08"]);
     expect(result.content[0]?.text).toContain("23:00 agent +1");
+  });
+
+  it("🔴 puts a wipe's removed lines on the entry after the seal, not in `cleared`", async () => {
+    // #251, and the shape half of it: the description above is only true while this is.
+    // A whole-page wipe takes notes and unchecked tasks too, and those are deliberately
+    // never written to `cleared` — that table answers what got *done*. They exist in
+    // exactly one place, and this pins which.
+    const body = "Notes: ribs down\n- [x] done one\n- [ ] not done";
+    await writePage(
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body, baseVersion: SEEDED_VERSION, source: "pwa" },
+      new Date("2026-03-08T13:00:00.000Z"),
+    );
+    await wipe(
+      env,
+      {
+        ownerId: OPERATOR,
+        pageId: DEFAULT_PAGE_ID,
+        baseVersion: SEEDED_VERSION + 1,
+        body: "",
+        clearedLines: ["- [x] done one"],
+        source: "pwa",
+        scope: "all",
+        wipedCount: 3,
+      },
+      new Date("2026-03-08T14:00:00.000Z"),
+    );
+
+    const result = await call("knag_history", { since: "2026-03-08", until: "2026-03-08" });
+    const day = (
+      result.structuredContent as {
+        days: Array<{
+          revisions: Array<{ id: number; event_type: string | null; disappeared: string[] }>;
+          cleared: Array<{ revision_id: number; line_text: string }>;
+        }>;
+      }
+    ).days[0];
+
+    const sealIndex = day?.revisions.findIndex((r) => r.event_type === "wipe_all") ?? -1;
+    expect(sealIndex, "no sealing entry").toBeGreaterThan(-1);
+
+    const seal = day?.revisions[sealIndex];
+    const after = day?.revisions[sealIndex + 1];
+
+    // Empty by construction — the seal snapshots the page as it stood before.
+    expect(seal?.disappeared).toEqual([]);
+
+    // Everything the wipe took, including the two lines `cleared` will never mention.
+    expect(after?.disappeared).toEqual(expect.arrayContaining(["Notes: ribs down", "- [ ] not done"]));
+
+    // And `cleared` holds the checked line only, pointing at the seal rather than at
+    // the entry that carries the lines — both facts the description now states.
+    expect(day?.cleared.map((item) => item.line_text)).toEqual(["- [x] done one"]);
+    expect(day?.cleared[0]?.revision_id).toBe(seal?.id);
   });
 
   it("defaults to a range rather than requiring one", async () => {

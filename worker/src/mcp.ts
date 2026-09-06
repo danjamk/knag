@@ -635,7 +635,11 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
         "",
         "Defaults to the last seven days. `since=2026-08-14&until=2026-08-14` returns that whole day.",
         "",
-        "An entry with an empty diff and a `cleared_count` above zero is a wipe: it snapshots the page as it stood before, so its own diff is empty by construction and the `cleared` lines are the record.",
+        "🔴 **A wipe writes two entries on the same timestamp, and the lines are on the second one.** The first carries an `event_type` and a `cleared_count`, and its own `appeared` and `disappeared` are empty by construction — it seals the page as it stood *before*. The entry immediately after it is where the wipe shows up: its `disappeared` holds every line that left, notes and headers and unchecked tasks included.",
+        "",
+        "So `cleared` is not the contents of the wiped page. It lists the **checked** lines only, because it answers what someone finished, and its `revision_id` names the sealing entry rather than the one holding the lines. On a `clear_completed` sweep the two describe the same lines and `cleared` is the exact one. On a `wipe_all` or a `reset`, everything else that was on the page is *only* in the following entry's `disappeared`.",
+        "",
+        "Address an entry by `id`, never by `local_time`: a wipe puts two entries on the same minute by design, and an edit just after makes three.",
       ].join("\n"),
       inputSchema: {
         since: z.string().optional().describe(`Start of the range. ${HISTORY_BOUNDARY}`),
@@ -656,22 +660,35 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
             date: z.string().describe("Local date, YYYY-MM-DD."),
             revisions: z.array(
               z.object({
-                id: z.number(),
+                id: z
+                  .number()
+                  .describe("Stable key for this entry. Address an entry by this, not by `local_time`."),
                 version: z.number(),
                 created_at: z.string(),
-                local_time: z.string(),
+                local_time: z.string().describe("Not unique — a wipe puts two entries on the same minute."),
                 source: z.string().describe("`pwa`, `agent`, or `system`."),
-                event_type: z.string().nullable(),
+                event_type: z
+                  .string()
+                  .nullable()
+                  .describe(
+                    "`clear_completed`, `wipe_all` or `reset` on the entry that seals a wipe; null otherwise.",
+                  ),
                 appeared: z.array(z.string()),
-                disappeared: z.array(z.string()),
+                disappeared: z
+                  .array(z.string())
+                  .describe(
+                    "Lines gone since the entry before. On the entry *following* a wipe this is everything the wipe removed, which is the only place notes and unchecked tasks appear.",
+                  ),
                 cleared_count: z.number(),
               }),
             ),
             cleared: z.array(
               z.object({
                 id: z.number(),
-                revision_id: z.number(),
-                line_text: z.string(),
+                revision_id: z
+                  .number()
+                  .describe("The entry that sealed the wipe — not the following one that carries the lines."),
+                line_text: z.string().describe("A checked line only. Never the whole wiped page."),
                 cleared_at: z.string(),
                 local_time: z.string(),
               }),

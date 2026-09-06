@@ -13,6 +13,39 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.9.4] — 2026-09-06
+
+The history tool stops sending agents to the wrong field.
+
+### Fixed
+
+- **`knag_history` never said where a wipe's removed lines are** (#251). Its description
+  ended on "it snapshots the page as it stood before, so its own diff is empty by
+  construction and the `cleared` lines are the record" — which points a reader at
+  `cleared`, a checked-only set, as though it were the contents of the wiped page, and
+  stops exactly where the useful half begins. It never said that the lines are on the
+  entry *after* the one that seals the wipe.
+
+  An agent read it the way it was written, found nineteen checked lines where the page
+  had held twenty-nine, and reported a workout's notes and intensity rating as lost. They
+  were in the same response, on the following entry's `disappeared`. Nothing had been
+  lost and nothing was broken: the tool described itself badly enough to talk a reader
+  out of data it was handing over.
+
+  The description now states the shape — a wipe writes two entries on one timestamp, the
+  seal and then the state it left; the removed lines are the second one's `disappeared`;
+  `cleared` answers what was *finished* and its `revision_id` names the seal rather than
+  the entry carrying the lines. Entries are addressed by `id`, since `local_time` is not
+  unique by design. The output schema says the same things field by field, for a reader
+  that never sees the prose.
+
+  [spec §5](docs/spec.md) had it right the whole time — "reading `cleared_items` instead
+  would silently drop the unfinished lines" — and `client/src/app.ts` carries the pairing
+  rule in a comment. The MCP consumer was the one surface never told.
+
+  Two tests now pin it: one on the description's three claims, one on the shape those
+  claims describe. Prose is the entire fix here, so nothing else would fail when it drifts.
+
 ## [1.9.3] — 2026-09-05
 
 A deploy that skipped the `--var` flags believed it was running on a laptop, and a
@@ -2213,7 +2246,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.3...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.4...HEAD
+[1.9.4]: https://github.com/danjamk/knag/compare/v1.9.3...v1.9.4
 [1.9.3]: https://github.com/danjamk/knag/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/danjamk/knag/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/danjamk/knag/compare/v1.9.0...v1.9.1
