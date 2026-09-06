@@ -11,6 +11,7 @@ import {
   nextDay,
   parseBareDate,
   resolveBoundary,
+  SNAPSHOT_MAX_BYTES,
   wallClock,
   zonedInstant,
 } from "../src/history.js";
@@ -540,5 +541,66 @@ describe("assembling the response", () => {
     });
 
     expect(history.truncated).toBe(true);
+  });
+
+  it("carries a snapshot on the sealing entry only, and only when asked (#252)", () => {
+    const wiped = "one\ntwo\nthree";
+    const input = {
+      ...range,
+      baseline: null,
+      revisions: [
+        revision(1, wiped, "2026-08-14T14:00:00.000Z", { event_type: "wipe_all" }),
+        revision(2, "", "2026-08-14T14:00:01.000Z"),
+      ],
+      cleared: [],
+    };
+
+    const without = buildHistory(input).days[0]?.revisions ?? [];
+    for (const entry of without) expect(entry.snapshot).toBeUndefined();
+
+    const asked = buildHistory({ ...input, snapshots: true }).days[0]?.revisions ?? [];
+    expect(asked[0]?.snapshot).toBe(wiped);
+    expect(asked[0]?.snapshot_truncated).toBeUndefined();
+    expect(asked[1]?.snapshot).toBeUndefined();
+  });
+
+  it("🔴 cuts an oversized snapshot at a line boundary, never mid-line", () => {
+    // Nothing is normalized in this product, so a snapshot is worth having because its
+    // lines are the bytes that were there. A byte slice would hand back a final line
+    // that was never on the page and is indistinguishable from one that was — so whole
+    // lines are dropped from the end instead, and the flag says the page was longer.
+    const line = "x".repeat(99);
+    const body = Array.from({ length: 400 }, () => line).join("\n"); // 40_000 bytes
+    const history = buildHistory({
+      ...range,
+      baseline: null,
+      revisions: [revision(1, body, "2026-08-14T14:00:00.000Z", { event_type: "reset" })],
+      cleared: [],
+      snapshots: true,
+    });
+
+    const entry = history.days[0]?.revisions[0];
+    expect(entry?.snapshot_truncated).toBe(true);
+    expect(new TextEncoder().encode(entry?.snapshot ?? "").byteLength).toBeLessThanOrEqual(
+      SNAPSHOT_MAX_BYTES,
+    );
+    // Every surviving line is a whole one — the guarantee, stated as an assertion.
+    for (const kept of (entry?.snapshot ?? "").split("\n")) expect(kept).toBe(line);
+  });
+
+  it("keeps a body that is exactly at the cap whole", () => {
+    // Boundary: the cap counts a newline for every line including the last, so a body
+    // built to the cap must not trip the truncation path.
+    const body = "y".repeat(SNAPSHOT_MAX_BYTES);
+    const history = buildHistory({
+      ...range,
+      baseline: null,
+      revisions: [revision(1, body, "2026-08-14T14:00:00.000Z", { event_type: "reset" })],
+      cleared: [],
+      snapshots: true,
+    });
+
+    expect(history.days[0]?.revisions[0]?.snapshot).toBe(body);
+    expect(history.days[0]?.revisions[0]?.snapshot_truncated).toBeUndefined();
   });
 });

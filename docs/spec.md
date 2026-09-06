@@ -393,6 +393,18 @@ Returns revisions in range plus derived, per adjacent pair:
 Plus all `cleared_items` in range, which are the authoritative "done" record.
 Line-set diff, not character diff. Trivial to implement, sufficient in practice.
 
+🔴 **A wipe writes two entries on one timestamp**, and the removed lines are on the
+*second*. The first carries the `event_type` and seals the page as it stood before, so
+its own diff is empty by construction. `cleared_items` answers what was *finished* and
+holds checked lines only — on a `wipe_all` or a `reset`, the notes and unfinished tasks
+exist only in the following entry's `disappeared` (#251).
+
+The set diff cannot see a duplicate line being removed, so `knag_history` also carries
+the sealing entry's body as `snapshot` — the exact bytes, cut to 16 KiB at a line
+boundary when a page is enormous (#252). It is opt-in through `loadHistory`, and this
+route does not ask: the history pane never reads a snapshot and the phone fetches this
+payload on every open.
+
 ```json
 {
   "timezone": "America/Chicago",
@@ -1012,7 +1024,7 @@ the login form is worth more to a phisher than a plain one.
 | `knag_read` | `(page?) → { body, version, updated_at, page }` | |
 | `knag_write` | `(body, base_version, page?) → { version, updated_at, changed, page }` | Full replacement. Conflict on mismatch. |
 | `knag_wipe` | `(base_version, scope?, page?) → { version, wiped_count, cleared_count, page }` | Same path as the wipe control. `scope` is `completed` (default) or `all`; `all` resets to the page's template when it has one (§5). |
-| `knag_history` | `(since?, until?, page?) → History & { page }` | `History` is the identical shape to `GET /api/history`. |
+| `knag_history` | `(since?, until?, page?) → History & { page }` | `History` is the shape `GET /api/history` returns, plus `snapshot` on each sealing entry (#252) — one `loadHistory`, and the tool is the only caller that asks for it. |
 
 ### `page` is optional, by name, and never falls back (#153)
 

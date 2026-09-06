@@ -13,6 +13,43 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-09-06
+
+A wipe's entry in `knag_history` now carries the page it wiped.
+
+### Added
+
+- **`snapshot` on a wipe's sealing entry** (#252). The removed lines were always
+  recoverable from the following entry's `disappeared` — 1.9.4 made the description say
+  so — but that reconstruction has a blind spot the code has always documented: a line
+  diff is a **set** difference, so a page holding the same line twice and losing one of
+  them reports nothing. For a page kept as the only record of something, a reconstruction
+  with a known gap is not the same as the bytes.
+
+  The sealing entry's body already *is* the pre-wipe page — that is why its own diff is
+  empty by construction — so this exposes what was there rather than storing anything new.
+  No migration, no extra query.
+
+- **`snapshot_truncated`**, and a 16 KiB cap. A document may legally be a megabyte
+  (`MAX_BODY_BYTES`), and a week of daily wipes would put seven of those in one response.
+  🔴 The cut is at a **line boundary**, never mid-line: nothing is normalized in this
+  product, so a snapshot is worth having because its lines are the bytes that were there,
+  and a byte slice would hand back a final line that was never on the page and is
+  indistinguishable from one that was. Whole lines are dropped from the end instead.
+
+### Changed
+
+- **`loadHistory` takes `snapshots` and only `knag_history` passes it.** The history pane
+  never reads a snapshot and the phone fetches that payload on every open, so the browser's
+  response is the shape it always was. An opt-in argument rather than a second code path:
+  one implementation behind both surfaces is what the MCP/HTTP parity test exists to keep,
+  and a separate agent path is exactly the drift it was written to catch.
+
+- The tool description names the new field, for the reason 1.9.4 exists — a field nothing
+  points at is a field an agent concludes is missing. [spec §5 and §14.6](docs/spec.md)
+  updated too: §14.6 had said the MCP shape was identical to `GET /api/history`, and it is
+  not any more.
+
 ## [1.9.5] — 2026-09-06
 
 `settings` is dropped. The three-release move that started in 1.7.0 is finished.
@@ -2280,7 +2317,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.5...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/danjamk/knag/compare/v1.9.5...v1.10.0
 [1.9.5]: https://github.com/danjamk/knag/compare/v1.9.4...v1.9.5
 [1.9.4]: https://github.com/danjamk/knag/compare/v1.9.3...v1.9.4
 [1.9.3]: https://github.com/danjamk/knag/compare/v1.9.2...v1.9.3

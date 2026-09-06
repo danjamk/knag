@@ -337,6 +337,14 @@ export type HistoryRevision = {
   disappeared: string[];
   /** Non-zero only on a `clear_completed` entry. See the note in `buildHistory`. */
   cleared_count: number;
+  /**
+   * The page as it stood before the wipe — present only on a sealing entry, and only
+   * when the caller asked for snapshots (#252). Absent everywhere else, so the browser's
+   * history payload is the shape it always was.
+   */
+  snapshot?: string;
+  /** True when `snapshot` was cut to `SNAPSHOT_MAX_BYTES`. Whole lines only. */
+  snapshot_truncated?: boolean;
 };
 
 export type HistoryCleared = {
@@ -389,6 +397,49 @@ export type History = {
  * edit happened to come next. A consumer pairing an event row with its result row should
  * pair on the row immediately following, which shares its timestamp.
  */
+/**
+ * How much of a pre-wipe page a snapshot carries (#252).
+ *
+ * A document may legally be a megabyte (`MAX_BODY_BYTES`), and a week of daily wipes
+ * would put seven of those in one response. The cap is ~8x the few KB a page is actually
+ * expected to be, which covers every real page and bounds the pathological one at 16 KiB
+ * per wipe rather than a megabyte.
+ */
+export const SNAPSHOT_MAX_BYTES = 16_384;
+
+/**
+ * Cut a body to the cap **at a line boundary**, keeping whole lines from the top.
+ *
+ * 🔴 Not a byte slice. Nothing is normalized in this product, so a snapshot's value is
+ * that the lines in it are the bytes that were there — and a cut mid-line hands back a
+ * line that was never on the page, indistinguishable from one that was. Dropping whole
+ * lines from the end loses information honestly; splitting one invents it.
+ *
+ * A single line longer than the cap is the one case with no honest answer, so it is
+ * dropped rather than split, and the flag says the snapshot is short.
+ */
+function capSnapshot(body: string): { snapshot: string; truncated: boolean } {
+  const encoder = new TextEncoder();
+  if (encoder.encode(body).byteLength <= SNAPSHOT_MAX_BYTES) {
+    return { snapshot: body, truncated: false };
+  }
+
+  const lines = body.split("\n");
+  const kept: string[] = [];
+  let bytes = 0;
+
+  for (const line of lines) {
+    // +1 for the newline that rejoins it. Counted for the first line too, which spends
+    // one byte of the budget and keeps the arithmetic obvious.
+    const cost = encoder.encode(line).byteLength + 1;
+    if (bytes + cost > SNAPSHOT_MAX_BYTES) break;
+    kept.push(line);
+    bytes += cost;
+  }
+
+  return { snapshot: kept.join("\n"), truncated: true };
+}
+
 export function buildHistory(input: {
   baseline: RevisionRecord | null;
   /** In range, ascending by `created_at`. */
@@ -399,6 +450,13 @@ export function buildHistory(input: {
   until: Date;
   timeZone: string;
   truncated: boolean;
+  /**
+   * Carry each wipe's pre-wipe body on its sealing entry (#252). Off by default: the
+   * browser's history pane never reads it, and a week of wipes would be the largest part
+   * of a payload the phone fetches on every open. `knag_history` asks for it; the HTTP
+   * route does not, and one implementation serves both either way.
+   */
+  snapshots?: boolean;
 }): History {
   const { timeZone } = input;
 
@@ -423,7 +481,7 @@ export function buildHistory(input: {
     const at = new Date(revision.created_at);
     const { appeared, disappeared } = diffLines(previousBody, revision.body);
 
-    dayFor(localDate(at, timeZone)).revisions.push({
+    const entry: HistoryRevision = {
       id: revision.id,
       version: revision.version,
       created_at: revision.created_at,
@@ -433,7 +491,20 @@ export function buildHistory(input: {
       appeared,
       disappeared,
       cleared_count: clearedCounts.get(revision.id) ?? 0,
-    });
+    };
+
+    // 🔴 The sealing entry only, and its own body is already the answer: a wipe seals the
+    // page as it stood *before*, which is why its diff is empty by construction. Every
+    // other entry's body is the page after an ordinary edit, and the diff is what that
+    // entry is about — a body on all of them would be a week of pages to answer a
+    // question about one day.
+    if (input.snapshots && revision.event_type !== null) {
+      const capped = capSnapshot(revision.body);
+      entry.snapshot = capped.snapshot;
+      if (capped.truncated) entry.snapshot_truncated = true;
+    }
+
+    dayFor(localDate(at, timeZone)).revisions.push(entry);
 
     previousBody = revision.body;
   }
@@ -529,6 +600,7 @@ export async function loadHistory(
   env: Env,
   range: { pageId: number; since: Date; until: Date },
   timeZone: string,
+  options: { snapshots?: boolean } = {},
 ): Promise<History> {
   // Three indexed reads in parallel. `revisionBefore` is issued unconditionally even
   // though a truncated page supersedes it — one extra indexed lookup is cheaper than
@@ -554,6 +626,7 @@ export async function loadHistory(
     until: range.until,
     timeZone,
     truncated: page.truncated,
+    ...(options.snapshots ? { snapshots: true } : {}),
   });
 }
 
