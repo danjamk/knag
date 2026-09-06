@@ -639,6 +639,8 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
         "",
         "So `cleared` is not the contents of the wiped page. It lists the **checked** lines only, because it answers what someone finished, and its `revision_id` names the sealing entry rather than the one holding the lines. On a `clear_completed` sweep the two describe the same lines and `cleared` is the exact one. On a `wipe_all` or a `reset`, everything else that was on the page is *only* in the following entry's `disappeared`.",
         "",
+        "**Want the wiped page itself? Read `snapshot` on the sealing entry.** It is the exact bytes as they stood before, and it is the better answer than reconstructing from `disappeared` — a diff is a set difference and cannot see a duplicate line being removed. Very long pages are cut to 16 KiB at a line boundary, and `snapshot_truncated` says so.",
+        "",
         "Address an entry by `id`, never by `local_time`: a wipe puts two entries on the same minute by design, and an edit just after makes three.",
       ].join("\n"),
       inputSchema: {
@@ -680,6 +682,16 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
                     "Lines gone since the entry before. On the entry *following* a wipe this is everything the wipe removed, which is the only place notes and unchecked tasks appear.",
                   ),
                 cleared_count: z.number(),
+                snapshot: z
+                  .string()
+                  .optional()
+                  .describe(
+                    "The page as it stood before the wipe, on the sealing entry only. Exact bytes — prefer it to reconstructing from `disappeared`, which is a set difference and cannot see a duplicate line being removed.",
+                  ),
+                snapshot_truncated: z
+                  .boolean()
+                  .optional()
+                  .describe("True when `snapshot` was cut to 16 KiB. Whole lines are kept from the top."),
               }),
             ),
             cleared: z.array(
@@ -720,7 +732,13 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
         return failed(`invalid ${range.field}: ${range.message}`);
       }
 
-      const history = await loadHistory(env, { ...range, pageId: found.page.id }, timeZone);
+      // 🔴 `snapshots: true` is the one place they are asked for (#252). The browser's
+      // history pane never reads a snapshot and fetches this payload on every open, so
+      // the flag is what keeps a week of wiped pages out of a phone's request while
+      // still leaving one implementation behind both surfaces.
+      const history = await loadHistory(env, { ...range, pageId: found.page.id }, timeZone, {
+        snapshots: true,
+      });
 
       // 🔴 The empty path returns structured content too. A day with nothing in it is a
       // real answer, and omitting `structuredContent` here would turn "quiet week" into

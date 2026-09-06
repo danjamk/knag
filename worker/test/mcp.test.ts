@@ -562,6 +562,12 @@ describe("knag_history", () => {
     // `page` is the tool's own addition — an agent needs to know which page it is
     // looking at, and the browser already knows. Everything `loadHistory` produced has
     // to match, which is what this test is actually for.
+    //
+    // 🔴 `snapshot` is the second divergence and is a different kind (#252): both
+    // surfaces run the same `loadHistory`, and only the tool passes `snapshots: true`.
+    // That is the point — an opt-in argument keeps one implementation, where a
+    // second code path for the agent would be the drift this test exists to catch.
+    // The range here holds no wipe, so nothing is stripped and the payloads match whole.
     const { page, ...shared } = viaTool.structuredContent as Record<string, unknown>;
     expect(shared).toEqual(await viaHttp.json());
     expect(page).toBe("today");
@@ -646,6 +652,88 @@ describe("knag_history", () => {
     // the entry that carries the lines — both facts the description now states.
     expect(day?.cleared.map((item) => item.line_text)).toEqual(["- [x] done one"]);
     expect(day?.cleared[0]?.revision_id).toBe(seal?.id);
+  });
+
+  it("🔴 carries the pre-wipe page on the sealing entry, and only there", async () => {
+    // #252. `disappeared` reconstructs the page but is a set difference, so a page
+    // holding the same line twice and losing one reports nothing. The snapshot is the
+    // bytes, which is what a page kept as a permanent record needs.
+    const body = "Notes: ribs down\n- [x] done one\n- [x] done one\n- [ ] not done";
+    await writePage(
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body, baseVersion: SEEDED_VERSION, source: "pwa" },
+      new Date("2026-03-08T13:00:00.000Z"),
+    );
+    await wipe(
+      env,
+      {
+        ownerId: OPERATOR,
+        pageId: DEFAULT_PAGE_ID,
+        baseVersion: SEEDED_VERSION + 1,
+        body: "",
+        clearedLines: ["- [x] done one", "- [x] done one"],
+        source: "pwa",
+        scope: "all",
+        wipedCount: 4,
+      },
+      new Date("2026-03-08T14:00:00.000Z"),
+    );
+
+    const result = await call("knag_history", { since: "2026-03-08", until: "2026-03-08" });
+    const revisions = (
+      result.structuredContent as {
+        days: Array<{ revisions: Array<{ event_type: string | null; snapshot?: string; disappeared: string[] }> }>;
+      }
+    ).days[0]?.revisions;
+
+    const seal = revisions?.find((r) => r.event_type === "wipe_all");
+    expect(seal?.snapshot).toBe(body);
+
+    // 🔴 The duplicate is the case the diff cannot see. `disappeared` reports the line
+    // once; the snapshot has both, because it is the page rather than a set of it.
+    expect(seal?.snapshot?.match(/- \[x\] done one/g)).toHaveLength(2);
+    const after = revisions?.[(revisions?.indexOf(seal!) ?? 0) + 1];
+    expect(after?.disappeared.filter((l) => l === "- [x] done one")).toHaveLength(1);
+
+    // Ordinary entries carry no body — a week of pages to answer a question about a day.
+    for (const revision of revisions ?? []) {
+      if (revision.event_type === null) expect(revision.snapshot).toBeUndefined();
+    }
+  });
+
+  it("🔴 the browser's history payload is unchanged — only the tool asks for snapshots", async () => {
+    // The pane never reads a snapshot and the phone fetches this on every open. One
+    // implementation, one opt-in argument (#252).
+    await writePage(
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "alpha", baseVersion: SEEDED_VERSION, source: "pwa" },
+      new Date("2026-03-08T13:00:00.000Z"),
+    );
+    await wipe(
+      env,
+      {
+        ownerId: OPERATOR,
+        pageId: DEFAULT_PAGE_ID,
+        baseVersion: SEEDED_VERSION + 1,
+        body: "",
+        clearedLines: [],
+        source: "pwa",
+        scope: "all",
+        wipedCount: 1,
+      },
+      new Date("2026-03-08T14:00:00.000Z"),
+    );
+
+    const viaHttp = await SELF.fetch("https://knag.test/api/history?since=2026-03-08&until=2026-03-08", {
+      headers: { Authorization: `Bearer ${BEARER}` },
+    });
+    const days = (await viaHttp.json()) as {
+      days: Array<{ revisions: Array<{ event_type: string | null; snapshot?: string }> }>;
+    };
+
+    const seal = days.days[0]?.revisions.find((r) => r.event_type === "wipe_all");
+    expect(seal, "no sealing entry over HTTP").toBeDefined();
+    expect(seal?.snapshot).toBeUndefined();
   });
 
   it("defaults to a range rather than requiring one", async () => {
