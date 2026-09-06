@@ -1086,15 +1086,23 @@ export async function revokeUser(env: Env, id: number, now: Date = new Date()): 
 
 /**
  * Delete a person and every row they own — "deletion on request" (ADR-008 §12). Hard,
- * in one batch: cleared items through their revisions, revisions through their pages,
- * the pages, sessions, login codes, user settings, and the row itself. Order matters only
- * for the subqueries, which is why the leaves go first.
+ * in one batch: annotations and cleared items through their revisions, revisions through
+ * their pages, the pages, sessions, login codes, user settings, and the row itself. Order
+ * matters only for the subqueries, which is why the leaves go first.
  *
  * 🔴 Never the operator. The route refuses it before this is reached, and this refuses
  * it again by predicate: a deployment with no operator has nobody who can log in.
  */
 export async function deleteUserHard(env: Env, id: number): Promise<boolean> {
   const results = await env.DB.batch([
+    // 🔴 Annotations go first, with cleared items: both hang off revisions, so both are
+    // leaves and both have to be gone before the revisions are (#253). An annotation is
+    // append-only *while its owner exists* — deletion on request is not an edit to the
+    // record, it is the record ceasing to be theirs to keep.
+    env.DB.prepare(
+      `DELETE FROM annotations WHERE revision_id IN
+         (SELECT r.id FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.owner_id = ?)`,
+    ).bind(id),
     env.DB.prepare(
       `DELETE FROM cleared_items WHERE revision_id IN
          (SELECT r.id FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.owner_id = ?)`,
@@ -1565,4 +1573,98 @@ export async function sweepExpiredLoginCodes(env: Env, now: Date = new Date()): 
   await env.DB.prepare("DELETE FROM login_codes WHERE expires_at < ? OR consumed_at IS NOT NULL")
     .bind(new Date(now.getTime() - 86_400_000).toISOString())
     .run();
+}
+
+/**
+ * Notes added to a past history entry (#253, migration 0014).
+ *
+ * 🔴 **Append-only.** There is an insert and there is a read, and there is deliberately
+ * no update and no delete — a correction is another row. The wipe record is evidence of
+ * what happened, and a path that rewrites it lets a bad session be laundered into a good
+ * one with nothing downstream able to tell. The rule is enforced by the absence of the
+ * functions, so the test that asserts nothing here mutates an annotation is guarding a
+ * property of this file rather than of a constraint.
+ *
+ * `deleteUserHard` is the one exception and it is not an exception to the rule: deleting
+ * a person removes their annotations with everything else they own, because the record
+ * belongs to them.
+ */
+export type AnnotationRow = {
+  id: number;
+  revision_id: number;
+  text: string;
+  author: string;
+  created_at: string;
+};
+
+/** Longest note. Generous for a sentence of context; short of a second document. */
+export const ANNOTATION_MAX_CHARS = 2_000;
+
+/**
+ * The revision behind an entry id, if it belongs to `ownerId` **and sits on `pageId`**.
+ *
+ * 🔴 Three ways to be `null` and they are one answer on purpose: no such revision, one
+ * belonging to somebody else, one on another page of the caller's own. Missing and
+ * not-yours are the same `null` from the store and the same error from the route, for
+ * the reason the whole store works that way — an answer that distinguished them would
+ * confirm the entry exists. The page half matters too: an agent that read `today` and
+ * annotates an entry on `workouts` has lost track of which record it is writing on, and
+ * the two-page bug is what that looks like one dimension over.
+ */
+export async function findRevisionForOwner(
+  env: Env,
+  ownerId: number,
+  pageId: number,
+  revisionId: number,
+): Promise<{ id: number } | null> {
+  return await env.DB.prepare(
+    `SELECT r.id FROM revisions r
+       JOIN pages p ON p.id = r.page_id
+      WHERE r.id = ? AND r.page_id = ? AND p.owner_id = ? AND p.deleted_at IS NULL`,
+  )
+    .bind(revisionId, pageId, ownerId)
+    .first<{ id: number }>();
+}
+
+/** Add one. The caller has already proved the revision is the caller's, through `findRevisionForOwner`. */
+export async function addAnnotation(
+  env: Env,
+  input: { revisionId: number; text: string; author: WriteSource },
+  now: Date = new Date(),
+): Promise<AnnotationRow> {
+  const created_at = now.toISOString();
+  const row = await env.DB.prepare(
+    `INSERT INTO annotations (revision_id, text, author, created_at)
+     VALUES (?, ?, ?, ?)
+     RETURNING id, revision_id, text, author, created_at`,
+  )
+    .bind(input.revisionId, input.text, input.author, created_at)
+    .first<AnnotationRow>();
+
+  if (!row) throw new Error("annotation insert returned no row");
+  return row;
+}
+
+/**
+ * Every annotation on a page's revisions in a range, oldest first.
+ *
+ * Scoped by page and by the range the history query already resolved, so this costs one
+ * indexed read rather than one per entry. Carries the owner for the reason every query
+ * here does.
+ */
+export async function annotationsInRange(
+  env: Env,
+  range: { pageId: number; since: Date; until: Date },
+): Promise<AnnotationRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT a.id, a.revision_id, a.text, a.author, a.created_at
+       FROM annotations a
+       JOIN revisions r ON r.id = a.revision_id
+      WHERE r.page_id = ? AND r.created_at >= ? AND r.created_at < ?
+      ORDER BY a.created_at ASC, a.id ASC`,
+  )
+    .bind(range.pageId, range.since.toISOString(), range.until.toISOString())
+    .all<AnnotationRow>();
+
+  return results;
 }

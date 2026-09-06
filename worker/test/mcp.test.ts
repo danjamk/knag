@@ -288,8 +288,12 @@ describe("initialize", () => {
 });
 
 describe("tools/list", () => {
-  it("registers exactly the four tools, and no more", async () => {
+  it("registers exactly the five tools, and no more", async () => {
+    // 🔴 A closed list on purpose. The surface an agent gets is a product decision, and
+    // a tool arriving without one is how an MCP server turns into an API. `knag_annotate`
+    // was the fifth (#253) and its arrival is recorded in the CHANGELOG.
     expect((await tools()).map((tool) => tool.name).sort()).toEqual([
+      "knag_annotate",
       "knag_history",
       "knag_read",
       "knag_wipe",
@@ -545,6 +549,144 @@ describe("knag_wipe", () => {
 
     expect(tool.description).toContain("never finished");
     expect(tool.inputSchema?.properties).toHaveProperty("scope");
+  });
+});
+
+describe("knag_annotate", () => {
+  /** A wipe, so there is a sealing entry to annotate. Returns its id. */
+  async function anEntry(): Promise<number> {
+    await writePage(
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body: "one\ntwo", baseVersion: SEEDED_VERSION, source: "pwa" },
+      new Date("2026-03-08T13:00:00.000Z"),
+    );
+    await wipe(
+      env,
+      {
+        ownerId: OPERATOR,
+        pageId: DEFAULT_PAGE_ID,
+        baseVersion: SEEDED_VERSION + 1,
+        body: "",
+        clearedLines: [],
+        source: "pwa",
+        scope: "all",
+        wipedCount: 2,
+      },
+      new Date("2026-03-08T14:00:00.000Z"),
+    );
+
+    const history = await call("knag_history", { since: "2026-03-08", until: "2026-03-08" });
+    const revisions = (
+      history.structuredContent as { days: Array<{ revisions: Array<{ id: number; event_type: string | null }> }> }
+    ).days[0]?.revisions;
+    const seal = revisions?.find((r) => r.event_type === "wipe_all");
+    expect(seal, "no sealing entry to annotate").toBeDefined();
+    return seal!.id;
+  }
+
+  it("attaches a note to a past entry and hands it back", async () => {
+    const entry = await anEntry();
+    const result = await call("knag_annotate", { entry_id: entry, note: "HR data synced late: 142 avg" });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      entry_id: entry,
+      text: "HR data synced late: 142 avg",
+      author: "agent",
+    });
+    expect(result.content[0]?.text).toContain("the entry itself is unchanged");
+  });
+
+  it("🔴 leaves the entry byte-identical — the note is beside it, never in it", async () => {
+    const entry = await anEntry();
+    const before = await call("knag_history", { since: "2026-03-08", until: "2026-03-08" });
+    const sealBefore = (
+      before.structuredContent as {
+        days: Array<{ revisions: Array<{ id: number; snapshot?: string; disappeared: string[] }> }>;
+      }
+    ).days[0]?.revisions.find((r) => r.id === entry);
+
+    await call("knag_annotate", { entry_id: entry, note: "reconsidered: this was a 4" });
+
+    const after = await call("knag_history", { since: "2026-03-08", until: "2026-03-08" });
+    const sealAfter = (
+      after.structuredContent as {
+        days: Array<{
+          revisions: Array<{
+            id: number;
+            snapshot?: string;
+            disappeared: string[];
+            annotations?: Array<{ text: string; author: string }>;
+          }>;
+        }>;
+      }
+    ).days[0]?.revisions.find((r) => r.id === entry);
+
+    // The record, unchanged.
+    expect(sealAfter?.snapshot).toBe(sealBefore?.snapshot);
+    expect(sealAfter?.disappeared).toEqual(sealBefore?.disappeared);
+
+    // The note, alongside it.
+    expect(sealAfter?.annotations).toEqual([
+      expect.objectContaining({ text: "reconsidered: this was a 4", author: "agent" }),
+    ]);
+  });
+
+  it("🔴 a correction is another note — two calls leave two, oldest first", async () => {
+    const entry = await anEntry();
+    await call("knag_annotate", { entry_id: entry, note: "intensity 3" });
+    await call("knag_annotate", { entry_id: entry, note: "correction: intensity 4" });
+
+    const history = await call("knag_history", { since: "2026-03-08", until: "2026-03-08" });
+    const notes = (
+      history.structuredContent as {
+        days: Array<{ revisions: Array<{ id: number; annotations?: Array<{ text: string }> }> }>;
+      }
+    ).days[0]?.revisions.find((r) => r.id === entry)?.annotations;
+
+    expect(notes?.map((n) => n.text)).toEqual(["intensity 3", "correction: intensity 4"]);
+  });
+
+  it("🔴 no tool can edit or remove a note", async () => {
+    // The append-only rule lives in the absence of the routes. If a future change adds
+    // one, this is what says the decision was reversed rather than extended.
+    const names = (await tools()).map((tool) => tool.name);
+    expect(names).toContain("knag_annotate");
+    for (const name of names) {
+      expect(name, `${name} looks like an annotation mutator`).not.toMatch(
+        /annotation.*(edit|update|delete|remove)|(edit|update|delete|remove).*annotat/i,
+      );
+    }
+  });
+
+  it("rejects an unknown entry id without writing, and never falls back to the newest", async () => {
+    const entry = await anEntry();
+    const result = await call("knag_annotate", { entry_id: entry + 9999, note: "should not land" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Nothing was written");
+
+    const history = await call("knag_history", { since: "2026-03-08", until: "2026-03-08" });
+    const revisions = (
+      history.structuredContent as { days: Array<{ revisions: Array<{ annotations?: unknown[] }> }> }
+    ).days[0]?.revisions;
+    for (const revision of revisions ?? []) expect(revision.annotations).toBeUndefined();
+  });
+
+  it("🔴 refuses an entry that is on another page, the same way as one that does not exist", async () => {
+    const entry = await anEntry();
+    await call("knag_write", { body: "elsewhere", base_version: 0, page: "tomorrow" }).catch(() => undefined);
+
+    const wrongPage = await call("knag_annotate", { entry_id: entry, note: "wrong page" , page: "tomorrow" });
+    const missing = await call("knag_annotate", { entry_id: entry + 9999, note: "missing", page: "tomorrow" });
+
+    // Byte-identical treatment: an answer that distinguished them would confirm the
+    // entry exists on a page the caller did not name.
+    expect(wrongPage.isError).toBe(true);
+    expect(missing.isError).toBe(true);
+    expect(wrongPage.content[0]?.text.replace(String(entry), "N")).toBe(
+      missing.content[0]?.text.replace(String(entry + 9999), "N"),
+    );
   });
 });
 
