@@ -1083,9 +1083,9 @@ every agent conversation is on-brand.
 **And the operator's own text, after it (#190).** What the contract cannot know is
 what each page is for, the house style for what gets written, and standing rules like
 "never add to `today` without asking." That used to live in a Claude project instruction
-— one per client, drifting. It now lives in the `settings` table under
-`agent_instructions`, edited in the app, and is appended to the same string under a
-fixed heading, `The operator adds:`. Blank appends nothing. It is read per request, so a
+— one per client, drifting. It now lives in the `user_settings` table under
+`agent_instructions`, per person, edited in the app, and is appended to the same string
+under a fixed heading, `The operator adds:`. Blank appends nothing. It is read per request, so a
 change reaches the next session that connects.
 
 Two things it is not. It is **not an index**: the operator naming their pages in a
