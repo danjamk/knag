@@ -1087,8 +1087,8 @@ export async function revokeUser(env: Env, id: number, now: Date = new Date()): 
 /**
  * Delete a person and every row they own — "deletion on request" (ADR-008 §12). Hard,
  * in one batch: cleared items through their revisions, revisions through their pages,
- * the pages, sessions, login codes, settings, and the row itself. Order matters only for
- * the subqueries, which is why the leaves go first.
+ * the pages, sessions, login codes, user settings, and the row itself. Order matters only
+ * for the subqueries, which is why the leaves go first.
  *
  * 🔴 Never the operator. The route refuses it before this is reached, and this refuses
  * it again by predicate: a deployment with no operator has nobody who can log in.
@@ -1365,12 +1365,14 @@ export async function readSetting(env: Env, userId: number, key: string): Promis
  * Upsert. An empty value is stored as empty rather than deleted — absent and blank read
  * the same.
  *
- * 🔴 **Writes `user_settings` only** — release two of #234's three. 1.7.0 wrote both
- * tables so a rollback would still read current text; this release stops writing the
- * legacy `settings` table and carries no migration, which is exactly what makes it look
- * skippable and exactly why it is not (ADR-002 §3): the Worker live during the contract
- * migration must be one that no longer writes the column being dropped. The release
- * after this one drops `settings`.
+ * Writes `user_settings`, which since 0013 is the only settings table there is (#234).
+ *
+ * 🔴 The history is worth keeping because it is the pattern, not the anecdote. 1.7.0
+ * wrote both tables so a rollback would still read current text; 1.9.0 stopped writing
+ * the legacy one and **carried no migration at all**, which is exactly what made it look
+ * skippable and exactly why it was not (ADR-002 §3) — the Worker live during 0013's
+ * migration had to be one that no longer wrote the table being dropped. Skip that middle
+ * release and the drop lands under a live writer, and nothing fails loudly.
  */
 export async function writeSetting(
   env: Env,

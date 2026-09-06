@@ -1,0 +1,15 @@
+-- Contract: `settings` goes (#234, ADR-008 §5). Release three of three.
+--
+-- 0010 created `user_settings` and wrote both; 1.9.0 stopped writing the old one and
+-- carried no migration at all, which is the release that makes this one safe. Nothing in
+-- `store.ts` has read or written `settings` since — the only mentions left are comments.
+--
+-- 🔴 Destructive, so the ordering from ADR-002 §3 is the whole point: `make migrate`
+-- runs BEFORE `make deploy`, so the Worker live while this executes is the *previous*
+-- release. That Worker must already be a non-writer, and it is — dev shipped 1.9.4 and
+-- prod 1.9.1, both past the 1.9.0 that removed the mirror write. Had the middle release
+-- been skipped, this would drop the table under a live writer and nothing would fail
+-- loudly; the writes would just start erroring against the only copy of the setting.
+--
+-- `make backup` first, always.
+DROP TABLE settings;

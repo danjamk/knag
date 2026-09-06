@@ -13,6 +13,40 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.9.5] — 2026-09-06
+
+`settings` is dropped. The three-release move that started in 1.7.0 is finished.
+
+### Changed
+
+- **Migration 0013 drops the legacy `settings` table** (#234, release three of three).
+  0010 created `user_settings` and wrote both; **1.9.0 stopped writing the old one and
+  carried no migration at all**, which is the release that makes this one safe and the
+  one that looked skippable. Nothing in `store.ts` has read or written `settings` since.
+
+  🔴 The ordering is the whole point ([ADR-002] §3): `make migrate` runs *before* `make
+  deploy`, so the Worker live while the drop executes is the **previous** release. That
+  Worker has to already be a non-writer, and both environments are — dev shipped 1.9.4
+  and prod 1.9.1, both past the 1.9.0 that removed the mirror write. Skip the middle
+  release and the drop lands under a live writer, and nothing fails loudly; the writes
+  just start erroring against the only copy of the setting.
+
+  Both deploy workflows back up D1 as their first step, so the backup this migration
+  wants happens before it runs. **This is the first destructive migration knag has
+  shipped** — worth watching the prod run rather than dispatching and walking away.
+
+- The guard in `users-scoping.test.ts` changed shape rather than going away. It used to
+  select from `settings` and assert no row came back; it now asserts the table is absent
+  from `sqlite_master`, which is the stronger question — a mirror write that came back
+  would fail against a missing table instead of quietly repopulating one.
+
+- Three stale comments fixed: `deleteUserHard`'s doc listed "settings" where it deletes
+  `user_settings`, `writeSetting`'s header described itself as release two, and
+  [spec §14](docs/spec.md) still named `settings` as where the operator's agent text
+  lives. 0010's header already carried the correction to 0007 that this issue asked for.
+
+[ADR-002]: docs/adr/ADR-002-two-accounts-and-migrations.md
+
 ## [1.9.4] — 2026-09-06
 
 The history tool stops sending agents to the wrong field.
@@ -2246,7 +2280,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.4...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.9.5...HEAD
+[1.9.5]: https://github.com/danjamk/knag/compare/v1.9.4...v1.9.5
 [1.9.4]: https://github.com/danjamk/knag/compare/v1.9.3...v1.9.4
 [1.9.3]: https://github.com/danjamk/knag/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/danjamk/knag/compare/v1.9.1...v1.9.2
