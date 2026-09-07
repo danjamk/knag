@@ -1025,6 +1025,7 @@ the login form is worth more to a phisher than a plain one.
 | `knag_write` | `(body, base_version, page?) → { version, updated_at, changed, page }` | Full replacement. Conflict on mismatch. |
 | `knag_wipe` | `(base_version, scope?, page?) → { version, wiped_count, cleared_count, page }` | Same path as the wipe control. `scope` is `completed` (default) or `all`; `all` resets to the page's template when it has one (§5). |
 | `knag_history` | `(since?, until?, page?) → History & { page }` | `History` is the shape `GET /api/history` returns, plus `snapshot` on each sealing entry (#252) — one `loadHistory`, and the tool is the only caller that asks for it. |
+| `knag_annotate` | `(entry_id, note, page?) → { id, entry_id, text, author, created_at, page }` | 🔴 Append-only (#253). Adds a note **beside** a past entry; there is no tool and no `store.ts` function that edits or removes one, because the wipe record is evidence and a rewritable record is not. A correction is another note. `entry_id` is an entry's `id` from `knag_history`, and an id on another page is refused exactly as a missing one is. |
 
 ### `page` is optional, by name, and never falls back (#153)
 

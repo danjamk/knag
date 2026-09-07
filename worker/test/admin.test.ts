@@ -4,6 +4,7 @@ import { LAST_SEEN_STALE_MS, SESSION_COOKIE } from "../src/auth.js";
 import { INVITE_TTL_MS } from "../src/login.js";
 import {
   MAX_USERS,
+  addAnnotation,
   createUser,
   defaultPageFor,
   findUserAny,
@@ -316,6 +317,9 @@ describe("DELETE /api/users/<id>?hard — delete", () => {
     await env.DB.prepare("INSERT INTO cleared_items (revision_id, line_text, cleared_at) VALUES (?, ?, ?)")
       .bind(revision?.id, "- [x] done", new Date().toISOString())
       .run();
+    // #253. An annotation is append-only while its owner exists; deletion on request is
+    // not an edit to the record, it is the record ceasing to be theirs to keep.
+    await addAnnotation(env, { revisionId: revision?.id ?? 0, text: "a note", author: "agent" });
 
     const counts = async (): Promise<Record<string, number>> => {
       const q = async (sql: string): Promise<number> =>
@@ -326,6 +330,9 @@ describe("DELETE /api/users/<id>?hard — delete", () => {
         revisions: await q("SELECT count(*) AS n FROM revisions WHERE page_id IN (SELECT id FROM pages WHERE owner_id = ?)"),
         cleared_items: await q(
           "SELECT count(*) AS n FROM cleared_items WHERE revision_id IN (SELECT r.id FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.owner_id = ?)",
+        ),
+        annotations: await q(
+          "SELECT count(*) AS n FROM annotations WHERE revision_id IN (SELECT r.id FROM revisions r JOIN pages p ON p.id = r.page_id WHERE p.owner_id = ?)",
         ),
         sessions: await q("SELECT count(*) AS n FROM sessions WHERE user_id = ?"),
         login_codes: await q("SELECT count(*) AS n FROM login_codes WHERE user_id = ?"),

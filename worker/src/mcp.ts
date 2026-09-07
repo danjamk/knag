@@ -9,6 +9,9 @@ import {
   type PageRow,
   type WipeScope,
   AGENT_INSTRUCTIONS,
+  ANNOTATION_MAX_CHARS,
+  addAnnotation,
+  findRevisionForOwner,
   findPageByName,
   defaultPageFor,
   listPages,
@@ -59,10 +62,14 @@ const INSTRUCTIONS = [
   "",
   "Five rules cut across every tool:",
   "",
-  "1. WHOLE-PAGE WRITE IS THE ONLY WRITE. Byte-preserve every line you are not",
-  "   explicitly changing. Indentation, blank lines, trailing whitespace and line",
-  "   endings all matter and all survive a round trip. Surgical edits only — never",
+  "1. WHOLE-PAGE WRITE IS THE ONLY WAY TO CHANGE A PAGE. Byte-preserve every line you",
+  "   are not explicitly changing. Indentation, blank lines, trailing whitespace and",
+  "   line endings all matter and all survive a round trip. Surgical edits only — never",
   "   reformat, retitle, sort, or tidy anything you were not asked to touch.",
+  "",
+  "   knag_annotate is the one write that does not touch a page: it adds a note beside a",
+  "   past history entry. It cannot change one, and nothing can edit or delete a note —",
+  "   a correction is another note.",
   "",
   "2. ALWAYS READ IMMEDIATELY BEFORE WRITING. Never write from a body you are carrying",
   "   from earlier in the conversation. Three devices sync to this page and any of them",
@@ -274,6 +281,7 @@ function buildServer(env: Env, origin: string, operator: string | null, ownerId:
   registerWrite(server, env, ownerId);
   registerWipe(server, env, ownerId);
   registerHistory(server, env, ownerId);
+  registerAnnotate(server, env, ownerId);
 
   return server;
 }
@@ -641,7 +649,9 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
         "",
         "**Want the wiped page itself? Read `snapshot` on the sealing entry.** It is the exact bytes as they stood before, and it is the better answer than reconstructing from `disappeared` — a diff is a set difference and cannot see a duplicate line being removed. Very long pages are cut to 16 KiB at a line boundary, and `snapshot_truncated` says so.",
         "",
-        "Address an entry by `id`, never by `local_time`: a wipe puts two entries on the same minute by design, and an edit just after makes three.",
+        "Address an entry by `id`, never by `local_time`: a wipe puts two entries on the same minute by design, and an edit just after makes three. That `id` is also what `knag_annotate` takes.",
+        "",
+        "An entry may carry `annotations` — notes added afterwards with `knag_annotate`. They sit **beside** the entry and are never merged into it: the entry is what happened, and an annotation is somebody's later account of it. Nothing can edit or remove one, so a correction appears as another note rather than a changed record.",
       ].join("\n"),
       inputSchema: {
         since: z.string().optional().describe(`Start of the range. ${HISTORY_BOUNDARY}`),
@@ -692,6 +702,20 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
                   .boolean()
                   .optional()
                   .describe("True when `snapshot` was cut to 16 KiB. Whole lines are kept from the top."),
+                annotations: z
+                  .array(
+                    z.object({
+                      id: z.number(),
+                      text: z.string(),
+                      author: z.string().describe("`pwa`, `agent` or `system` — who added the note."),
+                      created_at: z.string(),
+                      local_time: z.string(),
+                    }),
+                  )
+                  .optional()
+                  .describe(
+                    "Notes added after the fact, oldest first. Beside the entry, never part of it — the entry is what happened, an annotation is somebody's later account of it.",
+                  ),
               }),
             ),
             cleared: z.array(
@@ -775,4 +799,97 @@ function summarize(history: Awaited<ReturnType<typeof loadHistory>>): string {
   }
 
   return lines.join("\n");
+}
+
+/**
+ * Add a note to a past history entry (#253).
+ *
+ * 🔴 **The only write in this server that is not a whole-page write, and the only one
+ * that touches the record rather than the page.** It is append-only by construction:
+ * there is no tool that edits or removes an annotation, and `store.ts` has no function
+ * that could. That is the feature, not a first cut — the wipe history is worth something
+ * because it is evidence, and a path that rewrites it lets a bad day be quietly turned
+ * into a good one with nothing downstream able to tell.
+ */
+function registerAnnotate(server: McpServer, env: Env, ownerId: number): void {
+  server.registerTool(
+    "knag_annotate",
+    {
+      title: "Annotate a history entry",
+      description: [
+        "Attach a note to an entry that already happened — a detail that surfaced afterwards, a correction, a number that synced late.",
+        "",
+        "🔴 **This never changes what the entry says.** The note is stored beside the original and returned beside it, and there is no way to edit or delete one: a correction is another note. The history is a record of what happened, and it stays one.",
+        "",
+        "`entry_id` is an entry's `id` from `knag_history` — never its `local_time`, which is not unique. An id that does not exist, or belongs to another page, is an error and nothing is written; it never falls back to the newest entry, for the same reason an unrecognised page name never falls back to the default.",
+        "",
+        "Annotate the page you read the entry from. `page` and `entry_id` must agree.",
+      ].join("\n"),
+      inputSchema: {
+        entry_id: z
+          .number()
+          .int()
+          .positive()
+          .describe("The `id` of the entry to annotate, from a knag_history response."),
+        note: z
+          .string()
+          .min(1)
+          .max(ANNOTATION_MAX_CHARS)
+          .describe(`Free text, up to ${ANNOTATION_MAX_CHARS} characters. Stored verbatim.`),
+        page: PAGE.optional(),
+      },
+      outputSchema: {
+        id: z.number(),
+        entry_id: z.number(),
+        text: z.string(),
+        author: z.string().describe("`agent` for anything written through this server."),
+        created_at: z.string(),
+        page: z.string().describe("The name of the page the entry is on."),
+      },
+      annotations: {
+        readOnlyHint: false,
+        // Adds a row; changes nothing that was there. The record it attaches to is
+        // untouched, which is the whole design.
+        destructiveHint: false,
+        // 🔴 Not idempotent: calling twice leaves two notes, because two notes is what
+        // was asked for. A host that retried blindly on a timeout would double a note,
+        // which is visible and harmless — unlike a blind retry of a versioned write.
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ entry_id, note, page }) => {
+      const found = await agentPage(env, ownerId, page);
+      if (!found.ok) return found.result;
+
+      // 🔴 One `null` for three cases — no such entry, somebody else's, or on another of
+      // the caller's own pages — and one message for all three. A reply that separated
+      // them would confirm an entry exists.
+      const revision = await findRevisionForOwner(env, ownerId, found.page.id, entry_id);
+      if (!revision) {
+        return failed(
+          [
+            `no entry ${entry_id} on "${found.page.name}".`,
+            "",
+            "Entry ids come from knag_history and belong to one page. Nothing was written.",
+            "Read the history for the page you mean and use an `id` from it.",
+          ].join("\n"),
+        );
+      }
+
+      const added = await addAnnotation(env, { revisionId: revision.id, text: note, author: "agent" });
+
+      return ok(
+        {
+          id: added.id,
+          entry_id: added.revision_id,
+          text: added.text,
+          author: added.author,
+          created_at: added.created_at,
+          page: found.page.name,
+        },
+        `noted on entry ${added.revision_id} of "${found.page.name}" · the entry itself is unchanged`,
+      );
+    },
+  );
 }

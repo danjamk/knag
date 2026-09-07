@@ -193,7 +193,7 @@ describe("omitting the page", () => {
 });
 
 describe("the tool schemas", () => {
-  it("🔴 declare `page` as optional on all four", async () => {
+  it("🔴 declare `page` as optional on all five", async () => {
     const res = await SELF.fetch(MCP, {
       method: "POST",
       headers: {
@@ -213,6 +213,6 @@ describe("the tool schemas", () => {
       // it is one keystroke away at all times.
       expect(tool.inputSchema.required ?? [], tool.name).not.toContain("page");
     }
-    expect(listed.result.tools).toHaveLength(4);
+    expect(listed.result.tools).toHaveLength(5);
   });
 });

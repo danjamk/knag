@@ -13,6 +13,56 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-09-06
+
+A past history entry can be annotated. It still cannot be changed.
+
+### Added
+
+- **`knag_annotate(entry_id, note, page?)`** (#253), the fifth MCP tool and the first
+  write in this server that is not a whole-page write. Details surface after the wipe —
+  watch data syncs late, an intensity rating gets reconsidered, a substitution is
+  remembered an hour on — and until now the choice was to lose them or keep a shadow
+  record elsewhere, which defeats the point of the wipe history being the only log.
+
+  🔴 **Append-only, and that is the feature rather than a first cut.** The record is
+  worth something because it is evidence of what happened; a tool that can rewrite a past
+  snapshot lets a bad session be quietly laundered into a good one with nothing
+  downstream able to tell. So there is no edit path and no delete path — not in the tool
+  list, and not in `store.ts`, which has an insert and a read and nothing else. A
+  correction is another note. Tests assert both the behaviour and the absence.
+
+  Deliberately **not** in scope: setting a header field on a past entry as a typed value
+  (`intensity=4`). That is editing wearing a costume. If typed post-hoc fields turn out to
+  be needed they get their own feature with their own provenance, decided on its own
+  merits rather than smuggled through a free-text note.
+
+- **`annotations` on a history entry**, oldest first so a correction reads after the
+  thing it corrects. Beside the entry, never merged into it: the entry is what happened,
+  an annotation is somebody's later account of it. Both surfaces carry them — unlike
+  `snapshot`, the browser will need these.
+
+- Migration 0014, additive. No `owner_id` on the table: an annotation belongs to a
+  revision, a revision to a page, and a page to an owner, so the owner is reachable by
+  join. Denormalizing it would put the answer in two places, which is the shape of the
+  bug where one person reads another's page.
+
+### Changed
+
+- **The server instructions said "whole-page write is the only write", and that stopped
+  being true in this release.** Corrected in the same change that made it false — a rule
+  an agent reads and acts on is worth more than the one release of tidiness that would
+  have come from leaving it. [spec §14.6](docs/spec.md) lists the tool too.
+
+- `deleteUserHard` takes annotations with everything else a person owns. Append-only
+  holds while the record is theirs to keep; deletion on request is not an edit to it.
+  The test that enumerates every table and asserts each goes to zero covers the new one.
+
+### Note
+
+The history pane does not show annotations yet — this release is the server half. How a
+note reads against a wiped line is a visual decision and goes to the design session first.
+
 ## [1.10.0] — 2026-09-06
 
 A wipe's entry in `knag_history` now carries the page it wiped.
@@ -2317,7 +2367,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/danjamk/knag/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/danjamk/knag/compare/v1.9.5...v1.10.0
 [1.9.5]: https://github.com/danjamk/knag/compare/v1.9.4...v1.9.5
 [1.9.4]: https://github.com/danjamk/knag/compare/v1.9.3...v1.9.4

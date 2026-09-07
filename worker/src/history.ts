@@ -1,7 +1,9 @@
 import type { Env } from "./env.js";
 import {
+  type AnnotationRow as AnnotationRecord,
   type ClearedRecord,
   type RevisionRecord,
+  annotationsInRange,
   clearedItemsInRange,
   revisionBefore,
   revisionsInRange,
@@ -345,6 +347,24 @@ export type HistoryRevision = {
   snapshot?: string;
   /** True when `snapshot` was cut to `SNAPSHOT_MAX_BYTES`. Whole lines only. */
   snapshot_truncated?: boolean;
+  /**
+   * Notes added after the fact (#253), oldest first. Present only where there are any.
+   *
+   * 🔴 **Beside the entry, never merged into it.** An annotation is somebody's later
+   * account of what happened; the entry is what happened. A reader that cannot tell them
+   * apart has the same record a mutable history would have given it.
+   */
+  annotations?: HistoryAnnotation[];
+};
+
+export type HistoryAnnotation = {
+  id: number;
+  text: string;
+  /** `pwa`, `agent` or `system` — who added the note, not who made the edit. */
+  author: string;
+  created_at: string;
+  /** `HH:MM` in the reporting zone, like every other time in this response. */
+  local_time: string;
 };
 
 export type HistoryCleared = {
@@ -446,6 +466,8 @@ export function buildHistory(input: {
   revisions: RevisionRecord[];
   /** In range, ascending by `cleared_at`. */
   cleared: ClearedRecord[];
+  /** In range, ascending by `created_at`. Empty when the caller did not load them. */
+  annotations?: AnnotationRecord[];
   since: Date;
   until: Date;
   timeZone: string;
@@ -463,6 +485,22 @@ export function buildHistory(input: {
   const clearedCounts = new Map<number, number>();
   for (const item of input.cleared) {
     clearedCounts.set(item.revision_id, (clearedCounts.get(item.revision_id) ?? 0) + 1);
+  }
+
+  // Grouped by the entry they annotate. The query returns them oldest first and this
+  // preserves that: a correction reads after the thing it corrects.
+  const annotationsByRevision = new Map<number, HistoryAnnotation[]>();
+  for (const note of input.annotations ?? []) {
+    const at = new Date(note.created_at);
+    const list = annotationsByRevision.get(note.revision_id) ?? [];
+    list.push({
+      id: note.id,
+      text: note.text,
+      author: note.author,
+      created_at: note.created_at,
+      local_time: localTime(at, timeZone),
+    });
+    annotationsByRevision.set(note.revision_id, list);
   }
 
   const days = new Map<string, HistoryDay>();
@@ -503,6 +541,9 @@ export function buildHistory(input: {
       entry.snapshot = capped.snapshot;
       if (capped.truncated) entry.snapshot_truncated = true;
     }
+
+    const notes = annotationsByRevision.get(revision.id);
+    if (notes && notes.length > 0) entry.annotations = notes;
 
     dayFor(localDate(at, timeZone)).revisions.push(entry);
 
@@ -602,18 +643,19 @@ export async function loadHistory(
   timeZone: string,
   options: { snapshots?: boolean } = {},
 ): Promise<History> {
-  // Three indexed reads in parallel. `revisionBefore` is issued unconditionally even
+  // Four indexed reads in parallel. `revisionBefore` is issued unconditionally even
   // though a truncated page supersedes it — one extra indexed lookup is cheaper than
   // the second round trip that finding out first would cost.
   //
-  // 🔴 All three carry `range.pageId` (#152). A diff floor taken from another page would
+  // 🔴 All four carry `range.pageId` (#152). A diff floor taken from another page would
   // report that page's whole body as `disappeared` and this page's as `appeared` — a
   // history that is not merely incomplete but actively wrong, on the one query the
   // feature exists for.
-  const [before, page, cleared] = await Promise.all([
+  const [before, page, cleared, annotations] = await Promise.all([
     revisionBefore(env, range.pageId, range.since),
     revisionsInRange(env, range),
     clearedItemsInRange(env, range),
+    annotationsInRange(env, range),
   ]);
 
   return buildHistory({
@@ -622,6 +664,7 @@ export async function loadHistory(
     baseline: page.precedingDropped ?? before,
     revisions: page.revisions,
     cleared,
+    annotations,
     since: range.since,
     until: range.until,
     timeZone,
