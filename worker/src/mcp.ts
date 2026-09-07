@@ -96,6 +96,11 @@ const INSTRUCTIONS = [
   "checkbox and `- [x] text` is a checked one, at any indentation; everything else is a",
   "literal line. Do not add formatting the page cannot show.",
   "",
+  "A line like `# Personal` is a SECTION HEADER. The `#` stays on screen — it is not",
+  "markdown and nothing renders it larger — and what it buys is position: a line put",
+  "back from history returns under the header it left from. Keep headers where they are",
+  "and put new lines under the right one. Do not add headers to a page that has none.",
+  "",
   "Voice, whenever you write about knag to the user: lowercase `knag`, deadpan, no",
   "exclamation marks, no congratulating. It is `the page`. Removing checked items is",
   "`wiping`. Say `wiped 6`, not `Successfully cleared 6 completed items!`.",
@@ -686,6 +691,12 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
                     "`clear_completed`, `wipe_all` or `reset` on the entry that seals a wipe; null otherwise.",
                   ),
                 appeared: z.array(z.string()),
+                disappeared_sections: z
+                  .array(z.string().nullable())
+                  .optional()
+                  .describe(
+                    "One per `disappeared` line, same order and length: the `#` section header it sat under, or null. Absent when the wiped page had no headers.",
+                  ),
                 disappeared: z
                   .array(z.string())
                   .describe(
@@ -725,6 +736,10 @@ function registerHistory(server: McpServer, env: Env, ownerId: number): void {
                   .number()
                   .describe("The entry that sealed the wipe — not the following one that carries the lines."),
                 line_text: z.string().describe("A checked line only. Never the whole wiped page."),
+                section: z
+                  .string()
+                  .optional()
+                  .describe("The `#` section header this line sat under, when the page had one."),
                 cleared_at: z.string(),
                 local_time: z.string(),
               }),

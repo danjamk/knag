@@ -22,7 +22,7 @@
  * Spec §14.1 (block model), §14.2 (checkbox grammar).
  */
 
-export type BlockKind = "checkbox" | "text" | "fence" | "blank";
+export type BlockKind = "checkbox" | "heading" | "text" | "fence" | "blank";
 
 export type Block = {
   kind: BlockKind;
@@ -62,6 +62,24 @@ export type Block = {
  * ownership of a line it would then rewrite.
  */
 export const CHECKBOX = /^(\s*)([-*])\s\[([ xX])\]\s(.*)$/;
+
+/**
+ * A section header: one or more `#`, then a space, then the name (#250).
+ *
+ * 🔴 **The `#` is not markdown and is never rendered as one.** It stays on screen exactly
+ * as typed, because [ADR-004](../../docs/adr/ADR-004-display-matches-the-bytes.md) asks
+ * that the file be reconstructable byte-for-byte from what is displayed, and a styled
+ * heading with the marker eaten is not. What a heading buys is *position*: a line
+ * restored from history lands under the header it left from, instead of at the bottom.
+ *
+ * The space is required, so `#1 priority` and `#todo` stay ordinary text. Leading
+ * whitespace is allowed for the same reason a checkbox allows it — the document is
+ * whatever the person typed — though an indented header is unusual.
+ *
+ * A `#` inside a fence never reaches here: a fence is one block and its interior lines
+ * are never classified.
+ */
+export const HEADING = /^\s*#{1,6}\s/;
 
 /** A fence opens where the first non-whitespace is three or more backticks or tildes. */
 const FENCE = /^(\s*)(`{3,}|~{3,})(.*)$/;
@@ -173,7 +191,11 @@ export function parse(body: string): Block[] {
     blocks.push({
       // Whitespace-only counts as blank so spacing is its own row and survives a
       // reorder. `raw` still holds the whitespace, so nothing is normalized.
-      kind: line.trim() === "" ? "blank" : "text",
+      //
+      // 🔴 A heading is a *kind*, not a transformation: `raw` is the line including its
+      // `#`, so `serialize` is byte-identical either way and the round-trip property is
+      // untouched. Nothing renders differently — only `restore.ts` reads this kind.
+      kind: line.trim() === "" ? "blank" : HEADING.test(content) ? "heading" : "text",
       raw: line,
       startLine: i,
       endLine: i,

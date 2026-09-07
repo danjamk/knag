@@ -1,4 +1,4 @@
-import { parse } from "../../worker/src/blocks.js";
+import { type Block, parse } from "../../worker/src/blocks.js";
 
 /**
  * Undoing a wipe (#59).
@@ -172,30 +172,87 @@ export function goneCount(preWipe: string, postWipe: string): number {
 }
 
 /**
- * Append lines to the page, count-idempotently.
+ * A line to put back, and the section header it sat under when it left (#250).
+ *
+ * `section` is the header's exact `raw`, or `null` for a line that was not under one —
+ * either the page has no headers or the line sat above the first.
+ */
+export type Restorable = { raw: string; section?: string | null };
+
+/**
+ * Where a restored line goes inside its section: **after the last thing in it**, not
+ * immediately before the next header.
+ *
+ * A section commonly ends with a blank line separating it from the next. Inserting at
+ * the boundary would put the line after that blank and hard against the following
+ * header, which reads as belonging to neither. Returning the index after the section's
+ * last non-blank block puts it with its own kind and leaves the spacing alone.
+ *
+ * A section with nothing in it yet takes the line directly under its header.
+ */
+function endOfSection(blocks: Block[], at: number): number {
+  let last = at;
+  for (let i = at + 1; i < blocks.length; i++) {
+    if (blocks[i]?.kind === "heading") break;
+    if (blocks[i]?.kind !== "blank") last = i;
+  }
+  return last + 1;
+}
+
+/**
+ * Put lines back on the page, count-idempotently, **into their own section where it is
+ * still there** (#250).
  *
  * For a restore with **no snapshot behind it** — a row from history rather than today's
  * offer. `restoredBody` needs `preWipe` and `postWipe` to know where each line sat, and an
- * older wipe has neither on this device; all that survives is the lines themselves.
+ * older wipe has neither on this device.
  *
- * So they land at the end. **Content over position**, which is the ruling `restoredBody`
- * already makes when an anchor has vanished — a line you went looking for is not less
- * useful at the bottom of the page, and a restore that silently dropped it would be the
- * failure the whole feature exists to prevent.
+ * What survives instead is the section, computed by the server from the sealed pre-wipe
+ * body and carried on the history row. A line whose header is still on the page lands
+ * under it. A line with no section, or one whose header has since gone, lands at the end
+ * — **content over position**, the ruling `restoredBody` already makes when an anchor has
+ * vanished: a line you went looking for is not less useful at the bottom of the page, and
+ * a restore that silently dropped it would be the failure the whole feature exists to
+ * prevent.
  *
- * 🔴 Count-idempotent for `restoredBody`'s reason and by the same rule: a line is appended
+ * 🔴 The header is matched on its exact `raw`, like every other anchor here. A header
+ * whose text was edited since the wipe is a different header, and guessing that
+ * `# RealPlus` and `# Real Plus` are the same one would put a line somewhere the person
+ * did not put that name.
+ *
+ * 🔴 Count-idempotent for `restoredBody`'s reason and by the same rule: a line is inserted
  * only while the page holds it fewer times than this restore has asked for so far. Tapping
  * twice is safe, and a page that legitimately contains the same line twice can still have
  * both put back.
  */
-export function insertLines(current: string, lines: string[]): string {
-  const result = blocksOf(current);
+export function insertLines(current: string, lines: Restorable[]): string {
+  const blocks = current === "" ? [] : parse(current);
+  const result = blocks.map((block) => block.raw);
+  // Kept in step with `result` so an insertion shifts both, and the next line in the
+  // same section lands after the one before it rather than on top of it.
+  const kinds = blocks.map((block) => block.kind);
   const asked = new Map<string, number>();
 
   for (const line of lines) {
-    const want = (asked.get(line) ?? 0) + 1;
-    asked.set(line, want);
-    if (countOf(result, line) < want) result.push(line);
+    const want = (asked.get(line.raw) ?? 0) + 1;
+    asked.set(line.raw, want);
+    if (countOf(result, line.raw) >= want) continue;
+
+    const header = line.section ?? null;
+    const at = header === null ? -1 : result.findIndex((raw, i) => raw === header && kinds[i] === "heading");
+
+    if (at === -1) {
+      result.push(line.raw);
+      kinds.push("text");
+      continue;
+    }
+
+    const into = endOfSection(
+      result.map((raw, i) => ({ kind: kinds[i] ?? "text", raw, startLine: i, endLine: i }) as Block),
+      at,
+    );
+    result.splice(into, 0, line.raw);
+    kinds.splice(into, 0, "text");
   }
 
   return result.join("\n");

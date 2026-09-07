@@ -1,3 +1,4 @@
+import { parse } from "./blocks.js";
 import type { Env } from "./env.js";
 import {
   type AnnotationRow as AnnotationRecord,
@@ -340,6 +341,12 @@ export type HistoryRevision = {
   /** Non-zero only on a `clear_completed` entry. See the note in `buildHistory`. */
   cleared_count: number;
   /**
+   * One entry per `disappeared` line, same order and length: the section header it sat
+   * under, or `null` (#250). Present only where the wiped page had headers at all, so a
+   * page without them carries exactly the payload it always did.
+   */
+  disappeared_sections?: (string | null)[];
+  /**
    * The page as it stood before the wipe — present only on a sealing entry, and only
    * when the caller asked for snapshots (#252). Absent everywhere else, so the browser's
    * history payload is the shape it always was.
@@ -357,6 +364,33 @@ export type HistoryRevision = {
   annotations?: HistoryAnnotation[];
 };
 
+/**
+ * Each line of a body mapped to the section header above it (#250).
+ *
+ * 🔴 First occurrence wins. A page may hold the same line under two headers, and the
+ * bytes cannot say which copy a history row came from — the same ambiguity `stripOnce`
+ * already accepts for duplicates. Landing it under the first is a documented guess about
+ * *position*; the alternative is landing it at the bottom, which is a worse guess.
+ *
+ * Headers themselves map to nothing: restoring a header into its own section is
+ * nonsense, and one that came back at the end is at least visible.
+ */
+function sectionsOf(body: string): Map<string, string> {
+  const sections = new Map<string, string>();
+  let current: string | null = null;
+
+  for (const block of parse(body)) {
+    if (block.kind === "heading") {
+      current = block.raw;
+      continue;
+    }
+    if (current === null || block.kind === "blank") continue;
+    if (!sections.has(block.raw)) sections.set(block.raw, current);
+  }
+
+  return sections;
+}
+
 export type HistoryAnnotation = {
   id: number;
   text: string;
@@ -371,6 +405,12 @@ export type HistoryCleared = {
   id: number;
   revision_id: number;
   line_text: string;
+  /**
+   * The section header this line sat under when it was wiped, or absent when the page
+   * had none (#250). Read from the sealed pre-wipe body, so it costs no column and works
+   * for rows written before the feature existed.
+   */
+  section?: string;
   cleared_at: string;
   local_time: string;
 };
@@ -513,7 +553,21 @@ export function buildHistory(input: {
     return day;
   };
 
+  // 🔴 Sections come from the **sealed pre-wipe body**, which is the sealing entry's own
+  // body — the same fact that makes its diff empty by construction (#251, #252). So one
+  // parse per wipe answers both "where did this cleared line sit" and "where did the
+  // following entry's disappeared lines sit", with no column and no extra query, and it
+  // works for wipes recorded before this feature existed.
+  //
+  // Keyed by the sealing revision's id, and the entry that carries the removed lines is
+  // the one immediately after it.
+  const sealSections = new Map<number, Map<string, string>>();
+  for (const revision of input.revisions) {
+    if (revision.event_type !== null) sealSections.set(revision.id, sectionsOf(revision.body));
+  }
+
   let previousBody = input.baseline?.body ?? "";
+  let precedingSeal: number | null = null;
 
   for (const revision of input.revisions) {
     const at = new Date(revision.created_at);
@@ -545,19 +599,31 @@ export function buildHistory(input: {
     const notes = annotationsByRevision.get(revision.id);
     if (notes && notes.length > 0) entry.annotations = notes;
 
+    // The entry after a seal is the one holding what the wipe removed, so it is the one
+    // that gets the sections. Omitted entirely when the wiped page had no headers, which
+    // is every page that has never used them — their payload is untouched.
+    const sections = precedingSeal === null ? undefined : sealSections.get(precedingSeal);
+    if (sections && sections.size > 0 && disappeared.length > 0) {
+      const mapped = disappeared.map((line) => sections.get(line) ?? null);
+      if (mapped.some((section) => section !== null)) entry.disappeared_sections = mapped;
+    }
+
     dayFor(localDate(at, timeZone)).revisions.push(entry);
 
     previousBody = revision.body;
+    precedingSeal = revision.event_type !== null ? revision.id : null;
   }
 
   for (const item of input.cleared) {
     const at = new Date(item.cleared_at);
+    const section = sealSections.get(item.revision_id)?.get(item.line_text);
     dayFor(localDate(at, timeZone)).cleared.push({
       id: item.id,
       revision_id: item.revision_id,
       line_text: item.line_text,
       cleared_at: item.cleared_at,
       local_time: localTime(at, timeZone),
+      ...(section === undefined ? {} : { section }),
     });
   }
 

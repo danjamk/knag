@@ -25,7 +25,7 @@ import {
   toggle,
 } from "../../worker/src/blocks.js";
 import { safeNext } from "./nav.js";
-import { goneCount, insertLines, offerExpiresAt, restoredBody } from "./restore.js";
+import { type Restorable, goneCount, insertLines, offerExpiresAt, restoredBody } from "./restore.js";
 import {
   type Connectivity,
   RECONNECT_PROBE_MS,
@@ -2511,8 +2511,8 @@ type Wipe = {
   time: string;
   /** What the machine says happened: `wiped 6`, or `wiped page · 9 gone`. */
   label: string;
-  /** The lines this wipe took, exactly as they left. */
-  lines: string[];
+  /** The lines this wipe took, exactly as they left, each with the section it left from. */
+  lines: Restorable[];
 };
 
 type HistoryDay = { date: string; label: string; wipes: Wipe[] };
@@ -2523,6 +2523,8 @@ type HistoryRevision = {
   event_type: string | null;
   appeared: string[];
   disappeared: string[];
+  /** Same order and length as `disappeared`; absent when the wiped page had no headers. */
+  disappeared_sections?: (string | null)[];
 };
 
 type HistoryResponse = {
@@ -2530,7 +2532,7 @@ type HistoryResponse = {
   days: Array<{
     date: string;
     revisions: HistoryRevision[];
-    cleared: Array<{ revision_id: number; line_text: string }>;
+    cleared: Array<{ revision_id: number; line_text: string; section?: string }>;
   }>;
 };
 
@@ -2587,9 +2589,17 @@ function toDays(history: HistoryResponse, now: Date): HistoryDay[] {
       const sweep = revision.event_type === "clear_completed";
       const result = day.revisions[i + 1];
 
-      const lines = sweep
-        ? day.cleared.filter((item) => item.revision_id === revision.id).map((item) => item.line_text)
-        : (result?.disappeared ?? []);
+      // 🔴 Each line carries the section it left from (#250), and the two scopes read it
+      // from the two different places they already read the lines from. Both are computed
+      // by the server from the same sealed pre-wipe body, so they agree.
+      const lines: Restorable[] = sweep
+        ? day.cleared
+            .filter((item) => item.revision_id === revision.id)
+            .map((item) => ({ raw: item.line_text, section: item.section ?? null }))
+        : (result?.disappeared ?? []).map((raw, i) => ({
+            raw,
+            section: result?.disappeared_sections?.[i] ?? null,
+          }));
 
       // 🔴 One verb. A reset and an emptying are the same gesture from the reader's
       // side — the page was wiped — and `gone` is what separates them, because it counts
@@ -2622,7 +2632,8 @@ function toDays(history: HistoryResponse, now: Date): HistoryDay[] {
  * path already exists and is the recovery line's `put the page back`, which is same-day
  * and positional; this is the other half, and it is deliberately per-line.
  */
-function historyLine(raw: string): HTMLLIElement {
+function historyLine(line: Restorable): HTMLLIElement {
+  const raw = line.raw;
   const li = document.createElement("li");
   if (/^\s*[-*+]\s+\[[xX]\]\s/.test(raw)) li.setAttribute("data-done", "");
 
@@ -2644,7 +2655,7 @@ function historyLine(raw: string): HTMLLIElement {
 
   control.append(text, mark);
   control.addEventListener("click", () => {
-    queueLineBack(raw, li, mark);
+    queueLineBack(line, li, mark);
   });
 
   li.appendChild(control);
@@ -2669,9 +2680,9 @@ function historyLine(raw: string): HTMLLIElement {
  */
 let restoreQueue: Promise<void> = Promise.resolve();
 
-function queueLineBack(raw: string, row: HTMLElement, mark: HTMLElement): void {
+function queueLineBack(line: Restorable, row: HTMLElement, mark: HTMLElement): void {
   restoreQueue = restoreQueue
-    .then(() => putLineBack(raw, row, mark))
+    .then(() => putLineBack(line, row, mark))
     .catch(() => showHistoryError("not added"));
 }
 
@@ -2689,12 +2700,12 @@ function queueLineBack(raw: string, row: HTMLElement, mark: HTMLElement): void {
  * many times as the restore asked for — so a double tap is safe and the second one simply
  * finds nothing to do.
  */
-async function putLineBack(raw: string, row: HTMLElement, mark: HTMLElement): Promise<void> {
+async function putLineBack(line: Restorable, row: HTMLElement, mark: HTMLElement): Promise<void> {
   if (row.hasAttribute("data-restored")) return;
   await saveNow();
   showHistoryError(null);
 
-  const next = insertLines(body, [raw]);
+  const next = insertLines(body, [line]);
 
   // Already on the page. Marked the same way rather than reported as a failure: from the
   // reader's side the line is there, which is what they asked for.
@@ -2811,7 +2822,7 @@ function toggleWipe(row: HTMLElement, wipes: Map<number, Wipe>): void {
 
   const list = document.createElement("ul");
   list.className = "lines";
-  for (const raw of wipe.lines) list.appendChild(historyLine(raw));
+  for (const line of wipe.lines) list.appendChild(historyLine(line));
   row.appendChild(list);
 }
 

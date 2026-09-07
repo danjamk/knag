@@ -138,6 +138,30 @@ test.describe("history", () => {
     await expect.poll(() => knag.document()).toBe("Kingspan 70mm quoted 2wks");
   });
 
+  test("🔴 puts a line back under its own section (#250)", async ({ knag }) => {
+    // Dan's own case: two standing sections, and a restore that used to land at the
+    // bottom of the page regardless of where it came from. On a sectioned page that
+    // meant re-sorting every restore by hand — paid at the moment the wipe was being
+    // considered, which is why it made the wipe feel expensive.
+    const SECTIONED = "# RealPlus\nKingspan 70mm quoted 2wks\n\n# Personal\n- [ ] milk";
+    await knag.resetPages();
+    await knag.seed(SECTIONED);
+    await wipeThePage(knag);
+
+    // The skeleton back on the page, the way a template would leave it after a wipe.
+    // Seeded before the pane opens: seeding reloads, and a pane opened first is gone.
+    await knag.seed("# RealPlus\n\n# Personal\n- [ ] eggs");
+    await openHistory(knag);
+
+    await knag.page.locator("[data-history-list] .head").first().click();
+    await knag.page.locator("[data-history-list] [data-put-line]", { hasText: "Kingspan" }).click();
+
+    // Under its own header, not at the bottom — and the `#` is still literally there.
+    await expect
+      .poll(() => knag.document())
+      .toBe("# RealPlus\nKingspan 70mm quoted 2wks\n\n# Personal\n- [ ] eggs");
+  });
+
   test("🔴 confirms in place, and a second tap cannot double the line", async ({ knag }) => {
     await knag.resetPages();
     await knag.seed(PAGE);
