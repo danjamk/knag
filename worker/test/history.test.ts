@@ -543,6 +543,66 @@ describe("assembling the response", () => {
     expect(history.truncated).toBe(true);
   });
 
+  it("tells each wiped line which section it left from (#250)", () => {
+    // Sections come from the sealed pre-wipe body — the sealing entry's own body — so no
+    // column stores them and a wipe recorded before the feature existed still answers.
+    const wiped = "# RealPlus\n- [ ] invoice\n\n# Personal\n- [ ] milk";
+    const history = buildHistory({
+      ...range,
+      baseline: null,
+      revisions: [
+        revision(1, wiped, "2026-08-14T14:00:00.000Z", { event_type: "wipe_all" }),
+        revision(2, "", "2026-08-14T14:00:01.000Z"),
+      ],
+      cleared: [],
+    });
+
+    const after = history.days[0]?.revisions[1];
+    // Same order and length as `disappeared`, so the client pairs them by index.
+    expect(after?.disappeared_sections).toHaveLength(after?.disappeared.length ?? 0);
+
+    const sections = new Map(
+      (after?.disappeared ?? []).map((line, i) => [line, after?.disappeared_sections?.[i] ?? null]),
+    );
+    expect(sections.get("- [ ] invoice")).toBe("# RealPlus");
+    expect(sections.get("- [ ] milk")).toBe("# Personal");
+    // A header is under no section of its own.
+    expect(sections.get("# RealPlus")).toBeNull();
+  });
+
+  it("tells a cleared line the same thing, from the same body", () => {
+    const wiped = "# RealPlus\n- [x] invoice";
+    const history = buildHistory({
+      ...range,
+      baseline: null,
+      revisions: [revision(1, wiped, "2026-08-14T14:00:00.000Z", { event_type: "clear_completed" })],
+      cleared: [
+        { id: 1, revision_id: 1, line_text: "- [x] invoice", cleared_at: "2026-08-14T14:00:00.000Z" },
+      ],
+    });
+
+    expect(history.days[0]?.cleared[0]?.section).toBe("# RealPlus");
+  });
+
+  it("🔴 a page with no headers carries exactly the payload it always did", () => {
+    const history = buildHistory({
+      ...range,
+      baseline: null,
+      revisions: [
+        revision(1, "one\ntwo", "2026-08-14T14:00:00.000Z", { event_type: "wipe_all" }),
+        revision(2, "", "2026-08-14T14:00:01.000Z"),
+      ],
+      cleared: [{ id: 1, revision_id: 1, line_text: "one", cleared_at: "2026-08-14T14:00:00.000Z" }],
+    });
+
+    // Absent, not an array of nulls: most pages have never used a header and their
+    // history responses should not grow a field to say so.
+    for (const entry of history.days[0]?.revisions ?? []) {
+      expect(entry.disappeared_sections).toBeUndefined();
+    }
+    expect(history.days[0]?.cleared[0]).not.toHaveProperty("section");
+  });
+
   it("carries a snapshot on the sealing entry only, and only when asked (#252)", () => {
     const wiped = "one\ntwo\nthree";
     const input = {

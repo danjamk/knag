@@ -408,3 +408,30 @@ describe("setText (spec §7, §14.2)", () => {
     );
   });
 });
+
+describe("headings (#250)", () => {
+  it("classifies `# name` as a heading and leaves the bytes alone", () => {
+    const blocks = parse("# RealPlus\n- [ ] one");
+    expect(blocks[0]?.kind).toBe("heading");
+    expect(blocks[0]?.raw).toBe("# RealPlus");
+    // 🔴 The marker stays on screen — ADR-004. A heading is a kind, not a rewrite.
+    expect(serialize(blocks)).toBe("# RealPlus\n- [ ] one");
+  });
+
+  it.each(["## Two", "###### Six", "  # indented"])("accepts %s", (line) => {
+    expect(parse(line)[0]?.kind).toBe("heading");
+  });
+
+  it.each(["#no space", "#1 priority", "#", "text # mid-line", "####### seven"])(
+    "leaves %s as ordinary text",
+    (line) => {
+      expect(parse(line)[0]?.kind).toBe("text");
+    },
+  );
+
+  it("🔴 never classifies a # inside a fence", () => {
+    const blocks = parse("```\n# not a heading\n```");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe("fence");
+  });
+});

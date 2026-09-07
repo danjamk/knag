@@ -558,11 +558,32 @@ Parse `body` into blocks (§14.1). Render each block by kind:
 |---|---|
 | `- [ ] text` | Checkbox (unchecked) + text |
 | `- [x] text` | Checkbox (checked) + text, strikethrough, dimmed |
+| `# name` | **Plain text, `#` and all.** A section header is a *position*, not a style |
 | ` ``` ` fenced block | **One row**, monospace, whole block, single copy button |
 | Anything else | Plain text |
 | `http(s)://…` anywhere | Linkified, opens in new tab |
 
 **Checked items stay in place.** No auto-sink.
+
+#### Section headers (#250)
+
+A line of one to six `#` followed by a space is a **section header**. The space is
+required, so `#1 priority` and `#todo` stay ordinary text; a `#` inside a fence is never
+classified, because a fence is one block.
+
+🔴 **Nothing renders it.** The `#` stays on screen at the same size and weight as every
+other line — [ADR-004](adr/ADR-004-display-matches-the-bytes.md) asks that the file be
+reconstructable byte-for-byte from what is displayed, and a styled heading with the
+marker eaten is not. What a header buys is one thing: **a line put back from history
+returns under the header it left from**, instead of at the bottom of the page.
+
+It is not an index and never becomes one. There is no jump-to-section, no collapse, no
+list of headers — that is the *Out* list (§12) arriving by the side door. The wipe takes
+headers like any other line; a page that wants its skeleton back after a wipe puts the
+headers in its **template**, which a whole-page wipe lays down (§5).
+
+The section a wiped line sat under is computed at read time from the sealed pre-wipe
+body, so no column stores it and a wipe recorded before this existed still answers.
 
 ### Row anatomy, left to right
 1. **Checkbox** — only if the block is a checkbox. Toggling rewrites

@@ -843,6 +843,50 @@ describe("knag_history", () => {
     }
   });
 
+  it("🔴 the tool's schema does not strip the section fields (#250)", async () => {
+    // An output schema drops keys it does not declare, so a field added to the shared
+    // payload is invisible through MCP until it is declared here. The parity test above
+    // cannot see it: its range holds no wipe.
+    const body = "# RealPlus\n- [ ] invoice";
+    await writePage(
+      env,
+      { ownerId: OPERATOR, pageId: DEFAULT_PAGE_ID, body, baseVersion: SEEDED_VERSION, source: "pwa" },
+      new Date("2026-03-08T13:00:00.000Z"),
+    );
+    await wipe(
+      env,
+      {
+        ownerId: OPERATOR,
+        pageId: DEFAULT_PAGE_ID,
+        baseVersion: SEEDED_VERSION + 1,
+        body: "",
+        clearedLines: [],
+        source: "pwa",
+        scope: "all",
+        wipedCount: 2,
+      },
+      new Date("2026-03-08T14:00:00.000Z"),
+    );
+
+    const result = await call("knag_history", { since: "2026-03-08", until: "2026-03-08" });
+    const revisions = (
+      result.structuredContent as {
+        days: Array<{
+          revisions: Array<{ event_type: string | null; disappeared: string[]; disappeared_sections?: (string | null)[] }>;
+        }>;
+      }
+    ).days[0]?.revisions;
+
+    const sealIndex = revisions?.findIndex((r) => r.event_type === "wipe_all") ?? -1;
+    const after = revisions?.[sealIndex + 1];
+    expect(after?.disappeared_sections).toBeDefined();
+
+    const pairs = new Map(
+      (after?.disappeared ?? []).map((line, i) => [line, after?.disappeared_sections?.[i] ?? null]),
+    );
+    expect(pairs.get("- [ ] invoice")).toBe("# RealPlus");
+  });
+
   it("🔴 the browser's history payload is unchanged — only the tool asks for snapshots", async () => {
     // The pane never reads a snapshot and the phone fetches this on every open. One
     // implementation, one opt-in argument (#252).

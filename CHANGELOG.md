@@ -13,6 +13,60 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-09-07
+
+A line put back from history returns to the section it left from.
+
+### Added
+
+- **`#` marks a section header** (#250). One to six `#` then a space; the space is
+  required, so `#1 priority` and `#todo` stay ordinary text, and a `#` inside a fence is
+  never classified because a fence is one block.
+
+  🔴 **Nothing renders it.** The marker stays on screen at the same size and weight as
+  every other line — [ADR-004] asks that the file be reconstructable byte-for-byte from
+  what is displayed, and a styled heading with the `#` eaten is not. A header is a
+  *position*, not a style. It is not an index and never becomes one: no jump-to-section,
+  no collapse, no list of headers. That is the *Out* list arriving by the side door.
+
+- **A restored line lands under its own header.** Tapping a line in the history pane used
+  to append it to the bottom of the page — `insertLines` ended in `push` and had no
+  position at all. On a page kept in sections that meant re-sorting every restore by hand,
+  and the cost was paid at the moment the wipe was being considered.
+
+  It now lands after the last line of its section, not against the next header: a section
+  usually ends with a blank separating it from the next, and inserting at the boundary put
+  the line somewhere that read as belonging to neither.
+
+### Changed
+
+- **The section is computed at read time from the sealed pre-wipe body**, which is the
+  sealing entry's own body. No migration, no column, and a wipe recorded before this
+  release still answers. `cleared` rows carry `section`; the entry after a seal carries
+  `disappeared_sections`, one per line in the same order.
+
+  Both are **absent** when the wiped page had no headers, so every page that has never
+  used one carries exactly the payload it always did.
+
+- The header is matched on its **exact bytes**, like every other anchor in `restore.ts`.
+  A header edited since the wipe is a different header, and guessing that `# RealPlus` and
+  `# Real Plus` are the same one would put a line under a name nobody wrote. A line whose
+  header has gone lands at the end — content over position, the ruling `restoredBody`
+  already makes for a vanished anchor.
+
+- The MCP server instructions and `knag_history`'s schema both name the new fields. An
+  output schema drops keys it does not declare, so a field added to the shared payload is
+  invisible through MCP until it is declared — and the parity test cannot catch that,
+  because its range holds no wipe. There is a test for it now.
+
+### Note
+
+The wipe still takes headers, like any other line. A page that wants its skeleton back
+puts the headers in its **template**, which a whole-page wipe lays down. Teaching the wipe
+to leave headers standing on its own is a separate decision and is not made here.
+
+[ADR-004]: docs/adr/ADR-004-display-matches-the-bytes.md
+
 ## [1.11.0] — 2026-09-06
 
 A past history entry can be annotated. It still cannot be changed.
@@ -2367,7 +2421,8 @@ The first plateau: a legal pad you can actually live in.
 - **Not yet verified:** that the session cookie survives seven days of iOS inactivity.
   Checked 2026-08-22. If it does not, auth needs rework.
 
-[Unreleased]: https://github.com/danjamk/knag/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/danjamk/knag/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/danjamk/knag/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/danjamk/knag/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/danjamk/knag/compare/v1.9.5...v1.10.0
 [1.9.5]: https://github.com/danjamk/knag/compare/v1.9.4...v1.9.5

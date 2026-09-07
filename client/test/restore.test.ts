@@ -269,34 +269,92 @@ describe("goneCount (#91)", () => {
   });
 });
 
+/** The sectionless form the tests above are about — a line with nowhere in particular to go. */
+const anywhere = (...raw: string[]) => raw.map((r) => ({ raw: r }));
+
 describe("insertLines (#91)", () => {
   it("appends at the end, in order — content over position", () => {
-    expect(insertLines("today\n- [ ] one", ["a note", "- [ ] two"])).toBe(
+    expect(insertLines("today\n- [ ] one", anywhere("a note", "- [ ] two"))).toBe(
       "today\n- [ ] one\na note\n- [ ] two",
     );
   });
 
   it("🔴 is count-idempotent, so a second tap changes nothing", () => {
-    const once = insertLines("today", ["a note"]);
-    expect(insertLines(once, ["a note"])).toBe(once);
+    const once = insertLines("today", anywhere("a note"));
+    expect(insertLines(once, anywhere("a note"))).toBe(once);
   });
 
   it("puts back both copies of a line the page legitimately held twice", () => {
     // Presence would refuse the second one. The count is what makes it right.
-    expect(insertLines("", ["dup", "dup"])).toBe("dup\ndup");
+    expect(insertLines("", anywhere("dup", "dup"))).toBe("dup\ndup");
   });
 
   it("tops up rather than duplicating when the page already holds one copy", () => {
-    expect(insertLines("dup", ["dup", "dup"])).toBe("dup\ndup");
+    expect(insertLines("dup", anywhere("dup", "dup"))).toBe("dup\ndup");
   });
 
   it("restores onto an empty page without a leading blank line", () => {
     // `parse("")` yields one blank block, so the naive version returns "\nrestored".
-    expect(insertLines("", ["restored"])).toBe("restored");
+    expect(insertLines("", anywhere("restored"))).toBe("restored");
+  });
+
+  it("puts a line back under its own section (#250)", () => {
+    const page = "# RealPlus\n- [ ] call back\n\n# Personal\n- [ ] milk";
+    expect(insertLines(page, [{ raw: "- [ ] invoice", section: "# RealPlus" }])).toBe(
+      "# RealPlus\n- [ ] call back\n- [ ] invoice\n\n# Personal\n- [ ] milk",
+    );
+  });
+
+  it("🔴 lands after the section's last line, not against the next header", () => {
+    // A section usually ends with a blank separating it from the next. Inserting at the
+    // boundary would put the line after that blank and hard against the following
+    // header, reading as part of neither.
+    const page = "# One\n- [ ] a\n\n# Two\n- [ ] b";
+    expect(insertLines(page, [{ raw: "- [ ] c", section: "# One" }])).toBe(
+      "# One\n- [ ] a\n- [ ] c\n\n# Two\n- [ ] b",
+    );
+  });
+
+  it("takes the line directly under a header with nothing under it yet", () => {
+    expect(insertLines("# Empty\n\n# Other\n- [ ] b", [{ raw: "- [ ] a", section: "# Empty" }])).toBe(
+      "# Empty\n- [ ] a\n\n# Other\n- [ ] b",
+    );
+  });
+
+  it("keeps several lines for one section in the order they were tapped", () => {
+    const page = "# One\n- [ ] a\n# Two\n- [ ] z";
+    expect(
+      insertLines(page, [
+        { raw: "- [ ] b", section: "# One" },
+        { raw: "- [ ] c", section: "# One" },
+      ]),
+    ).toBe("# One\n- [ ] a\n- [ ] b\n- [ ] c\n# Two\n- [ ] z");
+  });
+
+  it("🔴 falls back to the end when the header is gone — content over position", () => {
+    const page = "# Personal\n- [ ] milk";
+    expect(insertLines(page, [{ raw: "- [ ] invoice", section: "# RealPlus" }])).toBe(
+      "# Personal\n- [ ] milk\n- [ ] invoice",
+    );
+  });
+
+  it("🔴 matches a header on its exact bytes, never on its text", () => {
+    // A header edited since the wipe is a different header. Guessing they are the same
+    // would put a line under a name the person did not write.
+    const page = "#  RealPlus\n- [ ] call back";
+    expect(insertLines(page, [{ raw: "- [ ] invoice", section: "# RealPlus" }])).toBe(
+      "#  RealPlus\n- [ ] call back\n- [ ] invoice",
+    );
+  });
+
+  it("stays count-idempotent inside a section", () => {
+    const page = "# One\n- [ ] a";
+    const once = insertLines(page, [{ raw: "- [ ] b", section: "# One" }]);
+    expect(insertLines(once, [{ raw: "- [ ] b", section: "# One" }])).toBe(once);
   });
 
   it("preserves the bytes exactly, including indentation and markers", () => {
     const awkward = "\t- [x] indented \n  * star marker";
-    expect(insertLines("", awkward.split("\n"))).toBe(awkward);
+    expect(insertLines("", anywhere(...awkward.split("\n")))).toBe(awkward);
   });
 });
