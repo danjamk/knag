@@ -18,6 +18,25 @@ clears, promote the next one.** Nothing else decides what to pick up.
 This replaces the MVP plan's `#2 → #3 → #4 → #8`, which was true until it was
 not and stayed written down for a while afterwards.
 
+**Where it stands, 2026-09-09.** **Phase 10 (multi-user) is done** — #230, #231, #232 and
+#234's three-release settings move all shipped, 1.7 through 1.9, and prod is level with
+dev on **1.12.0**. **Phase 9, the product page, is still the next phase and has now been
+passed by five releases** (1.6, and 1.10 through 1.12). Every one of them shipped for the
+same reason: it needed no design ruling and the product page does. That is §12 working as
+intended, and it is also a signal — a phase that keeps getting overtaken is a phase whose
+blocker is the thing to act on. **The ruling the build waits on is brief §7.1, how the
+agent is depicted** (`docs/design/product-page-brief.md`).
+
+Work since 1.9 came from using the thing rather than from this page: the agent-facing
+history gaps (#251 → 1.9.4, #252 → 1.10, #253 → 1.11) and the section restore
+(#250 → 1.12), which came from a real morning of not wanting to wipe. None of it was a
+phase, and none of it needed one. The pattern the build phase recorded holds — **what
+gets found by use arrives faster than what gets planned**, and the plan's job is the
+sequence of the things that need one.
+
+Two things are queued on the same design session and should go together: brief §7.1 for
+#224, and the annotations pane (#257). Nothing else is blocked.
+
 **Where it stands, 2026-08-26.** **Phase 8 is done** — 1.2.1, 1.3.0, 1.4.0, 1.5.0 through
 1.5.2, all tagged, prod on 1.5.2. One thing that was never on this page is next: the
 landing page describes 1.0, and everything that makes knag worth deploying shipped after
@@ -149,7 +168,24 @@ Set 2026-08-19. The version numbers are meant to say something:
 | **1.7** | Users and ownership (#230) — multi-user's first third, no visible change | 10 |
 | **1.8** | Email login (#231) — the passphrase retires | 10 |
 | **1.9** | Invite, revoke, change email, and the people pane (#232) | 10 |
-| **1.10** | **The product page** — lands before the first invitation is *sent* | 9 |
+| **1.10** | The wiped page on its history entry (#252) — no design input | — |
+| **1.11** | Annotating a past entry (#253), append-only — server half, no design input | — |
+| **1.12** | A restored line returns to its section (#250) — no design input | — |
+| **1.13** | **The product page** — lands before the first invitation is *sent* | 9 |
+
+🔴 **Amended 2026-09-09: the product page is 1.13, and three more minors went past it.**
+1.10 through 1.12 are the agent-facing half of the history work (#252, #253) and the
+section restore (#250) — none of which needed a design ruling, and all of which shipped
+while the product page waited for one. That is the §12 rule firing for the fourth and
+fifth time: **what needs no design ships as it is ready.** The rule is right and it keeps
+producing the same outcome, which is worth naming rather than re-deriving each time.
+
+🔴 **The number is a slot, not a reservation.** This table said "1.10" for the product
+page for ten days after 1.10.0 had shipped as something else, and the two read as
+contradicting each other. They did not — the table names *sequence* and a tag names
+*released code* — but a slot label that collides with a real version is a trap for
+whoever reads it next. **When a row's number is taken, move the row.** The sequence is
+what this file is for; the number is just how it is written down.
 
 🔴 **Amended 2026-08-30: #232 shipped as 1.9, ahead of the product page, for #230's
 reason one more time.** The invite endpoint existing does not send an invitation; the
