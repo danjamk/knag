@@ -48,6 +48,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # 🔴 First, and before any work: alerting that is not configured is the failure
+      # this job spent eight silent nights demonstrating (#260). A missing webhook is
+      # caught here, on a green-looking run, rather than at the moment something has
+      # actually gone wrong and the alert is the only thing that would have said so.
+      - name: Assert the alert channels are configured
+        run: |
+          missing=""
+          [ -n "${SLACK_WEBHOOK_HEARTBEAT}" ] || missing="${missing} SLACK_WEBHOOK_HEARTBEAT"
+          [ -n "${SLACK_WEBHOOK_CRITICAL}" ] || missing="${missing} SLACK_WEBHOOK_CRITICAL"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing Slack webhook secret(s):${missing} — set them on the production environment."
+            exit 1
+          fi
+          echo "both webhooks present"
+        env:
+          SLACK_WEBHOOK_HEARTBEAT: ${{ secrets.SLACK_WEBHOOK_HEARTBEAT }}
+          SLACK_WEBHOOK_CRITICAL: ${{ secrets.SLACK_WEBHOOK_CRITICAL }}
+
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v5
@@ -76,9 +94,11 @@ jobs:
       # empty backup is worse than a red one: it is the same signal as a good backup,
       # every day, until the day someone needs it.
       - name: Assert the export is not empty
+        id: size
         run: |
           bytes=$(wc -c < backups/knag-prod.sql | tr -d ' ')
           echo "backup is ${bytes} bytes"
+          echo "bytes=${bytes}" >> "$GITHUB_OUTPUT"
           if [ "$bytes" -lt 1024 ]; then
             echo "::error::The prod export is ${bytes} bytes — that is not a database."
             exit 1
@@ -114,3 +134,44 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      # 🔴 Read the object back rather than trusting the put's exit code. `wrangler r2
+      # object put` reporting "Upload complete" is a claim about a request, and the whole
+      # lesson of this job is that a green step is not evidence the thing exists. This
+      # asks the bucket.
+      - name: Confirm the object is in the bucket
+        run: |
+          pnpm exec wrangler r2 object get \
+            "knag-backups/prod/knag-prod-${{ steps.stamp.outputs.day }}.sql" \
+            --remote --file /tmp/readback.sql
+          got=$(wc -c < /tmp/readback.sql | tr -d ' ')
+          echo "read back ${got} bytes"
+          if [ "$got" != "${{ steps.size.outputs.bytes }}" ]; then
+            echo "::error::Read back ${got} bytes but wrote ${{ steps.size.outputs.bytes }}."
+            exit 1
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      # The heartbeat. It says what was written and how big it was, not merely that
+      # something happened — "the backup ran" and "the backup holds a database" are
+      # different claims, and only the second one is worth waking up to a message about.
+      - name: Heartbeat
+        run: |
+          bash scripts/slack-notify.sh heartbeat \
+            "✅ knag prod backup — prod/knag-prod-${{ steps.stamp.outputs.day }}.sql, ${{ steps.size.outputs.bytes }} bytes, verified in the bucket. ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        env:
+          SLACK_WEBHOOK_HEARTBEAT: ${{ secrets.SLACK_WEBHOOK_HEARTBEAT }}
+
+      # 🔴 `if: failure()` and last, so it fires for **any** step above — the export, the
+      # emptiness assertion, the upload, the read-back, or the missing-webhook guard. The
+      # eight failures nobody saw died at the upload; the next one will die somewhere else,
+      # and an alert wired to one step is an alert for last time's outage.
+      - name: Alert on failure
+        if: failure()
+        run: |
+          bash scripts/slack-notify.sh critical \
+            "🔴 knag PROD BACKUP FAILED — the restore point for production was not written. Job: ${GITHUB_WORKFLOW}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        env:
+          SLACK_WEBHOOK_CRITICAL: ${{ secrets.SLACK_WEBHOOK_CRITICAL }}
