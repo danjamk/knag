@@ -13,6 +13,37 @@ summarises the phase rather than pretending it was written as it happened.
 
 ## [Unreleased]
 
+### Added
+
+- **Slack alerting on the production pipeline** (#260). A heartbeat when the nightly
+  backup succeeds, and a message to the critical channel when any prod job fails.
+
+  The nightly backup failed eight nights running and nobody knew, because a scheduled
+  workflow that fails is indistinguishable from one that never ran. The heartbeat carries
+  the object key and its byte count — *the backup ran* and *the backup holds a database*
+  are different claims, and only the second is worth a notification.
+
+  🔴 **Both workflows assert the webhooks exist before doing any work.** Alerting
+  configured wrong is indistinguishable from alerting with nothing to say, which is the
+  bug one level up. `scripts/slack-notify.sh` fails the job when it cannot deliver,
+  including on a 200 whose body is not `ok` — Slack answers a retired webhook that way,
+  so exit status alone reports success for a message nobody received.
+
+- **The backup reads its object back out of the bucket** before reporting success.
+  `wrangler r2 object put` printing "Upload complete" is a claim about a request; the
+  whole lesson of this job is that a green step is not evidence the thing exists.
+
+- **`deploy-prod.yml` says when the nightly has gone stale.** 🔴 A heartbeat only helps
+  if somebody notices it stopped, and nothing notices silence. The deploy checks whether a
+  nightly exists for today or yesterday and posts to the critical channel when neither
+  does. It does **not** block: that run already wrote its own pre-deploy backup. It turns
+  a silence nobody would hear into a message, at the one moment a person is watching.
+
+  Alerting is prod-only and that is a deliberate divergence, now listed in
+  [docs/deployment.md](docs/deployment.md). Dev fails in front of a person — it deploys on
+  merge and the failure is on the pull request that caused it. Paging on a broken branch
+  teaches everyone to mute the channel.
+
 ## [1.12.0] — 2026-09-07
 
 A line put back from history returns to the section it left from.

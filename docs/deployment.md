@@ -281,6 +281,7 @@ decision rather than drift.
 | Host | `vars.DEV_HOST` | hard coded | The dev hostname stays out of tracked files (see step 3) |
 | `--env` flag | none | `--env prod` | The top level of `wrangler.jsonc` **is** dev, so every command that forgets a flag does the safe thing |
 | `concurrency` | `cancel-in-progress: false` | `cancel-in-progress: false` | **Not** a difference, and must not become one. A half-applied migration is worse than a queued deploy |
+| **Slack alerting** | none | heartbeat + critical | Dev fails in front of a person: it deploys on merge, and the failure is on the pull request that caused it. A prod job fails at 09:00 UTC into a repository nobody is looking at — which is how the nightly backup failed eight nights running with nobody the wiser (#260). Adding it to dev would page on a broken branch and teach everyone to mute the channel |
 | **Scheduled backup** (`backup-prod.yml`) | none | daily, 09:00 UTC | The one workflow with no dev counterpart (#233). Dev is redeployed — and so backed up — on every merge to `main`, and holds test content anyway. Prod deploys are manual and weeks apart, and since [ADR-008](adr/ADR-008-email-login.md) §12 the prod D1 holds other people's pages: a backup that only happens when someone deploys is not a backup policy |
 
 ## What actually protects the data
@@ -355,6 +356,32 @@ The keys are dated rather than listed, because `wrangler r2 object` has `get`, `
 
 It runs on `workflow_dispatch` too — do that before anything destructive, rather than
 trusting that last night's run happened.
+
+### Alerting (#260)
+
+🔴 **Two Slack webhooks, both GitHub Environment secrets on `production`.** They are
+credentials — anyone holding one can post to that channel — and they are **not** read from
+`.env.prod`: a workflow runs on a fresh checkout of a public repository and can see
+nothing that is not in the repo or in a secret.
+
+| Secret | Channel | Fires when |
+|---|---|---|
+| `SLACK_WEBHOOK_HEARTBEAT` | heartbeat | the nightly backup succeeded — with the object key and its byte count, read back out of the bucket |
+| `SLACK_WEBHOOK_CRITICAL` | critical alerts | any step of `backup-prod.yml` failed; any job of `deploy-prod.yml` failed; the nightly backup is stale during a prod deploy |
+
+Both workflows **assert the webhooks exist before doing any work** and fail if either is
+missing. That is deliberate: alerting configured wrong is indistinguishable from alerting
+that never had anything to say, and this is the one job where that mistake already cost a
+week of backups.
+
+🔴 **A heartbeat only helps if somebody notices it stopped, and nothing notices silence.**
+That is why `deploy-prod.yml` also checks whether a nightly exists for today or yesterday
+and posts to the critical channel when neither does. It does not block the deploy — that
+run wrote its own pre-deploy backup and has a restore point in hand — it converts a silence
+nobody would hear into a message, at the one moment a person is definitely watching.
+
+The message never contains the webhook. `scripts/slack-notify.sh` takes it from the
+environment rather than an argument, and prints it on no path including its failure path.
 
 Two failure modes it is built against:
 
